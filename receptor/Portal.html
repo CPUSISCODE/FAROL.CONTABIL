@@ -1,0 +1,1652 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<base target="_top">
+<meta charset="utf-8">
+<title>Farol Contábil</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+/* Layout: barra superior fixa com navegação; Painel geral (todas as empresas: envio, regimes, totais); Clientes (lista + download em lote); cliente/mês com indicadores, abas de análise, busca de XML e download do ZIP */
+:root{
+  --bg:#f3f5f4; --panel:#ffffff; --ink:#15211c; --muted:#5a6a62; --line:#dbe2de; --soft:#eef3f0;
+  --brand:#0f6b55; --brand-ink:#ffffff; --brand-soft:#e1efe9; --warn:#8a5a00; --warn-soft:#fff2d4; --bad:#b3261e; --bad-soft:#fbe8e6; --info:#1f4f86; --info-soft:#e5eef9;
+  --sn:#0f6b55; --sn-soft:#e1efe9; --pre:#1f4f86; --pre-soft:#e5eef9; --real:#6a3fa0; --real-soft:#efe8f8; --mei:#8a5a00; --mei-soft:#fff2d4;
+  --sans:"Segoe UI",system-ui,-apple-system,Roboto,Arial,sans-serif; --mono:Consolas,"Cascadia Mono",ui-monospace,monospace;
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#0f1513; --panel:#171f1c; --ink:#e3ebe7; --muted:#97a69f; --line:#2a3530; --soft:#1d2723;
+  --brand:#4cc29c; --brand-ink:#0b1512; --brand-soft:#1b3129; --warn:#f2c35a; --warn-soft:#382d12; --bad:#ff8a80; --bad-soft:#3a1f1c; --info:#8db8ee; --info-soft:#1c2a3b;
+  --sn:#4cc29c; --sn-soft:#1b3129; --pre:#8db8ee; --pre-soft:#1c2a3b; --real:#c4a6f0; --real-soft:#2a2238; --mei:#f2c35a; --mei-soft:#382d12; color-scheme:dark}}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 var(--sans)}
+button,input,select{font:inherit;color:inherit}
+.btn{border:1px solid var(--brand);background:var(--brand);color:var(--brand-ink);border-radius:7px;padding:8px 14px;font-weight:600;cursor:pointer}
+.btn.sec{background:transparent;color:var(--brand)}
+.btn:disabled{opacity:.55;cursor:default}
+.btn:focus-visible,input:focus-visible,select:focus-visible,.tab:focus-visible,th:focus-visible,.cli:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+input[type=text],input[type=password],input[type=search],input[type=date],select{background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:8px 10px;min-width:0}
+.hidden{display:none!important}
+
+/* login */
+#login{min-height:100vh;display:grid;place-items:center;padding:24px 16px}
+.caixa{width:min(380px,100%);background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:28px 24px;display:grid;gap:14px}
+.marca{display:flex;align-items:center;gap:10px}
+.selo{width:38px;height:38px;border-radius:9px;background:var(--brand);color:var(--brand-ink);display:grid;place-items:center;font-weight:800;letter-spacing:.02em;overflow:hidden;flex:none}
+.selo.img{background:transparent}.selo img{width:100%;height:100%;object-fit:contain}
+.rodape{max-width:1320px;margin:0 auto;padding:0 16px 28px;color:var(--muted);font-size:12.5px}
+.marca b{display:block;font-size:17px}.marca span{color:var(--muted);font-size:12.5px}
+.caixa label{display:grid;gap:4px;font-size:12.5px;color:var(--muted)}
+.erro{color:var(--bad);font-size:13px}
+.erro:empty,.caixa .nota:empty{display:none}
+.caixa p{margin:0}
+
+/* app */
+header{position:sticky;top:0;z-index:5;background:var(--panel);border-bottom:1px solid var(--line)}
+.topo{max-width:1320px;margin:0 auto;padding:10px 16px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.topo .marca{margin-right:auto}
+.quem{color:var(--muted);font-size:13px}
+main{max-width:1320px;margin:0 auto;padding:18px 16px 48px;display:grid;grid-template-columns:minmax(0,1fr);gap:16px}
+main>*{min-width:0}
+.filtros{display:flex;flex-wrap:wrap;gap:10px;align-items:end}
+.filtros label{display:grid;gap:3px;font-size:12px;color:var(--muted)}
+h1{font-size:20px;margin:0;text-wrap:balance}
+h2{font-size:15px;margin:0}
+.sub{color:var(--muted);margin:2px 0 0;font-size:13px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;min-width:0}
+.vazio{color:var(--muted);padding:20px;text-align:center}
+
+/* lista de clientes */
+.tbl{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--panel)}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{padding:7px 10px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}
+thead th{position:sticky;top:0;background:var(--panel);color:var(--muted);font-weight:600;font-size:12px;cursor:pointer;user-select:none}
+thead th.ord::after{content:" ▾";font-size:10px}
+thead th.ord.asc::after{content:" ▴"}
+td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
+td.m{font-family:var(--mono);font-size:12px}
+td.w{white-space:normal;min-width:220px}
+tfoot td{font-weight:700;background:var(--soft)}
+tbody tr:hover td{background:var(--soft)}
+.cli{cursor:pointer}
+.pill{display:inline-block;padding:2px 9px;border-radius:999px;font-size:12px;font-weight:600;background:var(--brand-soft);color:var(--brand)}
+.pill.warn{background:var(--warn-soft);color:var(--warn)}.pill.bad{background:var(--bad-soft);color:var(--bad)}.pill.info{background:var(--info-soft);color:var(--info)}
+
+/* detalhe */
+.cab{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:start}
+.acoes{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px}
+.kpi{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;display:grid;gap:2px}
+.kpi .r{font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.kpi .v{font-size:20px;font-weight:700;font-variant-numeric:tabular-nums}
+.kpi .d{font-size:12.5px;color:var(--muted);font-variant-numeric:tabular-nums}
+.abas{display:flex;gap:4px;overflow-x:auto;border-bottom:1px solid var(--line)}
+.tab{white-space:nowrap}
+.sub{overflow-wrap:anywhere}
+.tab{border:0;background:transparent;padding:9px 12px;border-bottom:2px solid transparent;color:var(--muted);font-weight:600;cursor:pointer}
+.tab[aria-selected=true]{color:var(--brand);border-bottom-color:var(--brand)}
+.ferr{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:7px;overflow:hidden}
+.seg button{border:0;background:var(--panel);padding:6px 11px;cursor:pointer;color:var(--muted)}
+.seg button[aria-pressed=true]{background:var(--brand);color:var(--brand-ink)}
+.nota{color:var(--muted);font-size:12.5px;max-width:95ch}
+.lote{display:flex;flex-wrap:wrap;gap:10px;align-items:center;position:sticky;top:64px;z-index:4;border-color:var(--brand)}
+.lote-l{display:flex;gap:8px;align-items:baseline;margin-right:auto}
+.lnk{border:0;background:none;color:var(--brand);cursor:pointer;text-decoration:underline;padding:0}
+th.ck,td.ck{width:34px;text-align:center}
+td.ck input,th.ck input{width:16px;height:16px;cursor:pointer;accent-color:var(--brand)}
+#conteudo{display:grid;gap:12px;min-width:0}
+#conteudo>*{min-width:0}
+.barra{height:6px;background:var(--soft);border-radius:4px;overflow:hidden;width:160px}
+.barra i{display:block;height:100%;background:var(--brand);width:0}
+.grade2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media (max-width:860px){.grade2{grid-template-columns:1fr}}
+.carregando{display:flex;gap:10px;align-items:center;color:var(--muted)}
+.giro{width:16px;height:16px;border:2px solid var(--line);border-top-color:var(--brand);border-radius:50%;animation:g 0.8s linear infinite}
+@keyframes g{to{transform:rotate(360deg)}}
+/* navegação */
+.nav{display:flex;gap:2px;flex-wrap:wrap;min-width:0;max-width:100%}
+.nav button{border:0;background:transparent;padding:8px 12px;border-radius:7px;font-weight:600;color:var(--muted);cursor:pointer}
+.nav button[aria-current=page]{background:var(--brand-soft);color:var(--brand)}
+.nav button:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+/* painel geral */
+h3{font-size:13.5px;margin:14px 0 6px}
+section.card{display:grid;gap:10px}
+section.card>*,#pMesSec>*,section>.kpis{min-width:0}
+#pMesSec{display:grid;gap:16px;min-width:0}
+.kpis.k6{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
+.g-ok{border-left:4px solid var(--brand)}.g-atencao{border-left:4px solid var(--warn)}.g-parado,.g-erro{border-left:4px solid var(--bad)}.g-manual,.g-nunca{border-left:4px solid var(--info)}
+.nota.ok{color:var(--brand);font-weight:600}
+.regs{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px}
+.reg{all:unset;box-sizing:border-box;cursor:pointer;display:grid;gap:3px;padding:12px 14px;border-radius:10px;border:1px solid var(--line);border-top:4px solid var(--c,var(--muted));background:var(--panel)}
+.reg:hover{background:var(--soft)}.reg:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+.reg[aria-pressed=true]{background:var(--cs,var(--soft));box-shadow:inset 0 0 0 1px var(--c,var(--muted))}
+.reg .r{font-weight:700;color:var(--c,var(--muted))}.reg .v{font-size:20px;font-weight:700}.reg .v small{font-size:12.5px;font-weight:600;color:var(--muted)}.reg .d{font-size:12.5px;color:var(--muted);font-variant-numeric:tabular-nums}
+.r-SN{--c:var(--sn);--cs:var(--sn-soft)}.r-PRESUMIDO{--c:var(--pre);--cs:var(--pre-soft)}.r-REAL{--c:var(--real);--cs:var(--real-soft)}.r-MEI{--c:var(--mei);--cs:var(--mei-soft)}.r-NORMAL,.r-X{--c:var(--muted);--cs:var(--soft)}
+.pill.r-SN,.pill.r-PRESUMIDO,.pill.r-REAL,.pill.r-MEI,.pill.r-NORMAL,.pill.r-X{background:var(--cs);color:var(--c)}
+.pilha{display:flex;height:12px;border-radius:6px;overflow:hidden;background:var(--soft);gap:2px}
+.pilha i{display:block;background:var(--c)}
+.alertas{margin:0;padding-left:18px;display:grid;gap:6px}
+tr.cli td{cursor:pointer}
+/* busca de XML */
+#xFiltros input[type=search]{min-width:0}
+dialog{border:1px solid var(--line);border-radius:12px;background:var(--panel);color:var(--ink);width:min(1100px,calc(100vw - 32px));max-height:calc(100vh - 48px);padding:18px;display:none}
+dialog[open]{display:grid;gap:12px;align-content:start;overflow:auto}
+dialog::backdrop{background:rgba(0,0,0,.45)}
+.dgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px 18px;overflow-wrap:anywhere}
+.kpis.mini{grid-template-columns:repeat(auto-fit,minmax(120px,1fr))}.kpis.mini .v{font-size:15px}
+pre.xml{white-space:pre-wrap;word-break:break-all;font:12px/1.4 var(--mono);background:var(--soft);padding:10px;border-radius:8px;max-height:360px;overflow:auto}
+.sub.m{font-family:var(--mono);font-size:11.5px}
+/* configurações */
+.form{display:grid;gap:10px;align-content:start}
+.form label{display:grid;gap:3px;font-size:12.5px;color:var(--muted)}
+.form label.ck,.cks label.ck{display:flex;gap:7px;align-items:center;font-size:13.5px;color:var(--ink)}
+.cks{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:end}
+.cks label{display:grid;gap:3px;font-size:12.5px;color:var(--muted)}
+fieldset{border:1px solid var(--line);border-radius:8px;padding:10px 12px;display:grid;gap:8px;margin:0}
+legend{font-size:12.5px;color:var(--muted);padding:0 4px}
+#uLista{max-height:220px;overflow:auto}
+input[type=checkbox]{accent-color:var(--brand);width:16px;height:16px}
+.aviso{margin:0;font-size:13px;font-weight:600;color:var(--brand)}.aviso:empty{display:none}.aviso.bad{color:var(--bad)}
+.btn.perigo{border-color:var(--bad);color:var(--bad);margin-left:auto}
+details{border-bottom:1px solid var(--line);padding:8px 0}details summary{cursor:pointer;padding:4px 0}details .tbl{margin-top:8px}
+#dlgUsu{width:min(560px,calc(100vw - 32px))}
+/* dia a dia */
+.cal{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px}
+.cal .sem{font-size:11.5px;color:var(--muted);text-align:center;font-weight:600}
+.dia{border:1px solid var(--line);border-left-width:4px;border-radius:8px;padding:6px 8px;min-height:64px;display:grid;align-content:start;gap:1px;font-size:11.5px;color:var(--muted);overflow:hidden}
+.dia b{font-size:14px;color:var(--ink)}
+.dia.ok{border-left-color:var(--brand);background:var(--brand-soft)}.dia.ok span:first-of-type{color:var(--ink)}
+.dia.vazio{border-left-color:var(--warn);background:var(--warn-soft)}
+.dia.falta{border-left-color:var(--bad);background:var(--bad-soft)}.dia .f{color:var(--bad);font-weight:700}
+.dia.dom{opacity:.7}.dia.fut{opacity:.4}
+.dia .c{font-size:11px}
+.legenda{display:flex;gap:6px 12px;flex-wrap:wrap;align-items:center;font-size:12px;color:var(--muted);margin:0}
+.legenda i{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:-6px;vertical-align:-1px}
+.legenda i.l-ok{background:var(--brand)}.legenda i.l-vazio{background:var(--warn)}.legenda i.l-falta{background:var(--bad)}.legenda i.l-dom{background:var(--line)}
+.legenda i.b1,.grafico .b1{background:var(--brand);fill:var(--brand)}.legenda i.b2,.grafico .b2{background:var(--info);fill:var(--info)}
+.grafico{width:100%;height:auto;max-height:220px}.grafico text{fill:var(--muted);font-size:10px}
+@media (max-width:640px){.dia{min-height:48px;padding:4px;font-size:10px}.dia span{display:none}.dia .f{display:block}}
+#cfgCorpo{display:grid;gap:16px;min-width:0}#cfgCorpo>*{min-width:0}
+/* central de operação e painel do contador */
+:root{--ok:#1a7f5a;--ok-soft:#e3f4ec}
+@media (prefers-color-scheme:dark){:root{--ok:#4cc29c;--ok-soft:#1b3129}}
+#tela>.cab h1{font-size:22px;letter-spacing:-.01em}
+.kpis4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
+.kpi2{position:relative;padding:16px 18px;border-radius:12px;gap:4px}
+.kpi2 .v{font-size:27px;letter-spacing:-.02em}.kpi2 .r{font-weight:600;padding-right:70px}
+.kpi2 .tag{position:absolute;top:14px;right:14px;font-size:11.5px;font-weight:700;padding:2px 8px;border-radius:99px}
+.tag.up{background:var(--ok-soft);color:var(--ok)}.tag.dn{background:var(--bad-soft);color:var(--bad)}.tag.wn{background:var(--warn-soft);color:var(--warn)}
+.g2{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:16px;align-items:start}
+.col{display:grid;gap:16px;min-width:0}
+section.card,.col>.card{border-radius:12px;padding:18px 20px;gap:14px}
+.ch{display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap}.ch>span{color:var(--muted);font-size:12.5px}
+.leg{display:flex;gap:14px;font-size:12px;color:var(--muted)}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;vertical-align:0}.d-ok{background:var(--ok)}.d-wn{background:#e3a008}.d-bad{background:var(--bad)}
+.sema{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:8px;max-height:430px;overflow:auto;padding:2px}
+.scli{all:unset;box-sizing:border-box;cursor:pointer;border:1px solid var(--line);border-left:4px solid var(--ok);border-radius:9px;padding:9px 11px;display:grid;gap:2px;background:var(--panel);min-width:0}
+.scli b{font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.scli span{color:var(--muted);font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.scli.n1{border-left-color:#e3a008;background:var(--warn-soft)}.scli.n1 b{color:var(--warn)}
+.scli.n2{border-left-color:var(--bad);background:var(--bad-soft)}.scli.n2 b{color:var(--bad)}
+.scli:hover{box-shadow:0 1px 4px rgba(0,0,0,.08)}.scli:focus-visible{outline:2px solid var(--brand)}
+.tbl.sem{border:0;border-radius:0}.tbl.sem th{background:transparent;text-transform:uppercase;letter-spacing:.06em;font-size:11px}
+.prazo{font-weight:700;font-size:12px;white-space:normal;min-width:110px}
+td.b{font-weight:700;white-space:normal}
+#pCorpo{display:grid;gap:16px;min-width:0}#pCorpo>*{min-width:0}
+.vers{display:grid;gap:10px}.vers .l{display:grid;grid-template-columns:60px 1fr 30px;gap:10px;align-items:center}
+.barra2{height:9px;border-radius:5px;background:var(--soft);overflow:hidden;position:relative}.barra2 i{display:block;height:100%;border-radius:5px}
+.barra2.lin{overflow:visible;height:11px}.barra2.lin::after{content:"";position:absolute;left:75%;top:-3px;bottom:-3px;border-left:2px dashed var(--muted);opacity:.6}
+.uso{list-style:none;margin:0;padding:0}.uso li{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);font-size:13px}.uso li:last-child{border:0}
+.lim{display:grid;gap:6px}
+.lim .l{all:unset;box-sizing:border-box;cursor:pointer;display:grid;grid-template-columns:minmax(0,190px) 1fr auto;gap:14px;align-items:center;font-size:13px;padding:5px 6px;border-radius:7px}
+.lim .l:hover{background:var(--soft)}.lim .l b{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.lim .v{white-space:nowrap}
+.eco{display:grid;gap:2px}.eco .v{font-size:28px;font-weight:700;color:var(--ok);letter-spacing:-.02em}.eco .v::before{content:"R$ "}
+.alertas{list-style:none;margin:0;padding:0;display:grid;gap:9px}
+.alertas li{display:grid;grid-template-columns:28px 1fr auto;gap:10px;align-items:start;padding:10px 12px;border:1px solid var(--line);border-radius:10px;cursor:pointer}
+.alertas li:hover{background:var(--soft)}.alertas b{display:block;font-size:13px}.alertas li>div>span{color:var(--muted);font-size:12.5px}
+.ic{width:28px;height:28px;border-radius:8px;display:grid;place-items:center;font-weight:800}
+.ic.bad{background:var(--bad-soft);color:var(--bad)}.ic.warn{background:var(--warn-soft);color:var(--warn)}.ic.info{background:var(--info-soft);color:var(--info)}
+.fech{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.fech div{border:1px solid var(--line);border-radius:10px;padding:12px;text-align:center;display:grid}.fech .v{font-size:24px;font-weight:700}
+.fl{list-style:none;margin:0;padding:0;max-height:230px;overflow:auto}.fl li{display:flex;justify-content:space-between;gap:10px;padding:8px 2px;border-bottom:1px solid var(--line);cursor:pointer;font-size:13px}.fl li:hover{background:var(--soft)}
+.minis{display:grid;grid-template-columns:1fr 1fr;gap:10px}.minis div{border:1px solid var(--line);border-radius:10px;padding:10px 12px;display:grid;gap:2px}.minis .r{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}.minis b{font-size:17px}
+@media (max-width:1000px){.kpis4{grid-template-columns:repeat(2,minmax(0,1fr))}.g2{grid-template-columns:minmax(0,1fr)}}
+@media (max-width:560px){.kpis4{grid-template-columns:minmax(0,1fr)}.lim .l{grid-template-columns:1fr;gap:4px}.fech{gap:6px}}
+@media (prefers-reduced-motion:reduce){.giro{animation:none}}
+#sCorpo{display:grid;gap:16px;min-width:0}#sCorpo>*{min-width:0}
+.srvt td{vertical-align:top}.srvt .sub{display:block;font-size:11.5px}
+.chave{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;cursor:pointer;white-space:nowrap}
+.chave input{width:16px;height:16px;accent-color:var(--brand)}
+.evl{list-style:none;margin:0;padding:0}.evl li{display:grid;grid-template-columns:120px minmax(0,1fr);gap:10px;padding:9px 0;border-bottom:1px solid var(--line);font-size:13px}.evl li:last-child{border:0}
+.evl .q{color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums}.evl .x{color:var(--muted);font-size:12px;overflow-wrap:anywhere}
+@media (max-width:700px){.evl li{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+
+<section id="login">
+  <form class="caixa" id="fLogin" autocomplete="on">
+    <div class="marca"><div class="selo">CP</div><div><b>Portal Contábil</b><span>XML e resumos fiscais dos clientes · CPUSIS</span></div></div>
+    <label for="lg">Login<input id="lg" type="text" autocomplete="username" required></label>
+    <label for="sn">Senha<input id="sn" type="password" autocomplete="current-password" required></label>
+    <button class="btn" id="bEntrar" type="submit">Entrar</button>
+    <div class="erro" id="eLogin" role="alert"></div>
+    <p class="nota" id="msgLogin"></p>
+    <p class="nota" id="suporteLogin"></p>
+  </form>
+</section>
+
+<section id="app" class="hidden">
+  <header><div class="topo">
+    <div class="marca"><div class="selo">CP</div><div><b>Portal Contábil</b><span>CPUSIS</span></div></div>
+    <nav class="nav" aria-label="Seções"><button type="button" data-t="central" class="hidden" id="navCentral">Central</button><button type="button" data-t="painel">Painel</button><button type="button" data-t="clientes">Clientes</button><button type="button" data-t="servidores" class="hidden" id="navSrv">Servidores</button><button type="button" data-t="config" class="hidden" id="navCfg">Configurações</button></nav>
+    <span class="quem" id="quem"></span>
+    <button class="btn sec" id="bSair" type="button">Sair</button>
+  </div></header>
+  <main id="tela"></main>
+  <footer class="rodape" id="rodape"></footer>
+</section>
+
+<script>/*__APARENCIA__*/</script>
+<script>
+/* ---------------- endereço do receptor (usado quando o portal abre pelo GitHub) ---------------- */
+var API_URL = 'https://script.google.com/macros/s/AKfycbwySsHymDOemTCxV-Oe-j4B0xHK1OIOtBDF-KjIdhHA0cf9YmLoUcP3AnRVpgW1AZLU/exec';
+var MODO_WEB = !(window.google && google.script && google.script.run);
+var APARENCIA_ATUAL = null;
+if (typeof APARENCIA === 'undefined') { try { APARENCIA = JSON.parse(localStorage.getItem('farol_aparencia') || 'null'); } catch (e) { APARENCIA = null; } }
+/* ---------------- aparência (aba "Aparência" da planilha) ---------------- */
+function aplicarAparencia(A) {
+  A = A || {}; APARENCIA_ATUAL = A;
+  var rgb = function (h) { var n = parseInt(h.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; };
+  var tinta = function (h) { var c = rgb(h).map(function (v) { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }); return (0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]) > 0.45 ? '#0b1512' : '#ffffff'; };
+  var css = '';
+  if (A.cor) { var c = rgb(A.cor); css += ':root{--brand:' + A.cor + ';--brand-ink:' + tinta(A.cor) + ';--brand-soft:rgba(' + c.join(',') + ',.12)' + (A.fundo ? ';--bg:' + A.fundo : '') + '}'; }
+  if (A.corEscura) { var d = rgb(A.corEscura); css += '@media (prefers-color-scheme:dark){:root{--brand:' + A.corEscura + ';--brand-ink:' + tinta(A.corEscura) + ';--brand-soft:rgba(' + d.join(',') + ',.18);--bg:#0f1513}}'; }
+  if (css) { var s = document.createElement('style'); s.textContent = css; document.head.appendChild(s); }
+  var nome = A.nome || 'Portal Contábil';
+  document.title = nome;
+  document.querySelectorAll('.marca b').forEach(function (b) { b.textContent = nome; });
+  document.querySelectorAll('.marca span').forEach(function (s) { if (A.subtitulo) s.textContent = A.subtitulo; });
+  document.querySelectorAll('.selo').forEach(function (s) {
+    if (A.logo) { s.classList.add('img'); s.textContent = ''; var i = document.createElement('img'); i.src = A.logo; i.alt = nome; s.appendChild(i); }
+    else if (A.sigla) { s.textContent = A.sigla; }
+  });
+  if (A.login) document.getElementById('msgLogin').textContent = A.login;
+  if (A.suporte) { document.getElementById('suporteLogin').textContent = 'Suporte: ' + A.suporte; document.getElementById('rodape').textContent = 'Suporte: ' + A.suporte; }
+}
+aplicarAparencia((typeof APARENCIA !== 'undefined' && APARENCIA) || { nome: 'Farol Contábil' });
+</script>
+<script>
+/* ---------------- infraestrutura ---------------- */
+var TOKEN = null, DADOS = null, ATUAL = null, RESUMO = null;
+var NAV_CONTA = 0;   // muda quando a pessoa clica em algo (não redesenha a tela por cima dela)
+document.addEventListener('click', function () { NAV_CONTA++; }, true);
+try { TOKEN = sessionStorage.getItem('portal_token'); } catch (e) {}
+function guardarToken(t) { TOKEN = t; try { if (t) sessionStorage.setItem('portal_token', t); else sessionStorage.removeItem('portal_token'); } catch (e) {} }
+
+function chamar(fn) {
+  var args = Array.prototype.slice.call(arguments, 1);
+  if (MODO_WEB) {   // aberto pelo GitHub: conversa com o receptor por POST
+    return fetch(API_URL, { method: 'POST', redirect: 'follow', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ acao: 'portal', fn: fn, args: args }) })
+      .then(function (r) { if (!r.ok) throw new Error('Servidor respondeu ' + r.status + '. Tente de novo.'); return r.json(); })
+      .catch(function (e) { throw new Error(/Failed to fetch|NetworkError|Load failed/i.test(e.message) ? 'Sem conexão com o servidor. Confira a internet e tente de novo.' : e.message); })
+      .then(function (j) {
+        if (j && j.ok) return j.r;
+        var msg = (j && j.erro) || 'Erro desconhecido';
+        if (/SESSAO_EXPIRADA/.test(msg)) sair(true);
+        throw new Error(msg.replace(/^Exception:\s*/, ''));
+      });
+  }
+  return new Promise(function (ok, falha) {
+    google.script.run.withSuccessHandler(ok).withFailureHandler(function (e) {
+      var msg = (e && e.message) || String(e);
+      if (/SESSAO_EXPIRADA/.test(msg)) { sair(true); }
+      falha(new Error(msg.replace(/^Exception:\s*/, '')));
+    })[fn].apply(null, args);
+  });
+}
+var $ = function (id) { return document.getElementById(id); };
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+function brl(v) { return Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function int(v) { return Number(v || 0).toLocaleString('pt-BR'); }
+function qtd(v) { return Number(v || 0).toLocaleString('pt-BR', { maximumFractionDigits: 3 }); }
+function pct(v) { return Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '%'; }
+function aliq(v) { return Number(v || 0) ? Number(v).toLocaleString('pt-BR', { maximumFractionDigits: 2 }) + '%' : '—'; }
+var MES = ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
+function nomeMes(m) { return MES[Number(m.slice(5, 7)) - 1] + ' de ' + m.slice(0, 4); }
+function dataBR(s) { return s ? s.slice(8, 10) + '/' + s.slice(5, 7) + '/' + s.slice(0, 4) : ''; }
+function carregando(txt) { return '<div class="card carregando"><div class="giro"></div>' + esc(txt) + '</div>'; }
+function rotuloUnid(u) { return u.cliente + (u.subpasta ? ' · ' + u.subpasta : ''); }
+
+/* ---------------- login ---------------- */
+$('fLogin').addEventListener('submit', function (ev) {
+  ev.preventDefault();
+  $('bEntrar').disabled = true; $('eLogin').textContent = '';
+  chamar('portalLogin', $('lg').value, $('sn').value).then(function (r) {
+    $('bEntrar').disabled = false;
+    if (!r.ok) { $('eLogin').textContent = r.erro; return; }
+    limparSessao(); guardarToken(r.token); $('sn').value = ''; iniciar();
+  }).catch(function (e) { $('bEntrar').disabled = false; $('eLogin').textContent = e.message; });
+});
+$('bSair').addEventListener('click', function () { sair(false); });
+// apaga tudo o que foi carregado na sessão (nada de um login pode aparecer para o próximo)
+function limparSessao() {
+  DADOS = null; ATUAL = null; RESUMO = null; SEL = {}; IND = {}; BUSCA = null; CFG = null; CFG_ABA = 'logins';
+  PST = { mes: null, contab: '', regime: null };
+  if ($('tela')) $('tela').innerHTML = '';
+  if ($('quem')) $('quem').textContent = '';
+  if ($('navCfg')) $('navCfg').classList.add('hidden');
+  if ($('navCentral')) $('navCentral').classList.add('hidden');
+  if ($('navSrv')) $('navSrv').classList.add('hidden');
+  SRV = null;
+}
+function sair(expirou) {
+  if (TOKEN && !expirou) { try { chamar('portalSair', TOKEN).catch(function () {}); } catch (e) {} }
+  try { sessionStorage.removeItem('portal_dados'); } catch (e) {}
+  guardarToken(null); limparSessao();
+  $('app').classList.add('hidden'); $('login').classList.remove('hidden');
+  if (expirou) $('eLogin').textContent = 'Sua sessão expirou. Entre de novo.';
+}
+
+function iniciar() {
+  $('login').classList.add('hidden'); $('app').classList.remove('hidden');
+  var mostrar = function (d) { DADOS = d; $('quem').textContent = d.nome; $('navCfg').classList.toggle('hidden', !d.admin); $('navCentral').classList.toggle('hidden', !d.admin); $('navSrv').classList.toggle('hidden', !d.admin); if (d.admin) telaCentral(); else telaPainel(); };
+  // abre na hora com o que já foi carregado nesta sessão e atualiza por baixo
+  var guardado = null; try { var g = JSON.parse(sessionStorage.getItem('portal_dados') || 'null'); if (g && g.token === TOKEN) guardado = g.d; } catch (e) {}
+  if (guardado) mostrar(guardado); else $('tela').innerHTML = carregando('Carregando seus clientes…');
+  var navAntes = NAV_CONTA;
+  chamar('portalDados', TOKEN).then(function (d) {
+    try { sessionStorage.setItem('portal_dados', JSON.stringify({ token: TOKEN, d: d })); } catch (e) {}
+    if (!guardado) mostrar(d);
+    else { DADOS = d; if (NAV_CONTA === navAntes && JSON.stringify(d) !== JSON.stringify(guardado)) mostrar(d); }
+  }).catch(function (e) { if (!guardado) $('tela').innerHTML = '<div class="card erro">' + esc(e.message) + '</div>'; });
+}
+if (TOKEN) setTimeout(iniciar, 0);   // depois de todo o script carregar
+// aberto pelo GitHub: busca a aparência atual da planilha e guarda para abrir já pronto da próxima vez
+if (MODO_WEB) chamar('portalAparencia').then(function (ap) {
+  try { localStorage.setItem('farol_aparencia', JSON.stringify(ap)); } catch (e) {}
+  if (JSON.stringify(ap) !== JSON.stringify(APARENCIA_ATUAL)) aplicarAparencia(ap);
+}).catch(function () {});
+document.querySelector('.nav').addEventListener('click', function (ev) { var b = ev.target.closest('button'); if (!b || !DADOS) return; if (b.dataset.t === 'central') telaCentral(); else if (b.dataset.t === 'painel') telaPainel(); else if (b.dataset.t === 'config') telaConfig(); else if (b.dataset.t === 'servidores') telaServidores(); else telaLista(); });
+function marcarNav(t) { document.querySelectorAll('.nav button').forEach(function (b) { if (b.dataset.t === t) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); }); }
+
+/* ---------------- tela 1: clientes ---------------- */
+var SEL = {};   // clientes marcados para baixar (índice em DADOS.unidades)
+function telaLista() {
+  marcarNav('clientes'); ATUAL = null; RESUMO = null;
+  var contabs = []; DADOS.unidades.forEach(function (u) { if (contabs.indexOf(u.contabilidade) < 0) contabs.push(u.contabilidade); });
+  var html = '<div class="cab"><div><h1>Clientes</h1><p class="sub">Clique no cliente para ver o resumo fiscal. Marque vários para baixar os XML de uma vez.</p></div></div>' +
+    '<div class="filtros">' +
+    (contabs.length > 1 ? '<label for="fContab">Contabilidade<select id="fContab"><option value="">Todas</option>' + contabs.map(function (c) { return '<option>' + esc(c) + '</option>'; }).join('') + '</select></label>' : '') +
+    '<label for="fBusca">Buscar cliente<input id="fBusca" type="search" placeholder="Nome do cliente"></label></div>' +
+    '<div id="barraLote" class="card lote hidden"></div>' +
+    '<div id="listaCli"></div><div id="progLote"></div>';
+  $('tela').innerHTML = html;
+  var visiveis = [];
+  var desenhar = function () {
+    var fc = $('fContab') ? $('fContab').value : '', fb = ($('fBusca').value || '').toUpperCase();
+    visiveis = DADOS.unidades.filter(function (u) { return (!fc || u.contabilidade === fc) && (!fb || rotuloUnid(u).toUpperCase().indexOf(fb) >= 0); });
+    if (!visiveis.length) { $('listaCli').innerHTML = '<div class="card vazio">Nenhum cliente com resumo disponível ainda.</div>'; barraLote(); return; }
+    var todos = visiveis.every(function (u) { return SEL[DADOS.unidades.indexOf(u)]; });
+    $('listaCli').innerHTML = '<div class="tbl"><table><thead><tr><th class="ck"><input type="checkbox" id="ckTodos" aria-label="Marcar todos"' + (todos ? ' checked' : '') + '></th><th>Contabilidade</th><th>Cliente</th><th>Último mês</th><th>Meses disponíveis</th><th>Último envio</th><th>Situação</th></tr></thead><tbody>' +
+      visiveis.map(function (u) {
+        var i = DADOS.unidades.indexOf(u), ult = u.meses[0];
+        var p = DADOS.painel[norm(u.contabilidade) + '|' + norm(u.cliente + (u.subpasta ? ' / ' + u.subpasta : '')) + '|' + ult] || DADOS.painel[norm(u.contabilidade) + '|' + norm(u.cliente) + '|' + ult] || {};
+        return '<tr class="cli" tabindex="0" data-i="' + i + '"><td class="ck"><input type="checkbox" class="ckCli" data-i="' + i + '" aria-label="Marcar ' + esc(rotuloUnid(u)) + '"' + (SEL[i] ? ' checked' : '') + '></td><td>' + esc(u.contabilidade) + '</td><td><b>' + esc(rotuloUnid(u)) + '</b></td><td>' + esc(nomeMes(ult)) + '</td><td class="n">' + u.meses.length +
+          '</td><td>' + (p.ultimoContato ? new Date(p.ultimoContato).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '—') + '</td><td>' + pillSituacao(p.situacao) + '</td></tr>';
+      }).join('') + '</tbody></table></div>';
+    barraLote();
+  };
+  if ($('fContab')) $('fContab').addEventListener('change', desenhar);
+  $('fBusca').addEventListener('input', desenhar);
+  $('listaCli').addEventListener('click', function (ev) {
+    if (ev.target.id === 'ckTodos') { var v = ev.target.checked; visiveis.forEach(function (u) { var i = DADOS.unidades.indexOf(u); if (v) SEL[i] = true; else delete SEL[i]; }); desenhar(); return; }
+    if (ev.target.classList.contains('ckCli')) { var k = +ev.target.dataset.i; if (ev.target.checked) SEL[k] = true; else delete SEL[k]; barraLote(); return; }
+    if (ev.target.closest('td.ck')) return;
+    var tr = ev.target.closest('tr.cli'); if (tr) abrir(DADOS.unidades[+tr.dataset.i], null);
+  });
+  $('listaCli').addEventListener('keydown', function (ev) { var tr = ev.target.closest('tr.cli'); if (tr && ev.key === 'Enter' && !ev.target.classList.contains('ckCli')) abrir(DADOS.unidades[+tr.dataset.i], null); });
+  desenhar();
+}
+
+/* ---------- download em lote ---------- */
+function marcados() { return Object.keys(SEL).map(Number).sort(function (a, b) { return rotuloUnid(DADOS.unidades[a]).localeCompare(rotuloUnid(DADOS.unidades[b]), 'pt-BR'); }).map(function (i) { return DADOS.unidades[i]; }); }
+function barraLote() {
+  var b = $('barraLote'); if (!b) return;
+  var us = marcados();
+  if (!us.length) { b.classList.add('hidden'); b.innerHTML = ''; return; }
+  var meses = []; us.forEach(function (u) { u.meses.forEach(function (m) { if (meses.indexOf(m) < 0) meses.push(m); }); });
+  meses.sort().reverse();
+  var anterior = $('fMesLote') ? $('fMesLote').value : null;
+  var podePasta = typeof window.showDirectoryPicker === 'function';
+  b.classList.remove('hidden');
+  b.innerHTML = '<div class="lote-l"><b>' + us.length + ' cliente(s) marcado(s)</b><button class="lnk" type="button" id="bLimpar">limpar</button></div>' +
+    '<label for="fMesLote" class="sub">Mês&nbsp;<select id="fMesLote">' + meses.map(function (m) { return '<option value="' + m + '"' + (m === anterior ? ' selected' : '') + '>' + nomeMes(m) + '</option>'; }).join('') + '</select></label>' +
+    (podePasta ? '<button class="btn" type="button" id="bLotePasta">Baixar para uma pasta…</button>' : '') +
+    '<button class="btn' + (podePasta ? ' sec' : '') + '" type="button" id="bLoteUm">Baixar um por um</button>' +
+    '<button class="btn sec" type="button" id="bLoteZip">Baixar tudo em um ZIP</button>';
+  $('bLimpar').onclick = function () { SEL = {}; telaLista(); };
+  if (podePasta) $('bLotePasta').onclick = function () { baixarLote('pasta'); };
+  $('bLoteUm').onclick = function () { baixarLote('um'); };
+  $('bLoteZip').onclick = function () { baixarLote('zip'); };
+}
+
+function baixarPartes(f, aoAvancar) {
+  var partes = [], i = 0;
+  var proxima = function () {
+    aoAvancar(i / f.partes);
+    if (i >= f.partes) return Promise.resolve(partes);
+    return chamar('portalParte', TOKEN, f.id, i).then(function (b64) {
+      var bin = atob(b64), arr = new Uint8Array(bin.length);
+      for (var k = 0; k < bin.length; k++) arr[k] = bin.charCodeAt(k);
+      partes.push(arr); i++; return proxima();
+    });
+  };
+  return proxima();
+}
+function nomeArquivoLote(u, mes) { return (rotuloUnid(u).replace(/ · /g, ' - ') + ' - XML ' + mes.slice(5, 7) + '.' + mes.slice(0, 4) + '.zip').replace(/[\\/:*?"<>|]/g, '-'); }
+
+function baixarLote(modo) {
+  var us = marcados(), mes = $('fMesLote').value, pasta = null, zipSaida = null, semPasta = false;
+  var botoes = ['bLotePasta', 'bLoteUm', 'bLoteZip'].map($).filter(Boolean);
+  var travar = function (v) { botoes.forEach(function (b) { b.disabled = v; }); };
+  var prog = $('progLote');
+  prog.innerHTML = '<div class="card"><h2>Baixando ' + nomeMes(mes) + '</h2><div class="tbl"><table><thead><tr><th>Cliente</th><th>Arquivo</th><th class="n">Tamanho</th><th>Situação</th></tr></thead><tbody>' +
+    us.map(function (u, k) { return '<tr><td>' + esc(rotuloUnid(u)) + '</td><td class="m" id="lnome' + k + '">—</td><td class="n" id="ltam' + k + '"></td><td id="lst' + k + '"><span class="pill info">na fila</span></td></tr>'; }).join('') +
+    '</tbody></table></div><p class="nota" id="lresumo"></p></div>';
+  prog.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  var st = function (k, html) { $('lst' + k).innerHTML = html; };
+  var ok = 0, falhas = 0, totalBytes = 0;
+  var inicio = Promise.resolve();
+  if (modo === 'pasta') {
+    inicio = window.showDirectoryPicker({ mode: 'readwrite' }).then(function (h) { pasta = h; }).catch(function (e) {
+      if (e && e.name === 'AbortError') throw e;
+      $('lresumo').textContent = 'O navegador não permitiu escolher a pasta aqui; os arquivos vão para a pasta de Downloads.';
+      modo = 'um'; semPasta = true;
+    });
+  }
+  if (modo === 'zip') zipSaida = novoZip();
+  travar(true);
+  var k = 0;
+  var proximo = function () {
+    if (k >= us.length) return Promise.resolve();
+    var idx = k++, u = us[idx];
+    if (u.meses.indexOf(mes) < 0) { st(idx, '<span class="pill warn">sem XML neste mês</span>'); falhas++; return proximo(); }
+    st(idx, '<span class="pill info">localizando…</span>');
+    return chamar('portalArquivo', TOKEN, u.contabilidade, u.cliente, u.subpasta, mes).then(function (f) {
+      var nome = nomeArquivoLote(u, mes);
+      $('lnome' + idx).textContent = nome; $('ltam' + idx).textContent = Math.round(f.tamanho / 1024).toLocaleString('pt-BR') + ' KB';
+      return baixarPartes(f, function (p) { st(idx, '<span class="pill info">baixando ' + Math.round(100 * p) + '%</span>'); }).then(function (partes) {
+        var blob = new Blob(partes, { type: 'application/zip' });
+        totalBytes += blob.size;
+        if (modo === 'zip') { return blob.arrayBuffer().then(function (ab) { zipSaida.add(nome, new Uint8Array(ab)); }); }
+        if (modo === 'pasta') { return pasta.getFileHandle(nome, { create: true }).then(function (fh) { return fh.createWritable(); }).then(function (w) { return w.write(blob).then(function () { return w.close(); }); }); }
+        baixarBlob(blob, nome); return new Promise(function (r) { setTimeout(r, 700); });
+      }).then(function () { ok++; st(idx, '<span class="pill">concluído</span>'); });
+    }).catch(function (e) { falhas++; st(idx, '<span class="pill bad">' + esc(e.message) + '</span>'); }).then(proximo);
+  };
+  inicio.then(proximo).then(function () {
+    if (modo === 'zip' && ok) baixarBlob(zipSaida.gerar(), ('XML ' + mes.slice(5, 7) + '.' + mes.slice(0, 4) + ' - ' + ok + ' clientes.zip'));
+    $('lresumo').textContent = ok + ' de ' + us.length + ' cliente(s) baixado(s)' + (falhas ? ' · ' + falhas + ' sem arquivo ou com erro' : '') +
+      ' · ' + Math.round(totalBytes / 1048576).toLocaleString('pt-BR') + ' MB' + (modo === 'pasta' ? ' · salvos na pasta escolhida.' : (modo === 'zip' ? ' · um único ZIP com o arquivo de cada cliente dentro.' : ' · salvos na pasta de downloads do navegador' + (semPasta ? ' (este navegador não deixou escolher outra pasta).' : '.')));
+    travar(false);
+  }).catch(function (e) { travar(false); if (!(e && e.name === 'AbortError')) $('lresumo').textContent = e.message; else prog.innerHTML = ''; });
+}
+
+/* ZIP simples (sem compressão: os arquivos já são ZIP) montado no navegador */
+var CRC_T = (function () { var t = new Uint32Array(256); for (var n = 0; n < 256; n++) { var c = n; for (var k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+function crc32(b) { var c = 0xFFFFFFFF; for (var i = 0; i < b.length; i++) c = CRC_T[(c ^ b[i]) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+function novoZip() {
+  var itens = [];
+  return {
+    add: function (nome, dados) { itens.push({ nome: new TextEncoder().encode(nome), dados: dados, crc: crc32(dados) }); },
+    gerar: function () {
+      var partes = [], central = [], pos = 0;
+      var dt = new Date(), dosT = (dt.getHours() << 11) | (dt.getMinutes() << 5) | (dt.getSeconds() >> 1), dosD = ((dt.getFullYear() - 1980) << 9) | ((dt.getMonth() + 1) << 5) | dt.getDate();
+      itens.forEach(function (it) {
+        var h = new DataView(new ArrayBuffer(30));
+        h.setUint32(0, 0x04034b50, true); h.setUint16(4, 20, true); h.setUint16(6, 0x0800, true); h.setUint16(8, 0, true);
+        h.setUint16(10, dosT, true); h.setUint16(12, dosD, true); h.setUint32(14, it.crc, true); h.setUint32(18, it.dados.length, true); h.setUint32(22, it.dados.length, true);
+        h.setUint16(26, it.nome.length, true); h.setUint16(28, 0, true);
+        partes.push(h.buffer, it.nome, it.dados);
+        var c = new DataView(new ArrayBuffer(46));
+        c.setUint32(0, 0x02014b50, true); c.setUint16(4, 20, true); c.setUint16(6, 20, true); c.setUint16(8, 0x0800, true); c.setUint16(10, 0, true);
+        c.setUint16(12, dosT, true); c.setUint16(14, dosD, true); c.setUint32(16, it.crc, true); c.setUint32(20, it.dados.length, true); c.setUint32(24, it.dados.length, true);
+        c.setUint16(28, it.nome.length, true); c.setUint32(42, pos, true);
+        central.push(c.buffer, it.nome);
+        pos += 30 + it.nome.length + it.dados.length;
+      });
+      var tamCentral = central.reduce(function (a, x) { return a + (x.byteLength || x.length); }, 0);
+      var e = new DataView(new ArrayBuffer(22));
+      e.setUint32(0, 0x06054b50, true); e.setUint16(8, itens.length, true); e.setUint16(10, itens.length, true); e.setUint32(12, tamCentral, true); e.setUint32(16, pos, true);
+      return new Blob(partes.concat(central, [e.buffer]), { type: 'application/zip' });
+    }
+  };
+}
+function norm(s) { return String(s).normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim().toUpperCase(); }
+function pillSituacao(s) {
+  if (!s) return '<span class="pill info">sem registro</span>';
+  if (/ERRO/.test(s)) return '<span class="pill bad">erro</span>';
+  if (/SEM MOVIMENTO/.test(s)) return '<span class="pill warn">sem movimento</span>';
+  return '<span class="pill">em dia</span>';
+}
+
+/* ---------------- painel geral (todas as empresas) ---------------- */
+var IND = {};   // indicadores carregados por mês: { 'AAAA-MM': {itens, faltam, total} }
+var NOME_REG = { SN: 'Simples Nacional', MEI: 'MEI', PRESUMIDO: 'Lucro Presumido', REAL: 'Lucro Real', NORMAL: 'Regime normal (Presumido ou Real)', '': 'Não identificado' };
+var ORDEM_REG = ['SN', 'MEI', 'PRESUMIDO', 'REAL', 'NORMAL', ''];
+var PST = { mes: null, contab: '', regime: null };
+
+function chaveUnid(contab, rotulo) { return norm(contab) + '|' + norm(rotulo); }
+function rotuloPainel(u) { return u.cliente + (u.subpasta ? ' / ' + u.subpasta : ''); }
+function unidPorChave(ck) { for (var i = 0; i < DADOS.unidades.length; i++) { var u = DADOS.unidades[i]; if (chaveUnid(u.contabilidade, rotuloPainel(u)) === ck) return u; } return null; }
+function pillReg(cod, fonte) { return '<span class="pill r-' + (cod || 'X') + '"' + (fonte ? ' title="Identificado por: ' + esc(fonte) + '"' : '') + '>' + esc(NOME_REG[cod || '']) + '</span>'; }
+function mesesTodos() { var l = []; DADOS.unidades.forEach(function (u) { u.meses.forEach(function (m) { if (l.indexOf(m) < 0) l.push(m); }); }); return l.sort().reverse(); }
+function mesPadrao() {
+  var l = mesesTodos(); if (!l.length) return null;
+  var h = new Date(), ant = new Date(h.getFullYear(), h.getMonth() - 1, 1);
+  var mAnt = ant.getFullYear() + '-' + ('0' + (ant.getMonth() + 1)).slice(-2);
+  return (h.getDate() <= 15 && l.indexOf(mAnt) >= 0) ? mAnt : l[0];   // até o dia 15 o contador ainda está fechando o mês anterior
+}
+
+// situação de envio de cada cliente: a comunicação mais recente (qualquer mês) na planilha do painel
+function sincronizacao() {
+  var por = {};
+  for (var k in DADOS.painel) {
+    var p = DADOS.painel[k]; if (!p.contabilidade) continue;
+    var ck = chaveUnid(p.contabilidade, p.cliente);
+    if (!por[ck] || (p.ultimoContato || '') > (por[ck].ultimoContato || '')) por[ck] = p;
+  }
+  var usados = {};
+  DADOS.unidades.forEach(function (u) {
+    var ck = chaveUnid(u.contabilidade, rotuloPainel(u)); if (por[ck]) return;
+    var geral = u.subpasta && por[chaveUnid(u.contabilidade, u.cliente)];   // agentes antigos não informavam matriz/filial
+    if (geral) { usados[chaveUnid(u.contabilidade, u.cliente)] = 1; var c = {}; for (var k2 in geral) c[k2] = geral[k2]; c.cliente = rotuloPainel(u); por[ck] = c; }
+    else por[ck] = { contabilidade: u.contabilidade, cliente: rotuloPainel(u), ultimoContato: '', situacao: '' };
+  });
+  for (var kk in usados) delete por[kk];
+  var agora = Date.now();
+  return Object.keys(por).map(function (ck) {
+    var p = por[ck], dias = p.ultimoContato ? Math.max(0, Math.floor((agora - Date.parse(p.ultimoContato)) / 86400000)) : null;
+    var grupo = /^MANUAL/.test(p.situacao) ? 'manual' : (dias == null ? 'nunca' : (/ERRO/.test(p.situacao) ? 'erro' : (dias <= 1 ? 'ok' : (dias <= 6 ? 'atencao' : 'parado'))));
+    return { ck: ck, contabilidade: p.contabilidade, cliente: p.cliente, ultimo: p.ultimoContato, dias: dias, situacao: p.situacao || '', maquina: p.maquina || '', versao: p.versao || '', grupo: grupo };
+  });
+}
+var GRUPOS = [
+  { id: 'ok', nome: 'Em dia', d: 'enviaram nas últimas 24 h', cls: '' },
+  { id: 'atencao', nome: 'Atenção', d: '2 a 6 dias sem enviar', cls: 'warn' },
+  { id: 'parado', nome: 'Parados', d: '7 dias ou mais sem enviar', cls: 'bad' },
+  { id: 'erro', nome: 'Com erro', d: 'o último envio deu erro', cls: 'bad' },
+  { id: 'manual', nome: 'Envio manual', d: 'XML enviados à mão ao Drive', cls: 'info' },
+  { id: 'nunca', nome: 'Sem registro', d: 'nunca se comunicaram', cls: 'info' }
+];
+
+function carregarInd(mes, aoAvancar) {
+  if (IND[mes] && !IND[mes].faltam) return Promise.resolve(IND[mes]);
+  var vez = 0;
+  var passo = function () {
+    return chamar('portalIndicadores', TOKEN, mes).then(function (r) {
+      IND[mes] = r; vez++;
+      if (r.faltam && vez < 20) { aoAvancar(r); return passo(); }
+      return r;
+    });
+  };
+  return passo();
+}
+// vários meses numa chamada só (o servidor calcula o que falta e devolve o resto do cache)
+function carregarLote(meses) {
+  var vez = 0;
+  var passo = function () {
+    var pedir = meses.filter(function (m) { return !(IND[m] && !IND[m].faltam); });
+    if (!pedir.length || vez++ >= 20) return Promise.resolve();
+    return chamar('portalIndicadoresLote', TOKEN, pedir).then(function (r) { for (var m in r) IND[m] = r[m]; return passo(); }, function (e) {
+      // servidor ainda na versão anterior: carrega um mês por vez
+      if (/SESSAO/.test(String(e && e.message))) throw e;
+      return pedir.reduce(function (p, m) { return p.then(function () { return carregarInd(m, function () { }); }); }, Promise.resolve());
+    });
+  };
+  return passo();
+}
+
+
+function mesAnterior(m) { var a = +m.slice(0, 4), n = +m.slice(5, 7) - 1; if (!n) { a--; n = 12; } return a + '-' + ('0' + n).slice(-2); }
+function mesSeguinte(m) { var a = +m.slice(0, 4), n = +m.slice(5, 7) + 1; if (n > 12) { a++; n = 1; } return a + '-' + ('0' + n).slice(-2); }
+function mesHoje() { var h = new Date(); return h.getFullYear() + '-' + ('0' + (h.getMonth() + 1)).slice(-2); }
+function mi(v) { v = Number(v || 0); return Math.abs(v) >= 1e6 ? 'R$ ' + (v / 1e6).toLocaleString('pt-BR', { maximumFractionDigits: 2 }) + ' mi' : Math.abs(v) >= 1e3 ? 'R$ ' + (v / 1e3).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + ' mil' : 'R$ ' + brl(v); }
+function permitidosSet() { var p = {}; DADOS.unidades.forEach(function (u) { p[chaveUnid(u.contabilidade, rotuloPainel(u))] = u; }); return p; }
+var SYNC_POR = {};
+
+// indicadores de um mês já prontos para a tela (só clientes deste login e do filtro de contabilidade)
+function indDoMes(mes) {
+  var r = IND[mes || PST.mes]; if (!r) return [];
+  var perm = permitidosSet();
+  return r.itens.filter(function (x) { return !x.erro && perm[chaveUnid(x.contabilidade, x.cliente + (x.subpasta ? ' / ' + x.subpasta : ''))] && (!PST.contab || norm(x.contabilidade) === norm(PST.contab)); }).map(function (x) {
+    var rot = x.cliente + (x.subpasta ? ' / ' + x.subpasta : ''), ck = chaveUnid(x.contabilidade, rot);
+    var inf = DADOS.regimes && DADOS.regimes[ck];
+    var y = {}; for (var k in x) y[k] = x[k];
+    if (inf) { y.regime = inf; y.regimeFonte = 'informado na planilha (aba Regimes)'; }
+    y.ck = ck; y.unid = perm[ck];
+    y.rotulo = x.cliente + (x.subpasta ? ' · ' + x.subpasta : '');
+    y.regimeNome = NOME_REG[y.regime || ''];
+    y.pisCofins = (x.pis || 0) + (x.cofins || 0);
+    y.docs = (x.nfeQtd || 0) + (x.nfceQtd || 0);
+    y.vendasLiq = (x.vendas || 0) - (x.devVenda || 0);
+    var s = SYNC_POR[ck]; y.dias = s ? s.dias : null;
+    if (x.comPendencias) y.semXml = 0;   // as pendências já detalham os documentos sem XML
+    y.problemas = (x.pendQtd || 0) + ((x.falhas || 0) > 0 ? 1 : 0) + (y.semXml || 0);
+    return y;
+  });
+}
+function soma(l, k) { return l.reduce(function (a, x) { return a + (Number(x[k]) || 0); }, 0); }
+function kpi2(r, v, d, tag, cor) { return '<div class="kpi kpi2"><span class="r">' + esc(r) + '</span><span class="v"' + (cor ? ' style="color:var(--' + cor + ')"' : '') + '>' + esc(v) + '</span><span class="d">' + esc(d) + '</span>' + (tag ? '<span class="tag ' + tag[1] + '">' + esc(tag[0]) + '</span>' : '') + '</div>'; }
+var TIPO_PEND = {
+  contingencia: { nome: 'Contingência', cls: 'warn', prazo: 'transmitir hoje', ordem: 1, cor: 'bad' },
+  rejeitada: { nome: 'Rejeitada', cls: 'bad', prazo: 'corrigir e reenviar', ordem: 2, cor: 'bad' },
+  falha: { nome: 'Numeração pulada', cls: 'bad', prazo: '', ordem: 3, cor: 'bad' },
+  semxml: { nome: 'Sem XML', cls: 'info', prazo: 'verificar no sistema', ordem: 4, cor: 'warn' },
+  digitacao: { nome: 'Em digitação', cls: 'info', prazo: 'transmitir ou excluir', ordem: 5, cor: 'muted' }
+};
+function pendenciasDe(lista, mes) {
+  var out = [];
+  lista.forEach(function (x) {
+    (x.pendencias || []).forEach(function (p) { out.push({ x: x, mes: mes, tipo: p.tipo, doc: (p.modelo === '65' ? 'NFC-e ' : 'NF-e ') + p.numero + (p.data ? ' · ' + dataBR(p.data) : ''), motivo: p.motivo || '' }); });
+    (x.falhasLista || []).forEach(function (f) { out.push({ x: x, mes: mes, tipo: 'falha', doc: (f.modelo === '65' ? 'NFC-e ' : 'NF-e ') + (f.de === f.ate ? f.de : f.de + ' a ' + f.ate), motivo: 'números sem XML e sem inutilização' }); });
+  });
+  return out;
+}
+function prazoPend(p) {
+  if (p.tipo === 'falha') { var s = mesSeguinte(p.mes); return 'inutilizar até 10/' + s.slice(5, 7); }
+  if (p.tipo === 'digitacao') { var f = new Date(+p.mes.slice(0, 4), +p.mes.slice(5, 7), 0); if (f < new Date(new Date().setHours(0, 0, 0, 0))) return 'em atraso: ' + TIPO_PEND.digitacao.prazo; return TIPO_PEND.digitacao.prazo + ' até ' + ('0' + f.getDate()).slice(-2) + '/' + p.mes.slice(5, 7); }
+  return TIPO_PEND[p.tipo].prazo;
+}
+
+/* ================= CENTRAL DE OPERAÇÃO (administrador) ================= */
+function telaCentral() {
+  marcarNav('central'); ATUAL = null; RESUMO = null;
+  SYNC_POR = {}; var sync = sincronizacao(); sync.forEach(function (s) { SYNC_POR[s.ck] = s; });
+  var hoje = mesHoje(), meses = [hoje]; if (new Date().getDate() <= 10) meses.push(mesAnterior(hoje));
+  $('tela').innerHTML = '<div class="cab"><div><h1>Central de operação</h1><p class="sub">Situação de todos os clientes · atualizado às ' + new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) + '</p></div><button class="btn sec" type="button" id="cAtual">Atualizar</button></div>' +
+    '<div class="kpis kpis4" id="cKpis"></div>' +
+    '<section class="card"><div class="ch"><h2>Semáforo dos clientes</h2><div class="leg"><span><i class="dot d-ok"></i>tudo certo</span><span><i class="dot d-wn"></i>atenção</span><span><i class="dot d-bad"></i>ação necessária</span></div></div><div class="sema" id="cSema"></div><p class="nota" id="cSemaNota"></p></section>' +
+    '<div class="g2"><section class="card"><div class="ch"><h2>Pendências fiscais — por prazo</h2><span>' + meses.map(nomeMes).join(' e ') + '</span></div><div id="cPend">' + carregando('Lendo as pendências dos clientes…').replace('card ', '') + '</div></section>' +
+    '<div class="col"><section class="card"><div class="ch"><h2>Versão dos servidores</h2><span>atualização automática</span></div><div id="cVers"></div></section>' +
+    '<section class="card"><div class="ch"><h2>Uso do portal pelos contadores</h2><span>últimos 30 dias</span></div><div id="cUso">' + carregando('Carregando…').replace('card ', '') + '</div></section></div></div>';
+  $('cAtual').addEventListener('click', function () { IND = {}; CFG = null; iniciar(); });
+  var desenhar = function () { desenharCentral(sync, meses); };
+  desenhar();
+  carregarLote(meses)
+    .then(function () { if ($('cSema')) desenhar(); })
+    .catch(function (e) { if ($('cPend')) $('cPend').innerHTML = '<p class="erro">' + esc(e.message) + '</p>'; });
+  (CFG ? Promise.resolve(CFG) : chamar('portalAdmin', TOKEN).then(function (r) { CFG = r; return r; }))
+    .then(function () { if ($('cUso')) desenharUso(); })
+    .catch(function (e) { if ($('cUso')) $('cUso').innerHTML = '<p class="erro">' + esc(e.message) + '</p>'; });
+}
+
+function desenharCentral(sync, meses) {
+  var carregou = meses.every(function (m) { return IND[m] && !IND[m].faltam; });
+  var pend = []; meses.forEach(function (m) { pend = pend.concat(pendenciasDe(indDoMes(m), m)); });
+  var porCk = {}; pend.forEach(function (p) { (porCk[p.x.ck] = porCk[p.x.ck] || []).push(p); });
+  var versoes = sync.filter(function (s) { return s.versao && s.grupo !== 'manual'; }).map(function (s) { return s.versao; });
+  var maior = versoes.reduce(function (a, v) { return cmpVer(v, a) > 0 ? v : a; }, '0');
+  var desat = sync.filter(function (s) { return s.versao && s.grupo !== 'manual' && cmpVer(s.versao, maior.split('.').slice(0, 2).join('.')) < 0; });
+  // situação de cada cliente
+  var cards = sync.map(function (s) {
+    var ps = (porCk[s.ck] || []).sort(function (a, b) { return TIPO_PEND[a.tipo].ordem - TIPO_PEND[b.tipo].ordem; });
+    var nivel = 0, msg = '';
+    if (s.grupo === 'parado' || s.grupo === 'erro') { nivel = 2; msg = s.grupo === 'erro' ? 'último envio deu erro' : 'parado há ' + s.dias + ' dias'; }
+    var grave = ps.filter(function (p) { return ['contingencia', 'rejeitada', 'falha'].indexOf(p.tipo) >= 0; });
+    if (!nivel && grave.length) { nivel = 2; var g = grave[0]; msg = grave.length > 1 ? grave.length + ' pendências fiscais' : TIPO_PEND[g.tipo].nome.toLowerCase() + ' · ' + g.doc.split(' · ')[0]; }
+    if (!nivel && ps.length) { nivel = 1; msg = ps.length + ' doc. ' + (ps[0].tipo === 'digitacao' ? 'em digitação' : 'sem XML'); }
+    if (!nivel && s.grupo === 'atencao') { nivel = 1; msg = s.dias + ' dias sem enviar'; }
+    if (!nivel && desat.indexOf(s) >= 0) { nivel = 1; msg = 'servidor v' + s.versao; }
+    if (!nivel && s.grupo === 'nunca') { nivel = 1; msg = 'nunca se comunicou'; }
+    if (!nivel) msg = s.grupo === 'manual' ? 'manual · processado ' + (s.ultimo ? new Date(s.ultimo).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : '') : 'enviado ' + (s.dias === 0 ? 'hoje ' : 'em ' + new Date(s.ultimo).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) + ' ') + new Date(s.ultimo).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    return { s: s, nivel: nivel, msg: msg, u: unidPorChave(s.ck) };
+  }).sort(function (a, b) { return b.nivel - a.nivel || a.s.cliente.localeCompare(b.s.cliente, 'pt-BR'); });
+  var integ = sync.filter(function (s) { return s.grupo !== 'manual' && s.grupo !== 'nunca'; }).length;
+  var emDia = sync.filter(function (s) { return s.grupo === 'ok'; }).length;
+  var cliPend = Object.keys(porCk).length;
+  var urgentes = pend.filter(function (p) { return p.tipo === 'contingencia' || p.tipo === 'rejeitada'; }).length;
+  $('cKpis').innerHTML =
+    kpi2('Clientes ativos', int(sync.length), integ + ' integrados ao sistema · ' + sync.filter(function (s) { return s.grupo === 'manual'; }).length + ' manuais') +
+    kpi2('Em dia', int(emDia), 'enviaram nas últimas 24 h', integ ? [Math.round(100 * emDia / integ) + '%', 'up'] : null, 'ok') +
+    kpi2('Pendências fiscais', carregou ? int(pend.length) : '…', carregou ? (pend.length ? 'em ' + cliPend + ' cliente(s) · ' + urgentes + ' urgente(s)' : 'nenhuma pendência no período') : 'carregando…', pend.length ? ['ação', 'dn'] : null, pend.length ? 'bad' : 'ok') +
+    kpi2('Servidores desatualizados', int(desat.length), desat.length ? 'versão anterior à ' + maior.split('.').slice(0, 2).join('.') : 'todos na versão atual', desat.length ? ['atualizar', 'wn'] : null, desat.length ? 'warn' : 'ok');
+  $('cSema').innerHTML = cards.map(function (c, i) {
+    return '<button type="button" class="scli n' + c.nivel + '" data-i="' + i + '" title="' + esc(c.s.contabilidade + ' · ' + c.s.cliente) + '"><b>' + esc(c.s.cliente.replace(' / ', ' · ')) + '</b><span>' + esc(c.msg) + '</span></button>';
+  }).join('');
+  $('cSemaNota').textContent = cards.filter(function (c) { return c.nivel === 2; }).length + ' com ação necessária · ' + cards.filter(function (c) { return c.nivel === 1; }).length + ' em atenção · ' + cards.filter(function (c) { return !c.nivel; }).length + ' em dia · clique para abrir o cliente';
+  $('cSema').onclick = function (ev) { var b = ev.target.closest('.scli'); if (!b) return; var c = cards[+b.dataset.i]; if (c.u) { ATUAL = { aba: 'dias' }; abrir(c.u, null); } };
+  // pendências
+  if (carregou) {
+    pend.sort(function (a, b) { return TIPO_PEND[a.tipo].ordem - TIPO_PEND[b.tipo].ordem || a.x.rotulo.localeCompare(b.x.rotulo, 'pt-BR'); });
+    var semDados = indDoMes(meses[0]).filter(function (x) { return !x.comPendencias; }).length;
+    $('cPend').innerHTML = (pend.length ? '<div class="tbl sem"><table><thead><tr><th>Cliente</th><th>Problema</th><th>Documento</th><th>Prazo</th><th></th></tr></thead><tbody>' +
+      pend.slice(0, 60).map(function (p, i) {
+        var t = TIPO_PEND[p.tipo];
+        return '<tr><td class="b">' + esc(p.x.rotulo) + '</td><td><span class="pill ' + t.cls + '">' + t.nome + '</span></td><td class="w">' + esc(p.doc) + (p.motivo ? '<br><span class="sub">' + esc(p.motivo.slice(0, 90)) + '</span>' : '') + '</td><td class="prazo" style="color:var(--' + t.cor + ')">' + esc(prazoPend(p)) + '</td><td><button class="lnk" type="button" data-p="' + i + '">ver</button></td></tr>';
+      }).join('') + '</tbody></table></div>' + (pend.length > 60 ? '<p class="nota">Mostrando 60 de ' + pend.length + '.</p>' : '')
+      : '<p class="nota ok">Nenhuma pendência fiscal nos clientes. 👍</p>') +
+      (semDados ? '<p class="nota">' + semDados + ' cliente(s) ainda sem a conferência de pendências: ela chega com a atualização automática do programa dos servidores (versão 1.5).</p>' : '');
+    $('cPend').onclick = function (ev) { var b = ev.target.closest('[data-p]'); if (!b) return; var p = pend[+b.dataset.p]; if (p.x.unid) { ATUAL = { aba: 'dias' }; abrir(p.x.unid, p.mes); } };
+  }
+  // versões
+  var cont = {}; versoes.forEach(function (v) { cont[v] = (cont[v] || 0) + 1; });
+  var vs = Object.keys(cont).sort(function (a, b) { return cmpVer(b, a); });
+  $('cVers').innerHTML = vs.length ? '<div class="vers">' + vs.map(function (v) {
+    var cor = cmpVer(v, maior.split('.').slice(0, 2).join('.')) >= 0 ? 'ok' : (cmpVer(v, '1.4') >= 0 ? 'warn' : 'bad');
+    return '<div class="l"><b>' + esc(v) + '</b><div class="barra2"><i style="width:' + (100 * cont[v] / versoes.length) + '%;background:var(--' + cor + ')"></i></div><span class="sub">' + cont[v] + '</span></div>';
+  }).join('') + '</div>' + (desat.length ? '<p class="nota">Desatualizados: ' + desat.map(function (s) { return esc(s.cliente); }).join(', ') + '. Eles se atualizam sozinhos na próxima execução; se não, rode o ENVIAR_AGORA no servidor.</p>' : '') : '<p class="nota">Nenhum servidor integrado ainda.</p>';
+}
+function cmpVer(a, b) { var x = String(a).split('.').map(Number), y = String(b).split('.').map(Number); for (var i = 0; i < Math.max(x.length, y.length); i++) { var d = (x[i] || 0) - (y[i] || 0); if (d) return d; } return 0; }
+function desenharUso() {
+  var us = (CFG.usuarios || []).filter(function (u) { return u.contabs.indexOf('*') < 0; })
+    .sort(function (a, b) { return (b.acessos30 || 0) - (a.acessos30 || 0); });
+  $('cUso').innerHTML = us.length ? '<ul class="uso">' + us.map(function (u) {
+    return '<li><span><b>' + esc(u.nome || u.login) + '</b><br><span class="sub">' + esc(u.contabs.join(', ')) + '</span></span>' +
+      (u.ultimo ? '<span class="sub" style="text-align:right">' + int(u.acessos30) + ' acessos · ' + int(u.downloads30) + ' downloads<br>último: ' + new Date(u.ultimo).toLocaleDateString('pt-BR') + '</span>' : '<span class="pill warn">nunca acessou</span>') + '</li>';
+  }).join('') + '</ul><p class="nota">Os acessos começam a ser contados a partir desta versão do receptor (1.6).</p>' : '<p class="nota">Nenhum login de contador cadastrado.</p>';
+}
+
+/* ================= SERVIDORES (só administrador): backup do banco e vigia do MySQL ================= */
+var SRV = null;
+function haTempo(iso) {
+  if (!iso) return '';
+  var m = (Date.now() - new Date(iso).getTime()) / 60000;
+  if (m < 60) return 'há ' + Math.max(1, Math.round(m)) + ' min';
+  if (m < 48 * 60) return 'há ' + Math.round(m / 60) + ' h';
+  return 'há ' + Math.round(m / 1440) + ' dias';
+}
+function dataHora(iso) { return iso ? new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : ''; }
+function nivelBackup(s) {
+  if (!s.backup) return { n: -1, t: 'desligado' };
+  if (!s.ultimoBackup) return { n: s.situacao === 'ERRO' ? 2 : 1, t: s.situacao === 'ERRO' ? 'falhou' : 'aguardando o 1º' };
+  var h = (Date.now() - new Date(s.ultimoBackup).getTime()) / 36e5;
+  if (s.situacao === 'ERRO') return { n: h > 48 ? 2 : 1, t: 'último falhou' };
+  return h <= 30 ? { n: 0, t: 'em dia' } : (h <= 72 ? { n: 1, t: 'atrasado' } : { n: 2, t: 'parado' });
+}
+function nivelVigia(s) {
+  if (!s.sinal) return { n: 1, t: 'sem sinal ainda' };
+  var h = (Date.now() - new Date(s.sinal).getTime()) / 36e5;
+  return h <= 8 ? { n: 0, t: 'ativo' } : (h <= 26 ? { n: 1, t: 'sem sinal ' + haTempo(s.sinal) } : { n: 2, t: 'sem sinal ' + haTempo(s.sinal) });
+}
+var PILL_N = ['', 'warn', 'bad'];
+function telaServidores() {
+  marcarNav('servidores'); ATUAL = null; RESUMO = null;
+  $('tela').innerHTML = '<div class="cab"><div><h1>Servidores dos clientes</h1><p class="sub">Backup do banco do LC e vigia do MySQL · só a CPUSIS vê esta tela</p></div><button class="btn sec" type="button" id="sAtual">Atualizar</button></div><div id="sCorpo">' + carregando('Lendo os servidores…') + '</div>';
+  $('sAtual').addEventListener('click', function () { SRV = null; telaServidores(); });
+  (SRV ? Promise.resolve(SRV) : chamar('portalServidores', TOKEN)).then(function (r) { SRV = r; desenharServidores(); })
+    .catch(function (e) { if ($('sCorpo')) $('sCorpo').innerHTML = '<div class="card erro">' + esc(e.message) + '</div>'; });
+}
+function desenharServidores() {
+  var c = $('sCorpo'); if (!c) return;
+  var L = SRV.servidores.slice().sort(function (a, b) { return (a.contabilidade + a.cliente).localeCompare(b.contabilidade + b.cliente); });
+  var comBk = L.filter(function (s) { return s.backup; }), emDia = comBk.filter(function (s) { return nivelBackup(s).n === 0; });
+  var trav7 = SRV.eventos.filter(function (e) { return Date.now() - new Date(e.quando).getTime() < 7 * 864e5 && e.tipo !== 'Reinício programado'; });
+  var vigOk = L.filter(function (s) { return nivelVigia(s).n === 0; });
+  var esp = L.reduce(function (a, s) { return a + (s.espacoMB || 0); }, 0);
+  var kpi = function (r, v, d, cor, tag, tcls) { return '<div class="kpi kpi2"><span class="r">' + r + '</span><span class="v"' + (cor ? ' style="color:var(--' + cor + ')"' : '') + '>' + v + '</span><span class="d">' + d + '</span>' + (tag ? '<span class="tag ' + tcls + '">' + tag + '</span>' : '') + '</div>'; };
+  var html = (SRV.senhaOk ? '' : '<div class="card aviso bad"><b>Backup desligado:</b> falta definir a SENHA_BACKUP no Codigo.gs (bloco CONFIG). Sem ela nenhum servidor faz backup.</div>') +
+    '<div class="kpis kpis4">' +
+    kpi('Backups em dia', emDia.length + ' de ' + comBk.length, 'último backup nas últimas 30 h', emDia.length === comBk.length ? 'ok' : 'bad', comBk.length && emDia.length < comBk.length ? (comBk.length - emDia.length) + ' atrasado(s)' : '', 'dn') +
+    kpi('Vigia do MySQL ativo', vigOk.length + ' de ' + L.length, 'sinal de vida nas últimas 8 h', vigOk.length === L.length ? 'ok' : 'warn', '', '') +
+    kpi('Travamentos (7 dias)', trav7.length, trav7.length ? 'o vigia reiniciou o MySQL sozinho' : 'nenhum travamento', trav7.length ? 'warn' : 'ok', '', '') +
+    kpi('Espaço dos backups', esp >= 1024 ? (esp / 1024).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + ' GB' : Math.round(esp) + ' MB', 'somando todas as cópias guardadas', '', '', '') + '</div>';
+  html += '<section class="card"><div class="ch"><h2>Servidores</h2><span>' + (SRV.pasta ? '<a href="' + esc(SRV.pasta) + '" target="_blank" rel="noopener">abrir a pasta dos backups no Drive</a>' : '') + '</span></div>' +
+    (L.length ? '<div class="tbl sem srvt"><table><thead><tr><th>Cliente</th><th>Vigia do MySQL</th><th>Último backup</th><th class="n">Banco</th><th>Travamentos 30 dias</th><th>Opções</th><th></th></tr></thead><tbody>' +
+    L.map(function (s, i) {
+      var b = nivelBackup(s), v = nivelVigia(s);
+      return '<tr><td class="b">' + esc(s.cliente) + '<span class="sub">' + esc(s.contabilidade) + (s.maquina ? ' · ' + esc(s.maquina) : '') + (s.versao ? ' · v' + esc(s.versao) : '') + '</span></td>' +
+        '<td><span class="pill ' + PILL_N[v.n] + '">' + esc(v.t) + '</span>' + (s.sinal ? '<span class="sub">' + esc(dataHora(s.sinal)) + '</span>' : '') + '</td>' +
+        '<td>' + (b.n < 0 ? '<span class="pill info">desligado</span>' : '<span class="pill ' + PILL_N[b.n] + '">' + esc(b.t) + '</span>') +
+          (s.ultimoBackup ? '<span class="sub">' + esc(dataHora(s.ultimoBackup)) + ' · ' + esc(String(s.tamanhoMB).replace('.', ',')) + ' MB</span>' : '') +
+          (s.situacao === 'ERRO' && s.mensagem ? '<span class="sub" style="color:var(--bad)">' + esc(s.mensagem) + '</span>' : '') + '</td>' +
+        '<td class="n">' + (s.bancoMB ? esc(String(Math.round(s.bancoMB))) + ' MB' : '') + '</td>' +
+        '<td>' + (s.travamentos30 ? '<span class="pill ' + (s.travamentos30 >= 5 ? 'bad' : 'warn') + '">' + s.travamentos30 + '×</span><span class="sub">último ' + esc(haTempo(s.ultimoTravamento)) + '</span>' : '<span class="sub">nenhum</span>') + '</td>' +
+        '<td><label class="chave"><input type="checkbox" data-s="' + i + '" data-k="backup"' + (s.backup ? ' checked' : '') + '>Backup diário</label><br>' +
+          '<label class="chave"><input type="checkbox" data-s="' + i + '" data-k="reiniciar"' + (s.reiniciar ? ' checked' : '') + '>Reiniciar MySQL de madrugada</label></td>' +
+        '<td>' + (s.arquivoId ? '<a class="btn sec" href="https://drive.google.com/file/d/' + encodeURIComponent(s.arquivoId) + '/view" target="_blank" rel="noopener">Baixar</a>' : '') + '</td></tr>';
+    }).join('') + '</tbody></table></div>' : '<p class="nota">Nenhum servidor ainda. Eles aparecem aqui sozinhos depois da primeira rodada da noite com a versão 1.6 do programa.</p>') +
+    '<p class="nota">O vigia testa o MySQL a cada 5 minutos e reinicia sozinho se ele travar (no máximo 3 vezes por hora). O reinício de madrugada só acontece entre 00:00 e 05:59, nunca em horário de movimento. Os backups são criptografados: para abrir é preciso a senha de backup.</p></section>';
+  html += '<section class="card"><div class="ch"><h2>Eventos do MySQL</h2><span>travamentos e reinícios mais recentes</span></div>' +
+    (SRV.eventos.length ? '<ul class="evl">' + SRV.eventos.slice(0, 40).map(function (e) {
+      var cls = /falhou|sem parar|recusado/i.test(e.tipo) ? 'bad' : (/programado/i.test(e.tipo) ? 'info' : 'warn');
+      return '<li><span class="q">' + esc(dataHora(e.quando)) + '</span><div><b>' + esc(e.cliente) + '</b> <span class="pill ' + cls + '">' + esc(e.tipo) + '</span>' +
+        (e.segundos ? ' <span class="sub" style="display:inline">voltou em ' + esc(String(e.segundos)) + ' s' + (e.forcado ? ' (forçado)' : '') + '</span>' : '') +
+        '<div class="x">' + esc(e.detalhe) + '</div></div></li>';
+    }).join('') + '</ul>' : '<p class="nota">Nenhum travamento registrado.</p>') + '</section>';
+  c.innerHTML = html;
+  c.querySelectorAll('input[data-s]').forEach(function (ck) {
+    ck.addEventListener('change', function () {
+      var s = L[+ck.dataset.s], novo = { contabilidade: s.contabilidade, cliente: s.cliente, backup: s.backup, reiniciar: s.reiniciar };
+      novo[ck.dataset.k] = ck.checked;
+      if (ck.dataset.k === 'reiniciar' && ck.checked && !confirm('Reiniciar o MySQL de ' + s.cliente + ' todas as madrugadas? (o sistema fica alguns segundos sem banco nesse momento)')) { ck.checked = false; return; }
+      ck.disabled = true;
+      chamar('portalSalvarServidor', TOKEN, novo).then(function (r) { SRV = r; desenharServidores(); })
+        .catch(function (e) { ck.checked = !ck.checked; ck.disabled = false; alert(e.message); });
+    });
+  });
+}
+
+/* ================= PAINEL DO CONTADOR (inteligência fiscal) ================= */
+var LIMITE_SN = 4800000, SUBLIMITE = 3600000, LIMITE_MEI = 81000;
+function telaPainel() {
+  marcarNav('painel'); ATUAL = null; RESUMO = null;
+  if (!DADOS.unidades.length) { $('tela').innerHTML = '<div class="card vazio">Nenhum cliente com dados ainda.</div>'; return; }
+  if (!PST.mes) PST.mes = mesPadrao();
+  SYNC_POR = {}; sincronizacao().forEach(function (s) { SYNC_POR[s.ck] = s; });
+  var contabs = []; DADOS.unidades.forEach(function (u) { if (contabs.indexOf(u.contabilidade) < 0) contabs.push(u.contabilidade); });
+  var meses = mesesTodos(), h = new Date().getHours();
+  var saud = h < 12 ? 'Bom dia' : (h < 18 ? 'Boa tarde' : 'Boa noite');
+  $('tela').innerHTML = '<div class="cab"><div><h1>' + saud + ', ' + esc(DADOS.nome) + '</h1><p class="sub" id="pSub"></p></div><div class="filtros">' +
+    '<label for="pMes">Mês<select id="pMes">' + meses.map(function (m) { return '<option value="' + m + '"' + (m === PST.mes ? ' selected' : '') + '>' + nomeMes(m) + '</option>'; }).join('') + '</select></label>' +
+    (contabs.length > 1 ? '<label for="pContab">Contabilidade<select id="pContab"><option value="">Todas</option>' + contabs.map(function (c) { return '<option' + (c === PST.contab ? ' selected' : '') + '>' + esc(c) + '</option>'; }).join('') + '</select></label>' : '') + '</div></div>' +
+    '<div id="pCorpo">' + carregando('Calculando os indicadores de ' + nomeMes(PST.mes) + '…') + '</div>';
+  $('pMes').addEventListener('change', function () { PST.mes = this.value; carregarPainel(); });
+  if ($('pContab')) $('pContab').addEventListener('change', function () { PST.contab = this.value; desenharPainel(); });
+  carregarPainel();
+}
+function carregarPainel() {
+  var mes = PST.mes, todos = mesesTodos();
+  var doze = todos.filter(function (m) { return m <= mes; }).slice(0, 12);
+  var ordem = [mes].concat(doze.filter(function (m) { return m !== mes; }));
+  if ($('pCorpo') && !(IND[mes] && !IND[mes].faltam)) $('pCorpo').innerHTML = carregando('Calculando os indicadores de ' + nomeMes(mes) + '… (na primeira vez do mês demora um pouco)');
+  // 1º o mês escolhido (aparece logo), depois os outros 11 numa chamada só
+  carregarInd(mes, function (r) { if ($('pCorpo') && PST.mes === mes) $('pCorpo').innerHTML = carregando('Calculando os indicadores de ' + nomeMes(mes) + '… ' + r.itens.length + ' de ' + r.total + ' clientes'); })
+    .then(function () { if (PST.mes === mes && $('pCorpo')) desenharPainel(); return carregarLote(ordem.slice(1)); })
+    .then(function () { if (PST.mes === mes && $('pCorpo')) desenharPainel(); })
+    .catch(function (e) { if ($('pCorpo')) $('pCorpo').innerHTML = '<div class="card erro">' + esc(e.message) + '</div>'; });
+}
+
+function desenharPainel() {
+  var mes = PST.mes, lista = indDoMes(mes), ant = indDoMes(mesAnterior(mes));
+  var unids = DADOS.unidades.filter(function (u) { return !PST.contab || norm(u.contabilidade) === norm(PST.contab); });
+  $('pSub').textContent = 'Fechamento de ' + nomeMes(mes) + ' · ' + unids.length + ' clientes';
+  // ---- receita dos últimos 12 meses (só meses já carregados)
+  var mesesRbt = mesesTodos().filter(function (m) { return m <= mes; }).slice(0, 12).filter(function (m) { return IND[m] && !IND[m].faltam; });
+  var porCli = {};
+  mesesRbt.forEach(function (m) { indDoMes(m).forEach(function (x) { var c = porCli[x.ck] = porCli[x.ck] || { x: x, rbt: 0, meses: 0, vendas: {} }; c.rbt += x.vendasLiq; c.meses++; c.vendas[m] = x.vendas; if (m === mes) c.x = x; }); });
+  // ---- números do topo
+  var fat = soma(lista, 'vendas'), fatAnt = soma(ant, 'vendas');
+  var varFat = fatAnt ? 100 * (fat - fatAnt) / fatAnt : null;
+  var comDados = {}; lista.forEach(function (x) { comDados[x.ck] = x; });
+  var semXmlMes = unids.filter(function (u) { return !comDados[chaveUnid(u.contabilidade, rotuloPainel(u))] && u.meses.some(function (m) { return m < mes; }); });
+  var comPend = lista.filter(function (x) { return x.problemas > 0; });
+  var prontos = lista.filter(function (x) { return x.problemas === 0; });
+  var sn = lista.filter(function (x) { return x.regime === 'SN' || x.regime === 'MEI'; });
+  var segMono = soma(sn, 'monofasico'), segSt = soma(sn, 'stSaidas');
+  // ---- alertas inteligentes
+  var alertas = [];
+  Object.keys(porCli).forEach(function (ck) {
+    var c = porCli[ck], x = c.x; if (x.regime !== 'SN' && x.regime !== 'MEI') return;
+    var lim = x.regime === 'MEI' ? LIMITE_MEI : LIMITE_SN, pc = 100 * c.rbt / lim;
+    if (pc >= 80) {
+      var media = c.rbt / c.meses, falta = (lim - c.rbt) / (media || 1);
+      alertas.push({ n: 3, ic: '!', cls: 'bad', tag: 'urgente', t: x.rotulo + ' já usou ' + Math.round(pc) + '% do limite do ' + (x.regime === 'MEI' ? 'MEI' : 'Simples'),
+        d: (pc >= 100 ? 'Ultrapassou o limite de ' + mi(lim) + '.' : 'Receita de ' + mi(c.rbt) + ' em ' + c.meses + ' mês(es); no ritmo atual ultrapassa em cerca de ' + Math.max(1, Math.ceil(falta)) + ' mês(es).'), x: x });
+    } else if (x.regime === 'SN' && c.rbt > SUBLIMITE) {
+      alertas.push({ n: 2, ic: '!', cls: 'warn', tag: 'atenção', t: x.rotulo + ' passou do sublimite de R$ 3,6 mi', d: 'Acima do sublimite o ICMS e o ISS saem do DAS e passam a ser recolhidos fora do Simples.', x: x });
+    }
+  });
+  lista.forEach(function (x) {
+    var c = porCli[x.ck], ms = c ? Object.keys(c.vendas).filter(function (m) { return m < mes; }) : [];
+    if (ms.length >= 3 && x.vendas > 0) {
+      var med = ms.reduce(function (a, m) { return a + c.vendas[m]; }, 0) / ms.length, dv = med ? 100 * (x.vendas - med) / med : 0;
+      if (Math.abs(dv) >= 30) alertas.push({ n: 1, ic: dv < 0 ? '↓' : '↑', cls: 'warn', tag: 'verificar', t: x.rotulo + ': vendas ' + Math.abs(Math.round(dv)) + '% ' + (dv < 0 ? 'abaixo' : 'acima') + ' da média', d: mi(x.vendas) + ' em ' + nomeMes(mes) + ' contra média de ' + mi(med) + ' nos ' + ms.length + ' meses anteriores.', x: x });
+    }
+    if (x.compras > 2 * x.vendas && x.compras > 20000) alertas.push({ n: 1, ic: '≠', cls: 'warn', tag: 'verificar', t: x.rotulo + ': compras ' + (x.vendas ? (x.compras / x.vendas).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + '× maiores que as vendas' : 'sem vendas no mês'), d: 'Compras de ' + mi(x.compras) + ' e vendas de ' + mi(x.vendas) + '.', x: x });
+    if (x.cancQtd >= 3 && x.docs && x.cancQtd / (x.docs + x.cancQtd) > 0.05) alertas.push({ n: 1, ic: '×', cls: 'warn', tag: 'verificar', t: x.rotulo + ': ' + x.cancQtd + ' documentos cancelados', d: Math.round(100 * x.cancQtd / (x.docs + x.cancQtd)) + '% das notas do mês · ' + mi(x.cancValor) + '.', x: x });
+    if (x.ncmSemCest > 0) alertas.push({ n: 0, ic: 'i', cls: 'info', tag: 'revisar', t: x.rotulo + ': ' + x.ncmSemCest + ' NCM(s) sem CEST em produtos com ICMS ST', d: 'Pode gerar rejeição e cobrança de ICMS ST. Confira na aba NCMs do cliente.', x: x });
+    if (!x.regime) alertas.push({ n: 0, ic: '?', cls: 'info', tag: 'revisar', t: x.rotulo + ': regime tributário não identificado', d: 'Sem notas de saída no mês. Peça à CPUSIS para informar o regime.', x: x });
+  });
+  alertas.sort(function (a, b) { return b.n - a.n; });
+  // ---- desenho
+  var temFalha = lista.some(function (x) { return x.falhas > 0; });
+  var html = '<div class="kpis kpis4">' +
+    kpi2('Faturamento dos clientes', mi(fat), 'vendas de ' + nomeMes(mes) + ' · ' + lista.length + ' clientes', varFat == null ? null : [(varFat >= 0 ? '+' : '') + varFat.toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + '%', varFat >= 0 ? 'up' : 'dn']) +
+    kpi2('Prontos para fechar', prontos.length + ' de ' + (lista.length + semXmlMes.length), 'XML completos e sem pendência', null, 'ok') +
+    kpi2('Receitas a segregar no DAS', mi(segMono + segSt), 'monofásico ' + mi(segMono) + ' · ICMS ST ' + mi(segSt), null, 'ok') +
+    kpi2('Alertas', int(alertas.length), alertas.length ? alertas.filter(function (a) { return a.n >= 2; }).length + ' urgente(s) · ' + alertas.filter(function (a) { return a.n < 2; }).length + ' para verificar' : 'nada fora do normal', null, alertas.length ? 'bad' : 'ok') +
+    '</div>';
+  // limite do simples
+  var lim = Object.keys(porCli).map(function (k) { return porCli[k]; }).filter(function (c) { return c.x.regime === 'SN' || c.x.regime === 'MEI'; })
+    .map(function (c) { c.lim = c.x.regime === 'MEI' ? LIMITE_MEI : LIMITE_SN; c.pc = 100 * c.rbt / c.lim; return c; }).sort(function (a, b) { return b.pc - a.pc; });
+  var parcial = mesesRbt.length < 12;
+  html += '<div class="g2"><section class="card"><div class="ch"><h2>Limite do Simples Nacional</h2><span>receita dos últimos ' + (parcial ? mesesRbt.length + ' mês(es) disponíveis' : '12 meses') + ' · limite de R$ 4,8 mi</span></div>' +
+    (lim.length ? '<div class="lim">' + lim.slice(0, 10).map(function (c) {
+      var cor = c.pc >= 85 ? 'bad' : (c.pc >= 70 ? 'warn' : 'ok');
+      return '<button type="button" class="l" data-ck="' + esc(c.x.ck) + '"><b>' + esc(c.x.rotulo) + (c.x.regime === 'MEI' ? ' <span class="sub">MEI</span>' : '') + '</b><div class="barra2 lin"><i style="width:' + Math.min(100, c.pc) + '%;background:var(--' + cor + ')"></i></div><span class="v"><b>' + mi(c.rbt) + '</b> <span class="pill ' + (cor === 'ok' ? '' : cor) + '">' + Math.round(c.pc) + '%</span></span></button>';
+    }).join('') + '</div><p class="nota">Linha tracejada: R$ 3,6 mi (sublimite do ICMS e ISS). ' + (parcial ? 'Ainda há menos de 12 meses no portal: o valor é a soma dos meses disponíveis (' + mesesRbt.map(function (m) { return m.slice(5, 7) + '/' + m.slice(2, 4); }).join(', ') + ').' : '') + '</p>'
+      : '<p class="nota">Nenhum cliente do Simples Nacional identificado neste mês.</p>') + '</section>';
+  // segregar
+  var seg = sn.filter(function (x) { return x.monofasico + x.stSaidas > 0; }).sort(function (a, b) { return (b.monofasico + b.stSaidas) - (a.monofasico + a.stSaidas); });
+  html += '<section class="card"><div class="ch"><h2>Receitas a segregar no DAS</h2><span>' + nomeMes(mes) + '</span></div>' +
+    '<div class="eco"><span class="sub">Vendas com PIS/COFINS monofásico e com ICMS por substituição tributária</span><span class="v">' + brl(segMono + segSt) + '</span></div>' +
+    (seg.length ? '<div class="tbl sem"><table><thead><tr><th>Cliente</th><th class="n">Monofásico</th><th class="n">ICMS ST</th></tr></thead><tbody>' +
+      seg.slice(0, 6).map(function (x) { return '<tr class="cli" data-ck="' + esc(x.ck) + '"><td class="b">' + esc(x.rotulo) + '</td><td class="n">' + brl(x.monofasico) + '</td><td class="n">' + brl(x.stSaidas) + '</td></tr>'; }).join('') + '</tbody></table></div>' : '') +
+    '<p class="nota">Informe esses valores separados no PGDAS-D para o cliente não pagar PIS/COFINS e ICMS de novo sobre eles.</p></section></div>';
+  // alertas e fechamento
+  html += '<div class="g2"><section class="card"><div class="ch"><h2>Alertas inteligentes</h2><span>o que merece sua atenção</span></div>' +
+    (alertas.length ? '<ul class="alertas">' + alertas.slice(0, 8).map(function (a, i) {
+      return '<li data-a="' + i + '"><span class="ic ' + a.cls + '">' + a.ic + '</span><div><b>' + esc(a.t) + '</b><span>' + esc(a.d) + '</span></div><span class="pill ' + (a.cls === 'info' ? 'info' : a.cls) + '">' + a.tag + '</span></li>';
+    }).join('') + '</ul>' + (alertas.length > 8 ? '<p class="nota">+ ' + (alertas.length - 8) + ' alerta(s) de menor prioridade.</p>' : '') : '<p class="nota ok">Nenhum alerta neste mês. Tudo dentro do normal.</p>') + '</section>';
+  html += '<section class="card"><div class="ch"><h2>Fechamento do mês</h2><span>' + nomeMes(mes) + '</span></div>' +
+    '<div class="fech"><div><span class="v" style="color:var(--ok)">' + prontos.length + '</span><span class="sub">prontos</span></div><div><span class="v" style="color:var(--warn)">' + comPend.length + '</span><span class="sub">com pendência</span></div><div><span class="v" style="color:var(--bad)">' + semXmlMes.length + '</span><span class="sub">sem XML no mês</span></div></div>' +
+    ((comPend.length || semXmlMes.length) ? '<ul class="fl">' + comPend.map(function (x) {
+      var p = []; if (x.pendQtd) p.push(x.pendQtd + ' doc. pendente(s)'); if (x.falhas) p.push(x.falhas + ' número(s) pulado(s)'); if (x.semXml) p.push(x.semXml + ' doc. sem XML no sistema');
+      return '<li data-ck="' + esc(x.ck) + '"><span><i class="dot d-wn"></i><b>' + esc(x.rotulo) + '</b></span><span class="sub">' + esc(p.join(' · ')) + '</span></li>';
+    }).join('') + semXmlMes.map(function (u) { return '<li data-ck="' + esc(chaveUnid(u.contabilidade, rotuloPainel(u))) + '"><span><i class="dot d-bad"></i><b>' + esc(rotuloUnid(u)) + '</b></span><span class="sub">XML de ' + nomeMes(mes) + ' não chegou</span></li>'; }).join('') + '</ul>' : '<p class="nota ok">Todos os clientes estão prontos para fechar.</p>') +
+    '<div class="minis"><div><span class="r">IBS + CBS destacados</span><b>' + mi(soma(lista, 'ibs') + soma(lista, 'cbs')) + '</b></div><div><span class="r">Prazo para inutilizar</span><b>' + (temFalha ? '10/' + mesSeguinte(mes).slice(5, 7) + '/' + mesSeguinte(mes).slice(0, 4) : 'sem números pulados') + '</b></div></div></section></div>';
+  // tabela completa
+  html += '<section class="card"><div class="ch"><h2>Todos os clientes no mês</h2><div class="ferr"><input type="search" id="pFiltro" placeholder="Filtrar…" aria-label="Filtrar clientes"><button class="btn sec" type="button" id="pCsv">Exportar para Excel (CSV)</button></div></div><div id="pTab"></div></section>';
+  $('pCorpo').innerHTML = html;
+  var abrirCk = function (ck, aba) { var u = unidPorChave(ck); if (u) { ATUAL = { aba: aba || 'dias' }; abrir(u, u.meses.indexOf(mes) >= 0 ? mes : null); } };
+  $('pCorpo').querySelectorAll('[data-ck]').forEach(function (el) { el.addEventListener('click', function () { abrirCk(el.dataset.ck, el.closest('.lim') ? 'trib' : 'dias'); }); });
+  $('pCorpo').querySelectorAll('[data-a]').forEach(function (el) { el.addEventListener('click', function () { var a = alertas[+el.dataset.a]; abrirCk(a.x.ck, /CEST/.test(a.t) ? 'ncm' : 'trib'); }); });
+  var t = tabela($('pTab'), COL.dash, lista, 'vendas', true, { clicar: function (x) { abrirCk(x.ck, 'dias'); } });
+  $('pFiltro').addEventListener('input', function () { t.filtrar(this.value); });
+  $('pCsv').addEventListener('click', function () { csv(COL.dash, t.linhas(), 'Painel ' + mes + '.csv'); });
+}
+
+/* ---------------- busca de XML (dentro do cliente) ----------------
+   O ZIP do mês é baixado para o navegador, aberto aqui mesmo e cada XML é indexado.
+   Nada é enviado para fora: a pesquisa roda no computador do contador. */
+var BUSCA = null;   // { ck, meses: {mes: {docs, carregado}}, docs: [], sel: {}, ord, asc, f }
+
+function zipU32(v, i) { return v.getUint32(i, true); }
+function zipEntradas(u8) {
+  var v = new DataView(u8.buffer, u8.byteOffset, u8.byteLength), n = u8.length, eocd = -1;
+  for (var i = n - 22; i >= Math.max(0, n - 65558); i--) { if (zipU32(v, i) === 0x06054b50) { eocd = i; break; } }
+  if (eocd < 0) throw new Error('Arquivo ZIP inválido ou corrompido.');
+  var qtd = v.getUint16(eocd + 10, true), cd = zipU32(v, eocd + 16);
+  if ((qtd === 0xFFFF || cd === 0xFFFFFFFF) && eocd >= 20 && zipU32(v, eocd - 20) === 0x07064b50) {   // ZIP64
+    var z64 = Number(v.getBigUint64(eocd - 12, true));
+    qtd = Number(v.getBigUint64(z64 + 32, true)); cd = Number(v.getBigUint64(z64 + 48, true));
+  }
+  var out = [], p = cd, utf = new TextDecoder('utf-8'), lat = new TextDecoder('latin1');
+  for (var k = 0; k < qtd && p + 46 <= n && zipU32(v, p) === 0x02014b50; k++) {
+    var flag = v.getUint16(p + 8, true), met = v.getUint16(p + 10, true), cs = zipU32(v, p + 20), us = zipU32(v, p + 24);
+    var nl = v.getUint16(p + 28, true), xl = v.getUint16(p + 30, true), cl = v.getUint16(p + 32, true), off = zipU32(v, p + 42);
+    var nome = ((flag & 0x800) ? utf : lat).decode(u8.subarray(p + 46, p + 46 + nl));
+    if (us === 0xFFFFFFFF || cs === 0xFFFFFFFF || off === 0xFFFFFFFF) {
+      var x = p + 46 + nl, xf = x + xl;
+      while (x + 4 <= xf) {
+        var id = v.getUint16(x, true), sz = v.getUint16(x + 2, true), q = x + 4;
+        if (id === 1) {
+          if (us === 0xFFFFFFFF) { us = Number(v.getBigUint64(q, true)); q += 8; }
+          if (cs === 0xFFFFFFFF) { cs = Number(v.getBigUint64(q, true)); q += 8; }
+          if (off === 0xFFFFFFFF) { off = Number(v.getBigUint64(q, true)); }
+        }
+        x += 4 + sz;
+      }
+    }
+    if (!/\/$/.test(nome)) out.push({ nome: nome, met: met, cs: cs, off: off });
+    p += 46 + nl + xl + cl;
+  }
+  return out;
+}
+function zipExtrair(u8, e) {
+  var v = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
+  var ini = e.off + 30 + v.getUint16(e.off + 26, true) + v.getUint16(e.off + 28, true);
+  var dados = u8.subarray(ini, ini + e.cs);
+  if (e.met === 0) return Promise.resolve(dados);
+  if (e.met !== 8) return Promise.reject(new Error('Compressão não suportada em ' + e.nome));
+  if (typeof DecompressionStream === 'undefined') return Promise.reject(new Error('Navegador desatualizado: use o Chrome ou o Edge atualizado para pesquisar XML.'));
+  return new Response(new Blob([dados]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).arrayBuffer().then(function (ab) { return new Uint8Array(ab); });
+}
+
+function xEnt(s) { return s.indexOf('&') < 0 ? s : s.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;|&#39;/g, "'"); }
+function xTag(s, t) { var m = s.match(new RegExp('<(?:\\w+:)?' + t + '(?:\\s[^>]*)?>([^<]*)</(?:\\w+:)?' + t + '>')); return m ? xEnt(m[1]) : ''; }
+function xBloco(s, t) { var m = new RegExp('<(?:\\w+:)?' + t + '[\\s>]').exec(s); if (!m) return ''; var fim = new RegExp('</(?:\\w+:)?' + t + '>').exec(s.slice(m.index)); return fim ? s.slice(m.index, m.index + fim.index) : ''; }
+function soDig(s) { return String(s || '').replace(/\D/g, ''); }
+var TIPOS_XML = { nfe: 'NF-e emitida', nfce: 'NFC-e', compra: 'NF-e recebida', cte: 'CT-e', mdfe: 'MDF-e', evento: 'Evento', inut: 'Inutilização' };
+var NOME_EVENTO = { '110111': 'Cancelamento', '110112': 'Cancelamento por substituição', '110110': 'Carta de correção', '210200': 'Confirmação da operação', '210210': 'Ciência da operação', '210220': 'Desconhecimento', '210240': 'Operação não realizada', '110113': 'EPEC' };
+
+// lê um XML e devolve a linha do índice (ou null se não for documento fiscal)
+function indexarXml(s, cnpjCli) {
+  var d = null, m;
+  if (/<(?:\w+:)?infNFe[\s>]/.test(s)) {
+    var ide = xBloco(s, 'ide'), emit = xBloco(s, 'emit'), dest = xBloco(s, 'dest'), prot = xBloco(s, 'infProt');
+    m = s.match(/Id="NFe(\d{44})"/);
+    d = { mod: xTag(ide, 'mod'), num: xTag(ide, 'nNF'), serie: xTag(ide, 'serie'), data: (xTag(ide, 'dhEmi') || xTag(ide, 'dEmi')).slice(0, 10), tpNF: xTag(ide, 'tpNF'),
+      emitDoc: xTag(emit, 'CNPJ') || xTag(emit, 'CPF'), emitNome: xTag(emit, 'xNome'), destDoc: xTag(dest, 'CNPJ') || xTag(dest, 'CPF') || xTag(dest, 'idEstrangeiro'), destNome: xTag(dest, 'xNome'),
+      valor: Number(xTag(xBloco(s, 'ICMSTot'), 'vNF')) || 0, chave: m ? m[1] : '', cStat: xTag(prot, 'cStat'), nProt: xTag(prot, 'nProt') };
+    d.tipo = d.mod === '65' ? 'nfce' : (soDig(d.emitDoc) === cnpjCli || !cnpjCli && d.tpNF === '1' ? 'nfe' : 'compra');
+    if (d.tipo === 'nfe' && d.tpNF === '0') d.obs = 'entrada própria';
+  } else if (/<(?:\w+:)?infCte[\s>]/.test(s)) {
+    var ic = xBloco(s, 'ide'), ec = xBloco(s, 'emit'), dc = xBloco(s, 'dest'), pc = xBloco(s, 'infProt');
+    m = s.match(/Id="CTe(\d{44})"/);
+    d = { tipo: 'cte', mod: '57', num: xTag(ic, 'nCT'), serie: xTag(ic, 'serie'), data: xTag(ic, 'dhEmi').slice(0, 10), emitDoc: xTag(ec, 'CNPJ') || xTag(ec, 'CPF'), emitNome: xTag(ec, 'xNome'),
+      destDoc: xTag(dc, 'CNPJ') || xTag(dc, 'CPF'), destNome: xTag(dc, 'xNome'), valor: Number(xTag(s, 'vTPrest')) || 0, chave: m ? m[1] : '', cStat: xTag(pc, 'cStat'), nProt: xTag(pc, 'nProt') };
+  } else if (/<(?:\w+:)?infMDFe[\s>]/.test(s)) {
+    var im = xBloco(s, 'ide'), em = xBloco(s, 'emit'), pm = xBloco(s, 'infProt');
+    m = s.match(/Id="MDFe(\d{44})"/);
+    d = { tipo: 'mdfe', mod: '58', num: xTag(im, 'nMDF'), serie: xTag(im, 'serie'), data: xTag(im, 'dhEmi').slice(0, 10), emitDoc: xTag(em, 'CNPJ') || xTag(em, 'CPF'), emitNome: xTag(em, 'xNome'),
+      destDoc: '', destNome: '', valor: Number(xTag(s, 'vCarga')) || 0, chave: m ? m[1] : '', cStat: xTag(pm, 'cStat'), nProt: xTag(pm, 'nProt') };
+  } else if (/<(?:\w+:)?infEvento[\s>]/.test(s)) {
+    var ch = xTag(s, 'chNFe') || xTag(s, 'chCTe') || xTag(s, 'chMDFe'), tp = xTag(s, 'tpEvento');
+    var st = s.match(/<cStat>(\d+)<\/cStat>/g) || [];
+    d = { tipo: 'evento', mod: ch.slice(20, 22), num: String(Number(ch.slice(25, 34)) || ''), serie: String(Number(ch.slice(22, 25)) || 0), data: xTag(s, 'dhEvento').slice(0, 10),
+      emitDoc: '', emitNome: '', destDoc: '', destNome: '', valor: 0, chave: ch, cStat: st.length ? st[st.length - 1].replace(/\D/g, '') : '', nProt: xTag(xBloco(s, 'retEvento') || s, 'nProt'),
+      evento: tp, obs: NOME_EVENTO[tp] || xTag(s, 'descEvento') || ('Evento ' + tp) };
+  } else if (/<(?:\w+:)?infInut[\s>]/.test(s)) {
+    var a = xTag(s, 'nNFIni'), b = xTag(s, 'nNFFin');
+    d = { tipo: 'inut', mod: xTag(s, 'mod'), num: a === b ? a : a + '-' + b, serie: xTag(s, 'serie'), data: (xTag(s, 'dhRecbto') || '').slice(0, 10), emitDoc: xTag(s, 'CNPJ'), emitNome: '', destDoc: '', destNome: '',
+      valor: 0, chave: '', cStat: (s.match(/<cStat>(\d+)<\/cStat>/g) || ['']).pop().replace(/\D/g, ''), nProt: xTag(s, 'nProt'), ini: Number(a), fim: Number(b), obs: xTag(s, 'xJust') };
+  }
+  if (!d) return null;
+  d.sit = d.tipo === 'evento' ? (/^(135|136|155)$/.test(d.cStat) ? 'Registrado' : 'Rejeitado') : d.tipo === 'inut' ? (d.cStat === '102' ? 'Homologada' : 'Rejeitada')
+    : (/^(100|150)$/.test(d.cStat) ? 'Autorizada' : /^(110|301|302|303|205)$/.test(d.cStat) ? 'Denegada' : d.cStat ? 'cStat ' + d.cStat : 'Sem protocolo');
+  d.n = Number(d.num) || 0;
+  return d;
+}
+
+function carregarMesBusca(u, mes, info) {
+  var reg = BUSCA.meses[mes];
+  if (reg && reg.carregado) return Promise.resolve();
+  var cnpjCli = soDig((RESUMO && RESUMO.mes === mes ? RESUMO.cnpj : (BUSCA.cnpj || '')));
+  info('Localizando o ZIP de ' + nomeMes(mes) + '…', 0);
+  return chamar('portalArquivo', TOKEN, u.contabilidade, u.cliente, u.subpasta, mes).then(function (f) {
+    return baixarPartes(f, function (p) { info('Baixando ' + nomeMes(mes) + ' (' + Math.round(f.tamanho / 1048576 * 10) / 10 + ' MB)… ' + Math.round(100 * p) + '%', p * 0.5); }).then(function (partes) {
+      var tam = partes.reduce(function (a, x) { return a + x.length; }, 0), u8 = new Uint8Array(tam), pos = 0;
+      partes.forEach(function (x) { u8.set(x, pos); pos += x.length; });
+      var fila = [], docs = [];
+      var abrirZip = function (buf, prefixo, nivel) {
+        zipEntradas(buf).forEach(function (e) {
+          if (/\.xml$/i.test(e.nome)) fila.push({ buf: buf, e: e, nome: prefixo + e.nome });
+          else if (/\.zip$/i.test(e.nome) && nivel < 2) fila.push({ buf: buf, e: e, nome: prefixo + e.nome, zip: nivel + 1 });
+        });
+      };
+      abrirZip(u8, '', 0);
+      var feitos = 0, utf = new TextDecoder('utf-8');
+      var processar = function (it) {
+        return zipExtrair(it.buf, it.e).then(function (b) {
+          if (it.zip) { abrirZip(b, it.nome.replace(/\.zip$/i, '') + '/', it.zip); return; }
+          var d = indexarXml(utf.decode(b), cnpjCli);
+          if (d) { d.arquivo = it.nome; d.mes = mes; d.ref = it; docs.push(d); }
+        }).catch(function () { }).then(function () { feitos++; if (feitos % 200 === 0) info('Lendo os XML de ' + nomeMes(mes) + '… ' + int(feitos) + ' de ' + int(fila.length), 0.5 + 0.5 * feitos / fila.length); });
+      };
+      var i = 0;
+      var trabalhador = function () { if (i >= fila.length) return Promise.resolve(); var it = fila[i++]; return processar(it).then(trabalhador); };
+      var rodar = function () { var t = []; for (var w = 0; w < 12; w++) t.push(trabalhador()); return Promise.all(t).then(function () { if (i < fila.length) return rodar(); }); };
+      return rodar().then(function () {
+        // cancelamentos e emitente/destinatário dos eventos
+        var porChave = {};
+        docs.forEach(function (d) { if (d.tipo !== 'evento' && d.chave) porChave[d.chave] = d; });
+        docs.forEach(function (d) {
+          if (d.tipo !== 'evento') return;
+          var o = porChave[d.chave] || BUSCA.porChave[d.chave];
+          if (o) { d.emitDoc = o.emitDoc; d.emitNome = o.emitNome; d.destDoc = o.destDoc; d.destNome = o.destNome; d.valor = o.valor; }
+          if (o && /^11011[12]$/.test(d.evento) && d.sit === 'Registrado') o.sit = 'Cancelada';
+        });
+        for (var k in porChave) BUSCA.porChave[k] = porChave[k];
+        BUSCA.meses[mes] = { carregado: true, qtd: docs.length, zip: f.nome };
+        docs.forEach(function (d) { d.busca = norm(d.emitNome + ' ' + d.destNome) + ' ' + soDig(d.emitDoc) + ' ' + soDig(d.destDoc); d.id = BUSCA.docs.length; BUSCA.docs.push(d); });
+      });
+    });
+  });
+}
+
+function telaBusca(c) {
+  var u = ATUAL.u, ck = chaveUnid(u.contabilidade, rotuloPainel(u));
+  if (!BUSCA || BUSCA.ck !== ck) BUSCA = { ck: ck, meses: {}, docs: [], porChave: {}, sel: {}, ord: 'data', asc: false, cnpj: RESUMO && RESUMO.cnpj };
+  var outros = u.meses.length;
+  c.innerHTML = '<div class="card"><div class="ferr"><label class="sub" for="xPer">Pesquisar em&nbsp;<select id="xPer"><option value="1">' + esc(nomeMes(ATUAL.mes)) + '</option>' +
+      (outros > 1 ? '<option value="3">' + esc(nomeMes(ATUAL.mes)) + ' e os 2 meses anteriores</option><option value="todos">todos os ' + outros + ' meses disponíveis</option>' : '') + '</select></label>' +
+      '<button class="btn sec" type="button" id="xCarregar">Carregar</button><div class="barra hidden" id="xBarra"><i></i></div><span class="sub" id="xInfo"></span></div>' +
+      '<p class="nota">Os XML do mês são baixados do Drive e pesquisados aqui no seu navegador. Na primeira vez leva alguns segundos (clientes com muitas NFC-e podem levar mais de um minuto).</p></div>' +
+    '<div class="filtros" id="xFiltros">' +
+      '<label for="xTxt">Nome ou CNPJ/CPF (emitente ou destinatário)<input id="xTxt" type="search" placeholder="Ex.: atacadão ou 12.345.678"></label>' +
+      '<label for="xNum">Número<input id="xNum" type="search" placeholder="1520 ou 1500-1600" size="12"></label>' +
+      '<label for="xChave">Chave de acesso<input id="xChave" type="search" placeholder="parte da chave" size="22"></label>' +
+      '<label for="xVmin">Valor de<input id="xVmin" type="search" inputmode="decimal" placeholder="0,00" size="9"></label>' +
+      '<label for="xVmax">até<input id="xVmax" type="search" inputmode="decimal" placeholder="0,00" size="9"></label>' +
+      '<label for="xDini">Data de<input id="xDini" type="date"></label><label for="xDfim">até<input id="xDfim" type="date"></label>' +
+      '<label for="xTipo">Tipo<select id="xTipo"><option value="">Todos</option>' + Object.keys(TIPOS_XML).map(function (k) { return '<option value="' + k + '">' + TIPOS_XML[k] + '</option>'; }).join('') + '</select></label>' +
+      '<label for="xSit">Situação<select id="xSit"><option value="">Todas</option><option>Autorizada</option><option>Cancelada</option><option>Denegada</option><option>Sem protocolo</option></select></label>' +
+      '<button class="btn sec" type="button" id="xLimpar">Limpar filtros</button></div>' +
+    '<div class="ferr"><b id="xQtd"></b><button class="btn" type="button" id="xBaixarSel" disabled>Baixar marcados (ZIP)</button><button class="btn sec" type="button" id="xCsv">Exportar lista (CSV)</button></div>' +
+    '<div id="xRes"></div><dialog id="xDet" aria-labelledby="xDetTit"></dialog>';
+  var info = function (txt, p) { if (!$('xInfo')) return; $('xInfo').textContent = txt; var b = $('xBarra'); if (p == null) b.classList.add('hidden'); else { b.classList.remove('hidden'); b.firstChild.style.width = (100 * p) + '%'; } };
+  var carregar = function () {
+    var per = $('xPer').value, idx = u.meses.indexOf(ATUAL.mes);
+    var alvo = per === 'todos' ? u.meses.slice() : u.meses.slice(idx, idx + Number(per));
+    $('xCarregar').disabled = true;
+    var k = 0, erros = [];
+    var prox = function () {
+      if (k >= alvo.length) return Promise.resolve();
+      var m = alvo[k++];
+      return carregarMesBusca(u, m, info).catch(function (e) { erros.push(nomeMes(m) + ': ' + e.message); }).then(function () { buscarXml(); return prox(); });
+    };
+    prox().then(function () {
+      if (!$('xCarregar')) return;
+      $('xCarregar').disabled = false;
+      var ms = Object.keys(BUSCA.meses).sort().reverse();
+      info(int(BUSCA.docs.length) + ' documentos carregados (' + ms.map(nomeMes).join(', ') + ')' + (erros.length ? ' · ' + erros.join(' · ') : ''), null);
+      buscarXml();
+    });
+  };
+  $('xCarregar').addEventListener('click', carregar);
+  var t = null;
+  $('xFiltros').addEventListener('input', function () { clearTimeout(t); t = setTimeout(buscarXml, 200); });
+  $('xFiltros').addEventListener('change', function (ev) { if (ev.target.tagName === 'SELECT' || ev.target.type === 'date') buscarXml(); });
+  $('xLimpar').addEventListener('click', function () { $('xFiltros').querySelectorAll('input,select').forEach(function (e) { e.value = ''; }); buscarXml(); });
+  $('xBaixarSel').addEventListener('click', baixarXmlMarcados);
+  $('xCsv').addEventListener('click', function () { csv(COL.xml, filtrarXml(), (rotuloUnid(u) + ' - lista de XML').replace(/[\\/:*?"<>|]/g, '-') + '.csv'); });
+  if (BUSCA.meses[ATUAL.mes] && BUSCA.meses[ATUAL.mes].carregado) { info(int(BUSCA.docs.length) + ' documentos carregados', null); buscarXml(); }
+  else carregar();
+}
+
+function numBR(s) { s = String(s || '').trim(); if (!s) return null; if (s.indexOf(',') >= 0) s = s.replace(/\./g, '').replace(',', '.'); var n = Number(s); return isNaN(n) ? null : n; }
+function filtrarXml() {
+  var txt = norm($('xTxt').value || ''), dig = soDig($('xTxt').value), num = ($('xNum').value || '').trim(), ch = soDig($('xChave').value);
+  var vmin = numBR($('xVmin').value), vmax = numBR($('xVmax').value), di = $('xDini').value, df = $('xDfim').value, tp = $('xTipo').value, sit = $('xSit').value;
+  var nIni = null, nFim = null, mm = num.match(/^(\d+)\s*[-a]\s*(\d+)$/);
+  if (mm) { nIni = Number(mm[1]); nFim = Number(mm[2]); } else if (/^\d+$/.test(num)) { nIni = nFim = Number(num); }
+  var l = BUSCA.docs.filter(function (d) {
+    if (tp && d.tipo !== tp) return false;
+    if (sit && d.sit !== sit) return false;
+    if (txt && d.busca.indexOf(txt) < 0 && !(dig.length >= 3 && d.busca.indexOf(dig) >= 0)) return false;
+    if (nIni != null) { if (d.tipo === 'inut') { if (d.fim < nIni || d.ini > nFim) return false; } else if (d.n < nIni || d.n > nFim) return false; }
+    if (ch && d.chave.indexOf(ch) < 0) return false;
+    if (vmin != null && d.valor < vmin) return false;
+    if (vmax != null && d.valor > vmax) return false;
+    if (di && d.data < di) return false;
+    if (df && d.data > df) return false;
+    return true;
+  });
+  var k = BUSCA.ord, s = BUSCA.asc ? 1 : -1;
+  l.sort(function (a, b) { var va = k === 'num' ? a.n : a[k], vb = k === 'num' ? b.n : b[k]; return s * ((typeof va === 'number') ? va - vb : String(va).localeCompare(String(vb), 'pt-BR', { numeric: true })); });
+  return l.map(function (d) { d.tipoNome = TIPOS_XML[d.tipo] + (d.obs ? ' · ' + d.obs : ''); return d; });
+}
+var COL_XML_TAB = [['tipoNome', 'Tipo'], ['num', 'Número'], ['serie', 'Série'], ['data', 'Data'], ['emitNome', 'Emitente'], ['destNome', 'Destinatário'], ['valor', 'Valor'], ['sit', 'Situação'], ['chave', 'Chave']];
+var MAX_LINHAS = 300;
+
+function buscarXml() {
+  if (!$('xRes') || !BUSCA) return;
+  if (!BUSCA.docs.length) { $('xRes').innerHTML = ''; $('xQtd').textContent = ''; return; }
+  var l = filtrarXml(), mostra = l.slice(0, MAX_LINHAS), varios = Object.keys(BUSCA.meses).length > 1;
+  var nSel = Object.keys(BUSCA.sel).length;
+  $('xQtd').textContent = int(l.length) + ' documento(s) encontrado(s)' + (nSel ? ' · ' + nSel + ' marcado(s)' : '');
+  $('xBaixarSel').disabled = !nSel;
+  $('xBaixarSel').textContent = nSel ? 'Baixar ' + nSel + ' marcado(s) (ZIP)' : 'Baixar marcados (ZIP)';
+  if (!l.length) { $('xRes').innerHTML = '<div class="card vazio">Nenhum XML com esses filtros.</div>'; return; }
+  var todos = mostra.every(function (d) { return BUSCA.sel[d.id]; });
+  var cols = COL_XML_TAB.slice(); if (varios) cols.splice(4, 0, ['mes', 'Mês']);
+  var cls = function (k) { return k === 'valor' ? 'n' : (k === 'chave' ? 'm' : (k === 'emitNome' || k === 'destNome' ? 'w' : '')); };
+  $('xRes').innerHTML = '<div class="tbl"><table><thead><tr><th class="ck"><input type="checkbox" id="xTodos" aria-label="Marcar todos os listados"' + (todos ? ' checked' : '') + '></th>' +
+    cols.map(function (c) { return '<th tabindex="0" data-k="' + c[0] + '" class="' + (c[0] === 'valor' ? 'n ' : '') + (BUSCA.ord === c[0] ? 'ord' + (BUSCA.asc ? ' asc' : '') : '') + '">' + c[1] + '</th>'; }).join('') + '<th>XML</th></tr></thead><tbody>' +
+    mostra.map(function (d) {
+      return '<tr class="cli" data-id="' + d.id + '"><td class="ck"><input type="checkbox" class="xCk" data-id="' + d.id + '"' + (BUSCA.sel[d.id] ? ' checked' : '') + ' aria-label="Marcar ' + esc(d.tipoNome + ' ' + d.num) + '"></td>' +
+        cols.map(function (c) {
+          var v = d[c[0]];
+          if (c[0] === 'valor') v = d.tipo === 'evento' || d.tipo === 'inut' ? '' : brl(v); else if (c[0] === 'data') v = dataBR(v); else if (c[0] === 'mes') v = d.mes.slice(5) + '/' + d.mes.slice(0, 4);
+          else if (c[0] === 'sit') return '<td><span class="pill ' + ({ Autorizada: '', Registrado: '', Homologada: '', Cancelada: 'bad', Denegada: 'bad' }[d.sit] != null ? { Autorizada: '', Registrado: '', Homologada: '', Cancelada: 'bad', Denegada: 'bad' }[d.sit] : 'warn') + '">' + esc(d.sit) + '</span></td>';
+          else if (c[0] === 'emitNome' || c[0] === 'destNome') { var doc = c[0] === 'emitNome' ? d.emitDoc : d.destDoc; if (!v && !doc && d.tipo === 'nfce' && c[0] === 'destNome') v = 'Consumidor não identificado'; return '<td class="w">' + esc(v) + (doc ? '<br><span class="sub m">' + esc(fmtDoc(doc)) + '</span>' : '') + '</td>'; }
+          else v = esc(v);
+          return '<td class="' + cls(c[0]) + '">' + v + '</td>';
+        }).join('') + '<td><button class="lnk xDl" type="button" data-id="' + d.id + '">baixar</button></td></tr>';
+    }).join('') + '</tbody></table></div>' + (l.length > MAX_LINHAS ? '<p class="nota">Mostrando os ' + MAX_LINHAS + ' primeiros de ' + int(l.length) + '. Use os filtros para achar o que procura (a lista em CSV e o "marcar todos" valem só para os listados).</p>' : '');
+  var tb = $('xRes');
+  tb.querySelectorAll('th[data-k]').forEach(function (th) { var ir = function () { if (BUSCA.ord === th.dataset.k) BUSCA.asc = !BUSCA.asc; else { BUSCA.ord = th.dataset.k; BUSCA.asc = th.dataset.k !== 'valor' && th.dataset.k !== 'data'; } buscarXml(); }; th.addEventListener('click', ir); th.addEventListener('keydown', function (e) { if (e.key === 'Enter') ir(); }); });
+  $('xTodos').addEventListener('change', function () { var v = this.checked; mostra.forEach(function (d) { if (v) BUSCA.sel[d.id] = true; else delete BUSCA.sel[d.id]; }); buscarXml(); });
+  tb.querySelector('tbody').addEventListener('click', function (ev) {
+    var t = ev.target;
+    if (t.classList.contains('xCk')) { if (t.checked) BUSCA.sel[t.dataset.id] = true; else delete BUSCA.sel[t.dataset.id]; var n = Object.keys(BUSCA.sel).length; $('xBaixarSel').disabled = !n; $('xBaixarSel').textContent = n ? 'Baixar ' + n + ' marcado(s) (ZIP)' : 'Baixar marcados (ZIP)'; $('xQtd').textContent = int(l.length) + ' documento(s) encontrado(s)' + (n ? ' · ' + n + ' marcado(s)' : ''); return; }
+    if (t.classList.contains('xDl')) { baixarUmXml(BUSCA.docs[+t.dataset.id]); return; }
+    if (t.closest('td.ck')) return;
+    var tr = t.closest('tr[data-id]'); if (tr) detalheXml(BUSCA.docs[+tr.dataset.id]);
+  });
+}
+function fmtDoc(d) { d = soDig(d); if (d.length === 14) return d.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5'); if (d.length === 11) return d.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, '$1.$2.$3-$4'); return d; }
+function nomeXml(d) { return d.arquivo.split('/').pop(); }
+function bytesXml(d) { return zipExtrair(d.ref.buf, d.ref.e); }
+function baixarUmXml(d) { bytesXml(d).then(function (b) { baixarBlob(new Blob([b], { type: 'application/xml' }), nomeXml(d)); }); }
+function baixarXmlMarcados() {
+  var ids = Object.keys(BUSCA.sel).map(Number), z = novoZip(), usados = {}, i = 0, bt = $('xBaixarSel');
+  bt.disabled = true;
+  var prox = function () {
+    if (i >= ids.length) return Promise.resolve();
+    var d = BUSCA.docs[ids[i++]];
+    return bytesXml(d).then(function (b) { var n = nomeXml(d); if (usados[n]) n = n.replace(/\.xml$/i, '') + ' (' + (++usados[n]) + ').xml'; else usados[n] = 1; z.add(n, b); }).then(prox);
+  };
+  prox().then(function () { baixarBlob(z.gerar(), (rotuloUnid(ATUAL.u) + ' - ' + ids.length + ' XML selecionados.zip').replace(/[\\/:*?"<>|]/g, '-')); bt.disabled = false; })
+    .catch(function (e) { bt.disabled = false; alertaXml(e.message); });
+}
+function alertaXml(m) { if ($('xInfo')) $('xInfo').textContent = m; }
+
+// janela com os dados principais do documento
+function detalheXml(d) {
+  var dlg = $('xDet');
+  bytesXml(d).then(function (b) {
+    var txt = new TextDecoder('utf-8').decode(b), x = new DOMParser().parseFromString(txt, 'application/xml');
+    var g = function (no, t) { if (!no) return ''; var e = no.getElementsByTagName(t)[0]; return e ? e.textContent : ''; };
+    var no = function (t, base) { return (base || x).getElementsByTagName(t)[0] || null; };
+    var linha = function (r, v) { return v ? '<div><span class="sub">' + esc(r) + '</span><br>' + esc(v) + '</div>' : ''; };
+    var corpo = '';
+    if (d.tipo === 'nfe' || d.tipo === 'nfce' || d.tipo === 'compra') {
+      var emit = no('emit'), dest = no('dest'), tot = no('ICMSTot');
+      corpo += '<div class="dgrid">' + linha('Emitente', g(emit, 'xNome') + ' · ' + fmtDoc(g(emit, 'CNPJ') || g(emit, 'CPF')) + ' · IE ' + g(emit, 'IE') + ' · ' + g(emit, 'UF')) +
+        linha('Destinatário', dest ? g(dest, 'xNome') + ' · ' + fmtDoc(g(dest, 'CNPJ') || g(dest, 'CPF') || g(dest, 'idEstrangeiro')) + (g(dest, 'UF') ? ' · ' + g(dest, 'UF') : '') : 'Consumidor não identificado') +
+        linha('Natureza da operação', g(no('ide'), 'natOp')) + linha('Emissão', new Date(g(no('ide'), 'dhEmi') || g(no('ide'), 'dEmi')).toLocaleString('pt-BR')) +
+        linha('Protocolo', d.nProt + (d.cStat ? ' (cStat ' + d.cStat + ')' : '')) + linha('Chave de acesso', d.chave) + '</div>';
+      var dets = x.getElementsByTagName('det'), itens = '';
+      for (var i = 0; i < dets.length; i++) {
+        var pr = no('prod', dets[i]), ic = no('ICMS', dets[i]), cst = ic ? (g(ic, 'CST') ? g(ic, 'orig') + g(ic, 'CST') : g(ic, 'CSOSN')) : '';
+        itens += '<tr><td class="n">' + (i + 1) + '</td><td class="m">' + esc(g(pr, 'cProd')) + '</td><td class="w">' + esc(g(pr, 'xProd')) + '</td><td class="m">' + esc(g(pr, 'NCM')) + '</td><td class="m">' + esc(g(pr, 'CFOP')) + '</td><td class="m">' + esc(cst) + '</td><td class="n">' + qtd(g(pr, 'qCom')) + ' ' + esc(g(pr, 'uCom')) + '</td><td class="n">' + brl(g(pr, 'vProd')) + '</td><td class="n">' + brl(g(ic, 'vICMS')) + '</td></tr>';
+      }
+      corpo += '<h3>Itens (' + dets.length + ')</h3><div class="tbl"><table><thead><tr><th class="n">#</th><th>Código</th><th>Descrição</th><th>NCM</th><th>CFOP</th><th>CST</th><th class="n">Qtd.</th><th class="n">Valor</th><th class="n">ICMS</th></tr></thead><tbody>' + itens + '</tbody></table></div>';
+      corpo += '<div class="kpis mini">' + [['Produtos', 'vProd'], ['Desconto', 'vDesc'], ['Frete', 'vFrete'], ['BC ICMS', 'vBC'], ['ICMS', 'vICMS'], ['ICMS ST', 'vST'], ['IPI', 'vIPI'], ['PIS', 'vPIS'], ['COFINS', 'vCOFINS'], ['Total da nota', 'vNF']].map(function (k) { return '<div class="kpi"><span class="r">' + k[0] + '</span><span class="v">' + brl(g(tot, k[1])) + '</span></div>'; }).join('') + '</div>';
+      var inf = g(no('infAdic'), 'infCpl'); if (inf) corpo += '<h3>Informações complementares</h3><p class="nota">' + esc(inf) + '</p>';
+    } else if (d.tipo === 'evento') {
+      corpo += '<div class="dgrid">' + linha('Evento', d.obs + ' (' + d.evento + ')') + linha('Documento', d.chave) + linha('Data', new Date(g(x, 'dhEvento')).toLocaleString('pt-BR')) + linha('Protocolo', d.nProt) +
+        linha('Justificativa', g(x, 'xJust')) + linha('Correção', g(x, 'xCorrecao')) + linha('Situação', d.sit + ' (cStat ' + d.cStat + ')') + '</div>';
+    } else {
+      corpo += '<div class="dgrid">' + linha('Emitente', d.emitNome + ' ' + fmtDoc(d.emitDoc)) + linha('Destinatário', d.destNome) + linha('Valor', d.valor ? 'R$ ' + brl(d.valor) : '') + linha('Chave', d.chave) + linha('Protocolo', d.nProt) + linha('Observação', d.obs) + '</div>';
+    }
+    corpo += '<details><summary>Ver o XML completo</summary><pre class="xml">' + esc(txt.length > 300000 ? txt.slice(0, 300000) + '\n…' : txt) + '</pre></details>';
+    dlg.innerHTML = '<div class="cab"><div><h2 id="xDetTit">' + esc(TIPOS_XML[d.tipo] + ' nº ' + d.num + (d.serie ? ' · série ' + d.serie : '')) + '</h2><p class="sub">' + esc(nomeXml(d)) + ' · ' + esc(d.sit) + (d.valor && d.tipo !== 'evento' ? ' · R$ ' + brl(d.valor) : '') + '</p></div>' +
+      '<div class="acoes"><button class="btn" type="button" id="xDetBaixar">Baixar XML</button><button class="btn sec" type="button" id="xDetFechar">Fechar</button></div></div>' + corpo;
+    $('xDetBaixar').addEventListener('click', function () { baixarUmXml(d); });
+    $('xDetFechar').addEventListener('click', function () { dlg.close(); });
+    if (dlg.showModal) dlg.showModal(); else dlg.setAttribute('open', '');
+  }).catch(function (e) { alertaXml(e.message); });
+}
+
+/* ---------------- configurações (só administrador) ---------------- */
+var CFG = null, CFG_ABA = 'logins';
+function telaConfig() {
+  marcarNav('config'); ATUAL = null; RESUMO = null;
+  $('tela').innerHTML = carregando('Carregando as configurações…');
+  chamar('portalAdmin', TOKEN).then(function (r) { CFG = r; desenharConfig(); })
+    .catch(function (e) { $('tela').innerHTML = '<div class="card erro">' + esc(e.message) + '</div>'; });
+}
+function cfgAplicar(p, msgOk) {
+  return p.then(function (r) { CFG = r; desenharConfig(); avisoCfg(msgOk, false); return r; })
+    .catch(function (e) { avisoCfg(e.message, true); throw e; });
+}
+function avisoCfg(txt, erro) { var a = $('cfgAviso'); if (!a) return; a.className = 'aviso' + (erro ? ' bad' : ''); a.textContent = txt || ''; if (txt) setTimeout(function () { if (a.textContent === txt) a.textContent = ''; }, 6000); }
+function contabsCfg() { return CFG.estrutura.map(function (c) { return c.nome; }); }
+
+function desenharConfig() {
+  var abas = [['logins', 'Logins dos contadores'], ['estrutura', 'Contabilidades e clientes'], ['regimes', 'Regimes']];
+  $('tela').innerHTML = '<div class="cab"><div><h1>Configurações</h1><p class="sub">Só o administrador vê esta área. As mudanças valem na hora (o contador precisa entrar de novo para ver contabilidades novas).</p></div></div>' +
+    '<div class="abas" role="tablist">' + abas.map(function (a) { return '<button class="tab" role="tab" type="button" data-c="' + a[0] + '" aria-selected="' + (a[0] === CFG_ABA) + '">' + a[1] + '</button>'; }).join('') + '</div>' +
+    '<p id="cfgAviso" class="aviso" role="status"></p><div id="cfgCorpo"></div><dialog id="dlgUsu" aria-labelledby="dlgUsuTit"></dialog>';
+  document.querySelector('.abas').addEventListener('click', function (ev) { var b = ev.target.closest('.tab'); if (b) { CFG_ABA = b.dataset.c; desenharConfig(); } });
+  if (CFG_ABA === 'logins') cfgLogins(); else if (CFG_ABA === 'estrutura') cfgEstrutura(); else cfgRegimes();
+}
+
+function cfgLogins() {
+  $('cfgCorpo').innerHTML = '<div class="ferr"><button class="btn" type="button" id="bNovoUsu">+ Novo login</button><span class="sub">Cada contador só enxerga as contabilidades marcadas no login dele.</span></div>' +
+    '<div class="tbl"><table><thead><tr><th>Login</th><th>Nome</th><th>Contabilidades</th><th>Situação</th><th>Último acesso</th><th></th></tr></thead><tbody>' +
+    CFG.usuarios.map(function (u, i) {
+      return '<tr><td class="m">' + esc(u.login) + '</td><td>' + esc(u.nome) + '</td><td class="w">' + (u.contabs.indexOf('*') >= 0 ? '<span class="pill">todas (administrador)</span>' : esc(u.contabs.join(', '))) + '</td>' +
+        '<td>' + (u.ativo ? '<span class="pill">ativo</span>' : '<span class="pill bad">bloqueado</span>') + (u.temSenha ? '' : ' <span class="pill warn">sem senha</span>') + '</td>' +
+        '<td>' + (u.ultimo ? new Date(u.ultimo).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '—') + '</td><td><button class="lnk" type="button" data-u="' + i + '">editar</button></td></tr>';
+    }).join('') + '</tbody></table></div>';
+  $('bNovoUsu').addEventListener('click', function () { dlgUsuario(null); });
+  $('cfgCorpo').querySelectorAll('[data-u]').forEach(function (b) { b.addEventListener('click', function () { dlgUsuario(CFG.usuarios[+b.dataset.u]); }); });
+}
+
+function dlgUsuario(u) {
+  var dlg = $('dlgUsu'), novo = !u; u = u || { login: '', nome: '', contabs: [], ativo: true };
+  var adm = u.contabs.indexOf('*') >= 0;
+  dlg.innerHTML = '<form id="fUsu" class="form"><h2 id="dlgUsuTit">' + (novo ? 'Novo login' : 'Editar login ' + esc(u.login)) + '</h2>' +
+    '<label for="uLogin">Login (sem espaço)<input id="uLogin" type="text" required value="' + esc(u.login) + '" autocomplete="off"></label>' +
+    '<label for="uNome">Nome que aparece no portal<input id="uNome" type="text" value="' + esc(u.nome) + '"></label>' +
+    '<label for="uSenha">' + (novo ? 'Senha (mínimo 6 caracteres)' : 'Nova senha (deixe em branco para manter a atual)') + '<input id="uSenha" type="text" autocomplete="new-password"' + (novo ? ' required' : '') + '></label>' +
+    '<fieldset><legend>Contabilidades que este login pode ver</legend>' +
+      '<label class="ck"><input type="checkbox" id="uTodas"' + (adm ? ' checked' : '') + '> Todas — administrador (vê tudo e acessa as Configurações)</label>' +
+      '<div class="cks" id="uLista">' + contabsCfg().map(function (c) { return '<label class="ck"><input type="checkbox" value="' + esc(c) + '"' + (u.contabs.some(function (x) { return norm(x) === norm(c); }) ? ' checked' : '') + '> ' + esc(c) + '</label>'; }).join('') + '</div></fieldset>' +
+    '<label class="ck"><input type="checkbox" id="uAtivo"' + (u.ativo ? ' checked' : '') + '> Ativo (desmarque para bloquear o acesso sem apagar)</label>' +
+    '<p class="aviso bad" id="uErro" role="alert"></p>' +
+    '<div class="acoes"><button class="btn" type="submit" id="uSalvar">Salvar</button><button class="btn sec" type="button" id="uCancelar">Cancelar</button>' +
+    (novo ? '' : '<button class="btn sec perigo" type="button" id="uExcluir">Excluir login</button>') + '</div></form>';
+  var sinc = function () { var t = $('uTodas').checked; $('uLista').querySelectorAll('input').forEach(function (i) { i.disabled = t; }); };
+  $('uTodas').addEventListener('change', sinc); sinc();
+  $('uCancelar').addEventListener('click', function () { dlg.close(); });
+  if ($('uExcluir')) $('uExcluir').addEventListener('click', function () {
+    var b = $('uExcluir');
+    if (b.dataset.conf !== '1') { b.dataset.conf = '1'; b.textContent = 'Clique de novo para confirmar'; return; }
+    cfgAplicar(chamar('portalExcluirUsuario', TOKEN, u.login), 'Login ' + u.login + ' excluído.').then(function () { dlg.close(); }).catch(function (e) { $('uErro').textContent = e.message; });
+  });
+  $('fUsu').addEventListener('submit', function (ev) {
+    ev.preventDefault();
+    var contabs = $('uTodas').checked ? ['*'] : Array.prototype.map.call($('uLista').querySelectorAll('input:checked'), function (i) { return i.value; });
+    var dados = { original: novo ? '' : u.login, login: $('uLogin').value, nome: $('uNome').value, senha: $('uSenha').value, contabs: contabs, ativo: $('uAtivo').checked };
+    $('uSalvar').disabled = true; $('uErro').textContent = '';
+    cfgAplicar(chamar('portalSalvarUsuario', TOKEN, dados), 'Login ' + dados.login.toLowerCase() + ' salvo.' + (dados.senha ? ' Passe a senha ao contador.' : ''))
+      .then(function () { dlg.close(); }).catch(function (e) { $('uSalvar').disabled = false; $('uErro').textContent = e.message; });
+  });
+  if (dlg.showModal) dlg.showModal(); else dlg.setAttribute('open', '');
+}
+
+function cfgEstrutura() {
+  var noPortal = {}; DADOS.unidades.forEach(function (u) { noPortal[norm(u.contabilidade) + '|' + norm(u.cliente)] = 1; });
+  var ano = new Date().getFullYear();
+  $('cfgCorpo').innerHTML = '<div class="grade2">' +
+      '<form class="card form" id="fContab"><h2>Nova contabilidade</h2><label for="nContab">Nome (como vai aparecer no Drive e no portal)<input id="nContab" type="text" required placeholder="Ex.: SILVA CONTABILIDADE"></label>' +
+        '<div class="acoes"><button class="btn" type="submit">Criar contabilidade</button></div><p class="nota">Cria a pasta em ARQUIVOS FISCAIS CONTABEIS. Depois crie o login do contador na aba "Logins".</p></form>' +
+      '<form class="card form" id="fCli"><h2>Novo cliente</h2><label for="nCliContab">Contabilidade<select id="nCliContab" required>' + contabsCfg().map(function (c) { return '<option>' + esc(c) + '</option>'; }).join('') + '</select></label>' +
+        '<label for="nCli">Nome do cliente (nome da pasta)<input id="nCli" type="text" required placeholder="Ex.: MERCADINHO SÃO JOSÉ"></label>' +
+        '<div class="cks"><label class="ck"><input type="checkbox" id="nMatriz"> tem MATRIZ</label><label class="ck"><input type="checkbox" id="nFilial"> tem FILIAL</label><label for="nOutra">outra subpasta<input id="nOutra" type="text" placeholder="opcional" size="12"></label><label for="nAno">ano<input id="nAno" type="text" value="' + ano + '" size="5" inputmode="numeric"></label></div>' +
+        '<div class="acoes"><button class="btn" type="submit">Criar cliente</button></div><p class="nota">Cria CONTABILIDADE / CLIENTE / XML ' + ano + ' (e as subpastas). Para cliente que usa o LC, depois é só rodar o instalador no servidor e escolher este nome. Para os outros sistemas, basta subir os XML em XML ' + ano + ' / MM.AAAA.</p></form>' +
+    '</div>' +
+    '<div class="card"><div class="cab"><h2>No Drive hoje (' + CFG.estrutura.length + ' contabilidades)</h2><input type="search" id="fEst" placeholder="Buscar cliente…" aria-label="Buscar cliente"></div><div id="lEst"></div></div>';
+  var desenhar = function () {
+    var f = norm($('fEst').value || '');
+    $('lEst').innerHTML = CFG.estrutura.map(function (c) {
+      var cls = c.clientes.filter(function (cl) { return !f || norm(cl.nome).indexOf(f) >= 0 || norm(c.nome).indexOf(f) >= 0; });
+      if (f && !cls.length) return '';
+      return '<details' + (f ? ' open' : '') + '><summary><b>' + esc(c.nome) + '</b> <span class="sub">· ' + c.clientes.length + ' cliente(s)</span></summary><div class="tbl"><table><thead><tr><th>Cliente</th><th>Anos</th><th>Subpastas</th><th>No portal</th></tr></thead><tbody>' +
+        (cls.map(function (cl) { return '<tr><td><b>' + esc(cl.nome) + '</b></td><td>' + esc(cl.anos.join(', ') || '—') + '</td><td>' + esc(cl.subpastas.join(', ') || '—') + '</td><td>' + (noPortal[norm(c.nome) + '|' + norm(cl.nome)] ? '<span class="pill">sim</span>' : '<span class="pill info">ainda não</span>') + '</td></tr>'; }).join('') || '<tr><td colspan="4" class="sub">Nenhum cliente ainda.</td></tr>') +
+        '</tbody></table></div></details>';
+    }).join('');
+  };
+  $('fEst').addEventListener('input', desenhar); desenhar();
+  $('fContab').addEventListener('submit', function (ev) {
+    ev.preventDefault(); var n = $('nContab').value;
+    cfgAplicar(chamar('portalCriarContabilidade', TOKEN, n), 'Contabilidade criada: ' + n.toUpperCase() + '. Agora crie o login do contador.').catch(function () { });
+  });
+  $('fCli').addEventListener('submit', function (ev) {
+    ev.preventDefault();
+    var subs = []; if ($('nMatriz').checked) subs.push('MATRIZ'); if ($('nFilial').checked) subs.push('FILIAL'); if ($('nOutra').value.trim()) subs.push($('nOutra').value);
+    var c = $('nCliContab').value, n = $('nCli').value;
+    cfgAplicar(chamar('portalCriarCliente', TOKEN, c, n, subs, $('nAno').value), 'Cliente criado: ' + c + ' / ' + n.toUpperCase() + '.').catch(function () { });
+  });
+}
+
+function cfgRegimes() {
+  var mes = mesPadrao();
+  var inf = {}; CFG.regimes.forEach(function (r) { inf[chaveUnid(r.contabilidade, r.cliente)] = r.regime; });
+  var ident = {}; ((IND[mes] || {}).itens || []).forEach(function (x) { ident[chaveUnid(x.contabilidade, x.cliente + (x.subpasta ? ' / ' + x.subpasta : ''))] = x; });
+  var opc = [['', 'Automático (pelos XML)'], ['SN', 'Simples Nacional'], ['MEI', 'MEI'], ['PRESUMIDO', 'Lucro Presumido'], ['REAL', 'Lucro Real']];
+  $('cfgCorpo').innerHTML = '<p class="nota">Deixe em "Automático" para o portal identificar pelos XML. Escolha um regime só quando ele errar ou não conseguir identificar (empresa sem notas de saída, regime normal sem PIS destacado…).</p>' +
+    '<div class="tbl"><table><thead><tr><th>Contabilidade</th><th>Cliente</th><th>Identificado em ' + (mes ? esc(nomeMes(mes)) : '—') + '</th><th>Regime usado no portal</th></tr></thead><tbody>' +
+    DADOS.unidades.map(function (u, i) {
+      var ck = chaveUnid(u.contabilidade, rotuloPainel(u)), x = ident[ck], v = inf[ck] || '';
+      return '<tr><td>' + esc(u.contabilidade) + '</td><td><b>' + esc(rotuloUnid(u)) + '</b></td><td>' + (x && !x.erro ? pillReg(x.regime, x.regimeFonte) : (IND[mes] ? '<span class="sub">sem resumo no mês</span>' : '<span class="sub">carregando…</span>')) + '</td>' +
+        '<td><select data-r="' + i + '" aria-label="Regime de ' + esc(rotuloUnid(u)) + '">' + opc.map(function (o) { return '<option value="' + o[0] + '"' + (o[0] === v ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select></td></tr>';
+    }).join('') + '</tbody></table></div>';
+  $('cfgCorpo').querySelectorAll('select[data-r]').forEach(function (s) {
+    s.addEventListener('change', function () {
+      var u = DADOS.unidades[+s.dataset.r], reg = s.value; s.disabled = true;
+      chamar('portalSalvarRegime', TOKEN, u.contabilidade, rotuloPainel(u), reg).then(function (r) {
+        CFG = r; s.disabled = false;
+        var ck = chaveUnid(u.contabilidade, rotuloPainel(u)); DADOS.regimes = DADOS.regimes || {}; if (reg) DADOS.regimes[ck] = reg; else delete DADOS.regimes[ck];
+        avisoCfg('Regime de ' + rotuloUnid(u) + ': ' + (reg ? NOME_REG[reg] : 'automático') + '.', false);
+      }).catch(function (e) { s.disabled = false; avisoCfg(e.message, true); });
+    });
+  });
+  if (mes && !IND[mes]) carregarInd(mes, function () { }).then(function () { if (CFG_ABA === 'regimes' && $('cfgCorpo')) cfgRegimes(); }).catch(function () { });
+}
+
+/* ---------------- dia a dia (calendário do mês) ---------------- */
+var SEMANA = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+function diasDoResumo() {
+  var mes = ATUAL.mes, l = (RESUMO.porDia || []).filter(function (d) { return d.dia.slice(0, 7) === mes; });
+  return { dias: l, fora: (RESUMO.porDia || []).filter(function (d) { return d.dia.slice(0, 7) !== mes; }), sistema: !!RESUMO.comSistema, fonte: 'resumo' };
+}
+function diasDosXml() {   // monta a partir dos XML do mês já carregados na busca
+  var m = {}, fora = 0;
+  BUSCA.docs.forEach(function (d) {
+    if (d.mes !== ATUAL.mes || ['nfe', 'nfce', 'compra'].indexOf(d.tipo) < 0 || !d.data) return;
+    if (d.data.slice(0, 7) !== ATUAL.mes) { fora++; return; }
+    var x = m[d.data] = m[d.data] || { dia: d.data, nfe: 0, nfce: 0, compras: 0, canc: 0, vNfe: 0, vNfce: 0, vCompras: 0 };
+    if (d.sit === 'Cancelada') x.canc++;
+    if (d.tipo === 'nfce') { x.nfce++; x.vNfce += d.valor; } else if (d.tipo === 'compra') { x.compras++; x.vCompras += d.valor; } else { x.nfe++; x.vNfe += d.valor; }
+  });
+  return { dias: Object.keys(m).sort().map(function (k) { return m[k]; }), fora: fora ? [{ compras: fora }] : [], sistema: false, fonte: 'xml' };
+}
+
+function telaDias(c) {
+  if (RESUMO.porDia) { desenharDias(c, diasDoResumo()); return; }
+  var u = ATUAL.u, ck = chaveUnid(u.contabilidade, rotuloPainel(u));
+  if (BUSCA && BUSCA.ck === ck && BUSCA.meses[ATUAL.mes] && BUSCA.meses[ATUAL.mes].carregado) { desenharDias(c, diasDosXml()); return; }
+  c.innerHTML = '<div class="card"><h2>Dia a dia</h2><p class="nota">Este resumo foi gerado por uma versão anterior do programa, que ainda não guardava a contagem por dia. ' +
+    'Ela passa a vir pronta depois da próxima sincronização. Enquanto isso, dá para montar agora a partir dos XML do mês.</p>' +
+    '<div class="ferr"><button class="btn" type="button" id="dMontar">Montar pelos XML do mês</button><div class="barra hidden" id="dBarra"><i></i></div><span class="sub" id="dInfo"></span></div></div>';
+  $('dMontar').addEventListener('click', function () {
+    if (!BUSCA || BUSCA.ck !== ck) BUSCA = { ck: ck, meses: {}, docs: [], porChave: {}, sel: {}, ord: 'data', asc: false, cnpj: RESUMO && RESUMO.cnpj };
+    $('dMontar').disabled = true;
+    var info = function (t, p) { if (!$('dInfo')) return; $('dInfo').textContent = t; var b = $('dBarra'); if (p == null) b.classList.add('hidden'); else { b.classList.remove('hidden'); b.firstChild.style.width = (100 * p) + '%'; } };
+    carregarMesBusca(u, ATUAL.mes, info).then(function () { if (ATUAL && ATUAL.aba === 'dias' && $('conteudo')) desenharDias($('conteudo'), diasDosXml()); })
+      .catch(function (e) { info(e.message, null); if ($('dMontar')) $('dMontar').disabled = false; });
+  });
+}
+
+function desenharDias(c, D) {
+  var mes = ATUAL.mes, ano = +mes.slice(0, 4), m = +mes.slice(5, 7), nDias = new Date(ano, m, 0).getDate();
+  var hoje = new Date(), hojeTxt = hoje.getFullYear() + '-' + ('0' + (hoje.getMonth() + 1)).slice(-2) + '-' + ('0' + hoje.getDate()).slice(-2);
+  var por = {}; D.dias.forEach(function (d) { por[d.dia] = d; });
+  var cel = [], diasCom = 0, diasSem = [], faltamTot = 0, diasFalta = [], maxDocs = 1, serie = [];
+  for (var i = 1; i <= nDias; i++) {
+    var dia = mes + '-' + ('0' + i).slice(-2), d = por[dia] || { nfe: 0, nfce: 0, compras: 0, canc: 0 };
+    var emit = d.nfe + d.nfce, futuro = dia > hojeTxt, dow = new Date(ano, m - 1, i).getDay();
+    var falta = Math.max(0, (d.sisNfe || 0) - (d.sisNfeXml || 0)) + Math.max(0, (d.sisNfce || 0) - (d.sisNfceXml || 0));
+    if (emit) diasCom++; else if (!futuro) diasSem.push(i);
+    if (falta) { faltamTot += falta; diasFalta.push(i); }
+    maxDocs = Math.max(maxDocs, emit);
+    serie.push({ i: i, nfe: d.nfe, nfce: d.nfce, futuro: futuro });
+    var cls = futuro ? 'fut' : (falta ? 'falta' : (emit ? 'ok' : (dow === 0 ? 'dom' : 'vazio')));
+    var tip = dataBR(dia) + ' · NF-e ' + d.nfe + (d.vNfe ? ' (R$ ' + brl(d.vNfe) + ')' : '') + ' · NFC-e ' + d.nfce + (d.vNfce ? ' (R$ ' + brl(d.vNfce) + ')' : '') + ' · compras ' + d.compras +
+      (D.sistema ? ' · no sistema: ' + (d.sisNfe || 0) + ' NF-e / ' + (d.sisNfce || 0) + ' NFC-e' : '');
+    cel.push('<div class="dia ' + cls + '" title="' + esc(tip) + '"' + (i === 1 ? ' style="grid-column-start:' + (dow + 1) + '"' : '') + '><b>' + i + '</b>' +
+      (futuro ? '' : '<span>' + (d.nfe ? d.nfe + ' NF-e' : '') + (d.nfe && d.nfce ? ' · ' : '') + (d.nfce ? d.nfce + ' NFC-e' : '') + (!emit ? 'nenhum XML' : '') + '</span>' +
+        (d.compras ? '<span class="c">' + d.compras + ' compra' + (d.compras > 1 ? 's' : '') + '</span>' : '') +
+        (falta ? '<span class="f">faltam ' + falta + ' XML</span>' : '') + (d.canc ? '<span class="c">' + d.canc + ' cancelada' + (d.canc > 1 ? 's' : '') + '</span>' : '')) + '</div>');
+  }
+  var foraCompras = D.fora.reduce(function (a, x) { return a + (x.compras || 0); }, 0);
+  var resumoTxt = '<b>' + diasCom + '</b> dia(s) com notas emitidas' + (diasSem.length ? ' · <b>' + diasSem.length + '</b> dia(s) sem nenhum XML emitido: ' + diasSem.join(', ') : ' · nenhum dia sem XML até hoje') + '.';
+  var alerta = '';
+  if (D.sistema) alerta = faltamTot ? '<p class="aviso bad">O sistema (LC) tem ' + faltamTot + ' documento(s) sem XML ' + (diasFalta.length > 1 ? 'nos dias ' : 'no dia ') + diasFalta.join(', ') + '. Podem ser notas em digitação, rejeitadas ou ainda não transmitidas: confira no sistema.</p>'
+    : '<p class="aviso">Conferido com o banco do LC: todos os documentos do sistema estão com XML.</p>';
+  else alerta = '<p class="nota">' + (D.fonte === 'xml' ? 'Montado agora pelos XML do mês. ' : '') + 'Este cliente não é conferido com o banco do sistema (envio manual ou versão antiga do programa): o calendário mostra o que chegou de XML, dia por dia.</p>';
+  // gráfico de barras (SVG)
+  var W = 760, H = 150, bw = W / nDias, esc2 = function (v) { return (H - 22) * v / maxDocs; };
+  var barras = serie.map(function (s) {
+    var x = (s.i - 1) * bw + 2, h1 = esc2(s.nfe), h2 = esc2(s.nfce), y0 = H - 18;
+    return (s.futuro ? '' : '<rect class="b2" x="' + x + '" y="' + (y0 - h2) + '" width="' + (bw - 4) + '" height="' + h2 + '"><title>dia ' + s.i + ': ' + s.nfce + ' NFC-e</title></rect>' +
+      '<rect class="b1" x="' + x + '" y="' + (y0 - h2 - h1) + '" width="' + (bw - 4) + '" height="' + h1 + '"><title>dia ' + s.i + ': ' + s.nfe + ' NF-e</title></rect>') +
+      ((s.i === 1 || s.i % 5 === 0) ? '<text x="' + (x + (bw - 4) / 2) + '" y="' + (H - 4) + '" text-anchor="middle">' + s.i + '</text>' : '');
+  }).join('');
+  c.innerHTML = '<div class="card"><div class="cab"><h2>Dia a dia · ' + esc(nomeMes(mes)) + '</h2><span class="legenda"><i class="l-ok"></i>com XML <i class="l-vazio"></i>sem XML <i class="l-falta"></i>faltando XML <i class="l-dom"></i>domingo sem movimento</span></div>' +
+      '<p>' + resumoTxt + '</p>' + alerta +
+      '<div class="cal">' + SEMANA.map(function (s) { return '<div class="sem">' + s + '</div>'; }).join('') + cel.join('') + '</div>' +
+      (foraCompras ? '<p class="nota">' + foraCompras + ' nota(s) de compra lançadas neste mês foram emitidas pelo fornecedor em outro mês (não aparecem no calendário).</p>' : '') + '</div>' +
+    '<div class="card"><h2>Documentos emitidos por dia</h2><svg class="grafico" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Notas emitidas por dia">' + barras + '</svg>' +
+      '<p class="legenda"><i class="b1"></i>NF-e <i class="b2"></i>NFC-e</p></div>' +
+    '<div class="ferr"><button class="btn sec" type="button" id="bCsvDias">Exportar dia a dia (CSV)</button></div><div id="tDias"></div>';
+  var linhas = D.dias.filter(function (d) { return d.dia.slice(0, 7) === mes; }).map(function (d) {
+    var y = {}; for (var k in d) y[k] = d[k];
+    y.semXml = D.sistema ? Math.max(0, (d.sisNfe || 0) - (d.sisNfeXml || 0)) + Math.max(0, (d.sisNfce || 0) - (d.sisNfceXml || 0)) : null;
+    y.semana = SEMANA[new Date(+d.dia.slice(0, 4), +d.dia.slice(5, 7) - 1, +d.dia.slice(8, 10)).getDay()];
+    return y;
+  });
+  var cols = COL.dias.filter(function (x) { return D.sistema || ['sisNfe', 'sisNfce', 'semXml'].indexOf(x[0]) < 0; });
+  var t = tabela($('tDias'), cols, linhas, 'dia', true);
+  $('bCsvDias').addEventListener('click', function () { csv(cols, t.linhas(), (rotuloUnid(ATUAL.u) + ' ' + mes + ' dia a dia').replace(/[\\/:*?"<>|]/g, '-') + '.csv'); });
+}
+
+/* ---------------- tela 2: cliente e mês ---------------- */
+function abrir(u, mes) {
+  ATUAL = { u: u, mes: mes || u.meses[0], aba: (ATUAL && ATUAL.aba) || 'dias', origem: 'Todas' };
+  $('tela').innerHTML = carregando('Carregando o resumo de ' + rotuloUnid(u) + '…');
+  chamar('portalResumo', TOKEN, u.contabilidade, u.cliente, u.subpasta, ATUAL.mes).then(function (txt) {
+    RESUMO = JSON.parse(txt); telaCliente();
+  }).catch(function (e) { $('tela').innerHTML = '<div class="card erro">' + esc(e.message) + '</div>'; });
+}
+
+function telaCliente() {
+  var u = ATUAL.u, r = RESUMO, t = r.totais || {};
+  var nfe = t.NFe || {}, nfce = t.NFCe || {}, cp = t.Compras || {};
+  var html = '<div><button class="btn sec" id="bVoltar" type="button">← Clientes</button></div>' +
+    '<div class="cab"><div><h1>' + esc(rotuloUnid(u)) + ' ' + regimeCliente(u) + '</h1><p class="sub">' + esc(u.contabilidade) + ' · CNPJ ' + esc(r.cnpj || '—') + ' · dados gerados em ' + new Date(r.geradoEm).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) + '</p></div>' +
+    '<div class="acoes"><label class="sub" for="fMes">Mês&nbsp;<select id="fMes">' + u.meses.map(function (m) { return '<option value="' + m + '"' + (m === ATUAL.mes ? ' selected' : '') + '>' + nomeMes(m) + '</option>'; }).join('') + '</select></label>' +
+    '<button class="btn" id="bZip" type="button">Baixar XML do mês (ZIP)</button><div class="barra hidden" id="barra"><i></i></div><span class="sub" id="zipInfo"></span></div></div>' +
+    '<div class="kpis">' +
+      kpi('NF-e emitidas', 'R$ ' + brl(nfe.valor), int(nfe.qtd) + ' notas · ' + int(nfe.canceladas) + ' canceladas') +
+      kpi('NFC-e', 'R$ ' + brl(nfce.valor), int(nfce.qtd) + ' cupons · ' + int(nfce.canceladas) + ' cancelados') +
+      kpi('Compras (XML importados)', 'R$ ' + brl(cp.valor), int(cp.qtd) + ' notas de entrada') +
+      kpi('ICMS próprio nas saídas', 'R$ ' + brl(somaSaidas('vICMS')), 'ICMS ST nas saídas: R$ ' + brl(somaSaidas('vST'))) +
+      kpi('Devoluções', int((r.devolucoes || []).length), 'R$ ' + brl((r.devolucoes || []).reduce(function (a, d) { return a + d.valor; }, 0))) +
+      kpi('CT-e / MDF-e', int((r.cte || {}).qtd) + ' / ' + int(r.mdfe), 'CT-e: R$ ' + brl((r.cte || {}).valor)) +
+    '</div>' +
+    '<div class="abas" role="tablist">' + ABAS.map(function (a) { return '<button class="tab" role="tab" type="button" data-a="' + a.id + '" aria-selected="' + (a.id === ATUAL.aba) + '">' + a.nome + '</button>'; }).join('') + '</div>' +
+    '<div id="conteudo"></div>';
+  $('tela').innerHTML = html;
+  $('bVoltar').addEventListener('click', telaLista);
+  $('fMes').addEventListener('change', function () { abrir(u, this.value); });
+  $('bZip').addEventListener('click', baixarZip);
+  document.querySelector('.abas').addEventListener('click', function (ev) { var b = ev.target.closest('.tab'); if (!b) return; ATUAL.aba = b.dataset.a; document.querySelectorAll('.tab').forEach(function (x) { x.setAttribute('aria-selected', x === b); }); desenharAba(); });
+  desenharAba();
+}
+function regimeCliente(u) {
+  var r = IND[ATUAL.mes]; if (!r) return '';
+  var x = r.itens.filter(function (i) { return i.contabilidade === u.contabilidade && i.cliente === u.cliente && (i.subpasta || '') === (u.subpasta || ''); })[0];
+  if (!x || x.erro) return '';
+  var inf = DADOS.regimes && DADOS.regimes[chaveUnid(u.contabilidade, rotuloPainel(u))];
+  return pillReg(inf || x.regime, inf ? 'informado na planilha' : x.regimeFonte);
+}
+function somaSaidas(k) { return (RESUMO.tributacao || []).filter(function (x) { return x.es === 'S' && x.origem !== 'Compras'; }).reduce(function (a, x) { return a + (x[k] || 0); }, 0); }
+function kpi(r, v, d) { return '<div class="kpi"><span class="r">' + esc(r) + '</span><span class="v">' + esc(v) + '</span><span class="d">' + esc(d) + '</span></div>'; }
+
+var COL = {
+  trib: [['origem','Origem'],['es','E/S'],['cfop','CFOP','m'],['cst','CST/CSOSN','m'],['aliq','Alíq. ICMS','aliq'],['itens','Itens','int',1],['valor','Valor contábil','brl',1],['vBC','BC ICMS','brl',1],['vICMS','ICMS','brl',1],['vBCST','BC ST','brl',1],['vST','ICMS ST','brl',1],['vIPI','IPI','brl',1],['vPIS','PIS','brl',1],['vCOFINS','COFINS','brl',1],['vIBS','IBS','brl',1],['vCBS','CBS','brl',1]],
+  ncm: [['origem','Origem'],['ncm','NCM','m'],['cest','CEST','m'],['cst','CST/CSOSN','m'],['cstPis','CST PIS','m'],['cfops','CFOPs','m'],['produtos','Produtos','int',1],['itens','Itens','int',1],['valor','Valor','brl',1],['vICMS','ICMS','brl',1],['vST','ICMS ST','brl',1],['vPIS','PIS','brl',1],['vCOFINS','COFINS','brl',1]],
+  pis: [['origem','Origem'],['cstPis','CST PIS','m'],['cstCofins','CST COFINS','m'],['itens','Itens','int',1],['valor','Valor','brl',1],['vPIS','PIS','brl',1],['vCOFINS','COFINS','brl',1]],
+  prod: [['origem','Origem'],['codigo','Código','m'],['descricao','Descrição','w'],['ncm','NCM','m'],['cst','CST/CSOSN','m'],['un','Un'],['qtd','Quantidade','qtd',1],['valor','Valor','brl',1],['itens','Itens','int',1]],
+  dev: [['tipo','Tipo','w'],['numero','Número','int'],['serie','Série'],['data','Data','data'],['cfop','CFOP','m'],['participante','Participante','w'],['documento','CNPJ/CPF','m'],['valor','Valor','brl',1],['chave','Chave','m'],['referencia','NF referenciada','m']],
+  canc: [['origem','Origem'],['modelo','Modelo'],['serie','Série'],['numero','Número','int'],['data','Data','data'],['valor','Valor','brl',1],['chave','Chave','m']],
+  inut: [['modelo','Modelo'],['serie','Série'],['inicio','De','int'],['fim','Até','int'],['justificativa','Justificativa','w'],['protocolo','Protocolo','m']],
+  falha: [['modelo','Modelo'],['serie','Série'],['de','De','int'],['ate','Até','int'],['quantidade','Qtd. números','int',1]],
+  pag: [['origem','Origem'],['forma','Forma de pagamento'],['tPag','Código','m'],['qtd','Ocorrências','int',1],['valor','Valor','brl',1],['part','% do total','pct']],
+  dash: [['rotulo','Cliente','w'],['contabilidade','Contabilidade'],['regimeNome','Regime','reg'],['vendas','Vendas','brl',1],['devVenda','Devol. de venda','brl',1],['compras','Compras','brl',1],['icms','ICMS próprio','brl',1],['st','ICMS ST','brl',1],['pisCofins','PIS+COFINS','brl',1],['nfeQtd','NF-e','int',1],['nfceQtd','NFC-e','int',1],['cancQtd','Cancelados','int',1],['falhas','Falhas numeração','int',1],['dias','Dias sem enviar','int']],
+  dias: [['dia','Dia','data'],['semana','Semana'],['nfe','NF-e','int',1],['nfce','NFC-e','int',1],['compras','Compras','int',1],['canc','Canceladas','int',1],['vNfe','Valor NF-e','brl',1],['vNfce','Valor NFC-e','brl',1],['vCompras','Valor compras','brl',1],['sisNfe','NF-e no sistema','int',1],['sisNfce','NFC-e no sistema','int',1],['semXml','Sem XML no sistema','int',1]],
+  xml: [['tipoNome','Tipo'],['num','Número','m'],['serie','Série'],['data','Data','data'],['mes','Mês'],['emitNome','Emitente'],['emitDoc','CNPJ/CPF emitente','m'],['destNome','Destinatário'],['destDoc','CNPJ/CPF destinatário','m'],['valor','Valor','brl'],['sit','Situação'],['chave','Chave de acesso','m'],['nProt','Protocolo','m'],['arquivo','Arquivo']]
+};
+var ABAS = [
+  { id: 'dias', nome: 'Dia a dia' }, { id: 'trib', nome: 'Tributação' }, { id: 'ncm', nome: 'NCMs' }, { id: 'pis', nome: 'PIS/COFINS' }, { id: 'prod', nome: 'Produtos' },
+  { id: 'dev', nome: 'Devoluções' }, { id: 'canc', nome: 'Cancelamentos e numeração' }, { id: 'pag', nome: 'Pagamentos' }, { id: 'xml', nome: 'Buscar XML' }
+];
+var ORIGENS = ['Todas', 'NFe', 'NFCe', 'Compras'];
+var NOME_ORIGEM = { NFe: 'NF-e emitida', NFCe: 'NFC-e', Compras: 'Compra' };
+
+function desenharAba() {
+  var r = RESUMO, a = ATUAL.aba, c = $('conteudo'), html = '';
+  if (a === 'xml') { telaBusca(c); return; }
+  if (a === 'dias') { telaDias(c); return; }
+  var ferr = function (comOrigem, nota) {
+    return '<div class="ferr">' + (comOrigem ? '<div class="seg" role="group" aria-label="Origem">' + ORIGENS.map(function (o) { return '<button type="button" data-o="' + o + '" aria-pressed="' + (o === ATUAL.origem) + '">' + (o === 'Todas' ? 'Todas' : NOME_ORIGEM[o]) + '</button>'; }).join('') + '</div>' : '') +
+      '<input type="search" id="fTab" placeholder="Filtrar…" aria-label="Filtrar tabela"><button class="btn sec" type="button" id="bCsv">Exportar para Excel (CSV)</button></div>' + (nota ? '<p class="nota">' + nota + '</p>' : '');
+  };
+  if (a === 'trib') { html = ferr(true, 'Valor contábil = produtos − descontos + frete + seguro + outras despesas + IPI + ICMS ST − ICMS desonerado. Documentos cancelados não entram. E/S: entrada ou saída.') + '<div id="t1"></div>'; }
+  else if (a === 'ncm') { html = ferr(true, 'Agrupado por NCM, CST de ICMS e CST de PIS.') + '<div id="t1"></div>'; }
+  else if (a === 'pis') { html = ferr(true, 'Útil para conferir produtos monofásicos (CST 04) e de alíquota zero (CST 06/07).') + '<div id="t1"></div>'; }
+  else if (a === 'prod') { html = ferr(true, 'Os 300 produtos de maior valor em cada origem. Produtos distintos no mês: ' + int(r.produtosDistintos) + '.') + '<div id="t1"></div>'; }
+  else if (a === 'dev') { html = ferr(false, 'Notas com finalidade de devolução ou CFOP de devolução: emitidas pela empresa (entrada de devolução de venda ou saída de devolução de compra) e recebidas de clientes.') + '<div id="t1"></div>'; }
+  else if (a === 'canc') {
+    html = '<div class="grade2"><div class="card"><h2>Documentos cancelados</h2><div id="t1"></div></div><div class="card"><h2>Inutilizações</h2><div id="t2"></div></div></div>' +
+      '<div class="card"><h2>Falhas na numeração</h2><p class="nota">Números entre o primeiro e o último documento emitido no mês que não têm XML autorizado nem inutilização. Podem ser notas rejeitadas ou em digitação: confira no sistema e inutilize se for o caso.</p><div id="t3"></div></div>' +
+      '<div class="ferr"><button class="btn sec" type="button" id="bCsv">Exportar cancelados (CSV)</button></div>';
+  }
+  else if (a === 'pag') { html = ferr(false, 'Formas de pagamento informadas nas NF-e e NFC-e autorizadas (troco já descontado do dinheiro). Use para conferir com os extratos das maquininhas e do PIX.') + '<div id="t1"></div>'; }
+  c.innerHTML = html;
+  c.querySelectorAll('.seg button').forEach(function (b) { b.addEventListener('click', function () { ATUAL.origem = b.dataset.o; desenharAba(); }); });
+  var dadosAba = function () {
+    var lista = { trib: r.tributacao, ncm: r.ncm, pis: r.pisCofins, prod: r.produtos, dev: r.devolucoes, canc: r.canceladas, pag: r.pagamentos }[a] || [];
+    lista = lista.map(function (x) { var y = {}; for (var k in x) y[k] = x[k]; if (y.origem) y.origem = NOME_ORIGEM[y.origem] || y.origem; return y; });
+    if (ATUAL.origem !== 'Todas' && ['trib','ncm','pis','prod'].indexOf(a) >= 0) lista = lista.filter(function (x) { return x.origem === NOME_ORIGEM[ATUAL.origem]; });
+    if (a === 'pag') { ['NF-e emitida', 'NFC-e'].forEach(function (o) { var tot = lista.filter(function (x) { return x.origem === o; }).reduce(function (s, x) { return s + x.valor; }, 0); lista.forEach(function (x) { if (x.origem === o) x.part = tot ? 100 * x.valor / tot : 0; }); }); }
+    return lista;
+  };
+  var colA = a === 'canc' ? 'canc' : a;
+  var ordem = { trib: 'valor', ncm: 'valor', pis: 'valor', prod: 'valor', dev: 'data', canc: 'numero', pag: 'valor' }[a];
+  var t1 = tabela($('t1'), COL[colA], dadosAba(), ordem, a !== 'dev' && a !== 'canc');
+  if (a === 'canc') { tabela($('t2'), COL.inut, r.inutilizacoes || [], 'inicio', false); tabela($('t3'), COL.falha, r.falhasNumeracao || [], 'de', true); }
+  if ($('fTab')) $('fTab').addEventListener('input', function () { t1.filtrar(this.value); });
+  if ($('bCsv')) $('bCsv').addEventListener('click', function () { csv(COL[colA], t1.linhas(), (rotuloUnid(ATUAL.u) + ' ' + ATUAL.mes + ' ' + (ABAS.filter(function (x) { return x.id === a; })[0].nome)).replace(/[\\/:*?"<>|]/g, '-') + '.csv'); });
+}
+
+function fmt(tipo, v, x) {
+  if (tipo === 'reg') return pillReg(x.regime, x.regimeFonte);
+  if (tipo === 'int' && v == null) return '—';
+  if (tipo === 'brl') return brl(v); if (tipo === 'int') return int(v); if (tipo === 'qtd') return qtd(v);
+  if (tipo === 'pct') return pct(v); if (tipo === 'aliq') return aliq(v); if (tipo === 'data') return dataBR(v);
+  return esc(v);
+}
+function tabela(alvo, cols, dados, ordemInicial, comTotal, opc) {
+  opc = opc || {};
+  var st = { k: ordemInicial, asc: false, filtro: '' };
+  if (ordemInicial === 'data' || ordemInicial === 'dia' || ordemInicial === 'numero' || ordemInicial === 'inicio' || ordemInicial === 'de') st.asc = true;
+  var visiveis = function () {
+    var f = st.filtro.toUpperCase();
+    var l = dados.filter(function (x) { return !f || cols.some(function (c) { return String(x[c[0]] == null ? '' : x[c[0]]).toUpperCase().indexOf(f) >= 0; }); });
+    l.sort(function (a, b) { var va = a[st.k], vb = b[st.k]; var r = (typeof va === 'number' && typeof vb === 'number') ? va - vb : String(va).localeCompare(String(vb), 'pt-BR', { numeric: true }); return st.asc ? r : -r; });
+    return l;
+  };
+  var desenhar = function () {
+    if (!dados.length) { alvo.innerHTML = '<div class="vazio">Nada neste mês.</div>'; return; }
+    var l = visiveis();
+    var num = function (c) { return ['brl','int','qtd','pct','aliq'].indexOf(c[2]) >= 0; };
+    var h = '<div class="tbl"><table><thead><tr>' + cols.map(function (c) { return '<th tabindex="0" data-k="' + c[0] + '" class="' + (num(c) ? 'n ' : '') + (st.k === c[0] ? 'ord' + (st.asc ? ' asc' : '') : '') + '">' + c[1] + '</th>'; }).join('') + '</tr></thead><tbody>' +
+      l.map(function (x, i) { return '<tr' + (opc.clicar ? ' class="cli" tabindex="0" data-r="' + i + '"' : '') + '>' + cols.map(function (c) { var cls = num(c) ? 'n' : (c[2] === 'm' ? 'm' : (c[2] === 'w' ? 'w' : '')); return '<td class="' + cls + '">' + fmt(c[2], x[c[0]], x) + '</td>'; }).join('') + '</tr>'; }).join('') + '</tbody>';
+    if (comTotal && l.length > 1) {
+      h += '<tfoot><tr>' + cols.map(function (c, i) { if (i === 0) return '<td>Total (' + int(l.length) + ' linhas)</td>'; if (!c[3]) return '<td></td>'; var s = l.reduce(function (a, x) { return a + (Number(x[c[0]]) || 0); }, 0); return '<td class="n">' + fmt(c[2], s) + '</td>'; }).join('') + '</tr></tfoot>';
+    }
+    alvo.innerHTML = h + '</table></div>';
+    if (opc.clicar) {
+      var tb = alvo.querySelector('tbody');
+      tb.addEventListener('click', function (ev) { var tr = ev.target.closest('tr[data-r]'); if (tr) opc.clicar(l[+tr.dataset.r]); });
+      tb.addEventListener('keydown', function (ev) { var tr = ev.target.closest('tr[data-r]'); if (tr && ev.key === 'Enter') opc.clicar(l[+tr.dataset.r]); });
+    }
+    alvo.querySelectorAll('th').forEach(function (th) {
+      var ir = function () { if (st.k === th.dataset.k) st.asc = !st.asc; else { st.k = th.dataset.k; st.asc = false; } desenhar(); };
+      th.addEventListener('click', ir); th.addEventListener('keydown', function (e) { if (e.key === 'Enter') ir(); });
+    });
+  };
+  desenhar();
+  return { filtrar: function (f) { st.filtro = f; desenhar(); }, linhas: visiveis };
+}
+
+function csv(cols, linhas, nome) {
+  var cel = function (c, v) {
+    if (v == null) return '';
+    if (typeof v === 'number') return (c[2] === 'int' || c[2] === 'm') ? String(v) : String(Math.round(v * 1000) / 1000).replace('.', ',');
+    var s = String(v); if (c[2] === 'm' && /^\d{8,}$/.test(s)) s = '="' + s + '"';
+    return /[;"\n]/.test(s) && s.indexOf('="') !== 0 ? '"' + s.replace(/"/g, '""') + '"' : s;
+  };
+  var txt = '﻿' + cols.map(function (c) { return c[1]; }).join(';') + '\r\n' + linhas.map(function (x) { return cols.map(function (c) { return cel(c, x[c[0]]); }).join(';'); }).join('\r\n');
+  baixarBlob(new Blob([txt], { type: 'text/csv;charset=utf-8' }), nome);
+}
+function baixarBlob(blob, nome) {
+  var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = nome; document.body.appendChild(a); a.click();
+  setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
+}
+
+/* ---------------- download do ZIP em partes ---------------- */
+function baixarZip() {
+  var b = $('bZip'), info = $('zipInfo'), barra = $('barra'), u = ATUAL.u;
+  b.disabled = true; info.textContent = 'Localizando o arquivo…';
+  chamar('portalArquivo', TOKEN, u.contabilidade, u.cliente, u.subpasta, ATUAL.mes).then(function (f) {
+    barra.classList.remove('hidden');
+    var partes = [], i = 0;
+    var proxima = function () {
+      info.textContent = 'Baixando ' + Math.round(f.tamanho / 1024).toLocaleString('pt-BR') + ' KB… ' + Math.round(100 * i / f.partes) + '%';
+      barra.firstChild.style.width = (100 * i / f.partes) + '%';
+      if (i >= f.partes) {
+        baixarBlob(new Blob(partes, { type: 'application/zip' }), f.nome);
+        info.textContent = f.nome + ' · atualizado em ' + new Date(f.atualizado).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+        barra.classList.add('hidden'); b.disabled = false; return;
+      }
+      return chamar('portalParte', TOKEN, f.id, i).then(function (b64) {
+        var bin = atob(b64), arr = new Uint8Array(bin.length);
+        for (var k = 0; k < bin.length; k++) arr[k] = bin.charCodeAt(k);
+        partes.push(arr); i++; return proxima();
+      });
+    };
+    return proxima();
+  }).catch(function (e) { info.textContent = e.message; barra.classList.add('hidden'); b.disabled = false; });
+}
+</script>
+</body>
+</html>
