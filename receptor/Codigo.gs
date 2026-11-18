@@ -40,7 +40,7 @@ var CONFIG = {
   GUARDAR_DIAS: 7, GUARDAR_SEMANAS: 4, GUARDAR_MESES: 6
 };
 
-var VERSAO = '1.9';
+var VERSAO = '1.9.1';
 var PASTA_PORTAL = '_PORTAL_DADOS';   // resumos fiscais (JSON) e versão do agente
 var MESES = ['JANEIRO','FEVEREIRO','MARCO','ABRIL','MAIO','JUNHO','JULHO','AGOSTO','SETEMBRO','OUTUBRO','NOVEMBRO','DEZEMBRO'];
 var MESES_TXT = ['JANEIRO','FEVEREIRO','MARÇO','ABRIL','MAIO','JUNHO','JULHO','AGOSTO','SETEMBRO','OUTUBRO','NOVEMBRO','DEZEMBRO'];
@@ -186,6 +186,10 @@ function doPost(e) {
 function marcarPublicada_() {
   try { var p = PropertiesService.getScriptProperties(); if (p.getProperty('VERSAO_PUBLICADA') !== VERSAO) p.setProperty('VERSAO_PUBLICADA', VERSAO); } catch (e) { }
 }
+
+// Versões como "1.5" viram data na planilha em português (01/05): grava como texto e conserta ao ler
+function txt_(v) { return v == null || v === '' ? '' : "'" + String(v); }
+function verTxt_(v) { if (v instanceof Date) return v.getDate() + '.' + (v.getMonth() + 1); return String(v == null ? '' : v); }
 
 /* Senhas: ficam nas Propriedades do script (não vão para o GitHub). O CONFIG só serve na primeira instalação. */
 function segredo_(nome) {
@@ -354,7 +358,7 @@ function registrar_(req) {
     var cliente = req.cliente + (req.subpasta ? ' / ' + req.subpasta : '');
     var linha = [req.contabilidade, cliente, req.cnpj || '', mesTxt, agora, req.situacao || '']
       .concat(CHAVES.map(function (k) { return Number(c[k] || 0); }))
-      .concat([req.arquivo || '', req.tamanho ? Math.round(req.tamanho / 1024) : '', req.maquina || '', req.versao || '', String(req.mensagem || '').slice(0, 400)]);
+      .concat([req.arquivo || '', req.tamanho ? Math.round(req.tamanho / 1024) : '', req.maquina || '', txt_(req.versao), String(req.mensagem || '').slice(0, 400)]);
 
     var dados = p.getDataRange().getValues();
     var lin = -1;
@@ -578,7 +582,7 @@ function portalDados(token) {
       if (painel[chP] && painel[chP].ultimoContato > ucP) continue;   // linha repetida: fica a do contato mais recente
       painel[chP] = {
         ultimoContato: ucP, situacao: String(dados[i][5] || ''), mensagem: String(dados[i][22] || ''),
-        contabilidade: String(dados[i][0]), cliente: String(dados[i][1]), mes: mesP, maquina: String(dados[i][20] || ''), versao: String(dados[i][21] || '')
+        contabilidade: String(dados[i][0]), cliente: String(dados[i][1]), mes: mesP, maquina: String(dados[i][20] || ''), versao: verTxt_(dados[i][21])
       };
     }
   } catch (e) { }
@@ -1188,7 +1192,7 @@ function servidor_(req) {
   var lock = LockService.getScriptLock(); lock.waitLock(30000);
   try {
     var x = linhaServidor_(req.contabilidade, req.cliente);
-    x.aba.getRange(x.lin, 3, 1, 4).setValues([[req.maquina || '', req.versao || '', req.banco || '', req.servico || '']]);
+    x.aba.getRange(x.lin, 3, 1, 4).setValues([[req.maquina || '', txt_(req.versao), req.banco || '', req.servico || '']]);
     x.aba.getRange(x.lin, 9).setValue(new Date()).setNumberFormat('dd/MM/yyyy HH:mm');
     var backup = sn_(x.linha[6], true), reiniciar = sn_(x.linha[7], false);
   } finally { lock.releaseLock(); }
@@ -1206,7 +1210,7 @@ function backupConcluir_(req) {
   var lock = LockService.getScriptLock(); lock.waitLock(30000);
   try {
     var x = linhaServidor_(req.contabilidade, req.cliente);
-    x.aba.getRange(x.lin, 3, 1, 2).setValues([[req.maquina || '', req.versao || '']]);
+    x.aba.getRange(x.lin, 3, 1, 2).setValues([[req.maquina || '', txt_(req.versao)]]);
     x.aba.getRange(x.lin, 9).setValue(new Date()).setNumberFormat('dd/MM/yyyy HH:mm');
     if (req.situacao === 'OK') {
       x.aba.getRange(x.lin, 10, 1, 7).setValues([[new Date(), Math.round(Number(req.tamanho || 0) / 1048576 * 10) / 10, Math.round(Number(req.tamanhoSql || 0) / 1048576 * 10) / 10,
@@ -1266,7 +1270,7 @@ function eventos_(req) {
     var ss = planilha_();
     if (linhas.length) { var a = abaEventos_(ss), ini = Math.max(a.getLastRow(), 1) + 1; a.getRange(ini, 1, linhas.length, CAB_EVT.length).setValues(linhas); a.getRange(ini, 1, linhas.length, 1).setNumberFormat('dd/MM/yyyy HH:mm:ss'); }
     var x = linhaServidor_(req.contabilidade, req.cliente);
-    if (req.maquina) x.aba.getRange(x.lin, 3, 1, 2).setValues([[req.maquina, req.versao || '']]);
+    if (req.maquina) x.aba.getRange(x.lin, 3, 1, 2).setValues([[req.maquina, txt_(req.versao)]]);
     if (sinal) x.aba.getRange(x.lin, 17).setValue(sinal).setNumberFormat('dd/MM/yyyy HH:mm');
   } finally { lock.releaseLock(); }
   return { ok: true, gravados: linhas.length };
@@ -1289,7 +1293,7 @@ function portalServidores(token) {
   for (var i = 1; i < d.length; i++) {
     if (!d[i][0] && !d[i][1]) continue;
     var c = cont[normal_(d[i][0]) + '|' + normal_(d[i][1])] || { n: 0, ult: null };
-    srv.push({ contabilidade: String(d[i][0]), cliente: String(d[i][1]), maquina: String(d[i][2]), versao: String(d[i][3]), banco: String(d[i][4]), servico: String(d[i][5]),
+    srv.push({ contabilidade: String(d[i][0]), cliente: String(d[i][1]), maquina: String(d[i][2]), versao: verTxt_(d[i][3]), banco: String(d[i][4]), servico: String(d[i][5]),
       backup: sn_(d[i][6], true), reiniciar: sn_(d[i][7], false), contato: iso(d[i][8]), ultimoBackup: iso(d[i][9]), tamanhoMB: Number(d[i][10] || 0), bancoMB: Number(d[i][11] || 0),
       situacao: String(d[i][12] || ''), mensagem: String(d[i][13] || ''), arquivoId: String(d[i][14] || ''), espacoMB: Number(d[i][15] || 0), sinal: iso(d[i][16]),
       travamentos30: c.n, ultimoTravamento: c.ult ? c.ult.toISOString() : '' });
