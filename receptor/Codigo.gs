@@ -39,7 +39,7 @@ var CONFIG = {
   GUARDAR_DIAS: 7, GUARDAR_SEMANAS: 4, GUARDAR_MESES: 6
 };
 
-var VERSAO = '1.8';
+var VERSAO = '1.8.1';
 var PASTA_PORTAL = '_PORTAL_DADOS';   // resumos fiscais (JSON) e versão do agente
 var MESES = ['JANEIRO','FEVEREIRO','MARCO','ABRIL','MAIO','JUNHO','JULHO','AGOSTO','SETEMBRO','OUTUBRO','NOVEMBRO','DEZEMBRO'];
 var MESES_TXT = ['JANEIRO','FEVEREIRO','MARÇO','ABRIL','MAIO','JUNHO','JULHO','AGOSTO','SETEMBRO','OUTUBRO','NOVEMBRO','DEZEMBRO'];
@@ -50,6 +50,7 @@ var MESES_TXT = ['JANEIRO','FEVEREIRO','MARÇO','ABRIL','MAIO','JUNHO','JULHO','
 // Se existir o arquivo _PORTAL_DADOS/portal/Portal.html no Drive, ele é usado (atualiza o portal sem mexer aqui).
 // Cores, nomes e logo vêm da aba "Aparência" da planilha do painel.
 function doGet() {
+  marcarPublicada_();
   var html = null;
   try { html = portalHtml_(); } catch (e) { }
   if (!html) html = HtmlService.createHtmlOutputFromFile('Portal').getContent();
@@ -143,6 +144,7 @@ function logo_(x) {
 }
 
 function doPost(e) {
+  marcarPublicada_();
   var r;
   try {
     var req = JSON.parse(e.postData.contents);
@@ -177,6 +179,11 @@ function doPost(e) {
     r = { ok: false, erro: String(err && err.message ? err.message : err) };
   }
   return ContentService.createTextOutput(JSON.stringify(r)).setMimeType(ContentService.MimeType.JSON);
+}
+
+// A versão que está realmente publicada no endereço /exec (o gatilho roda o código do editor, que pode ser mais novo)
+function marcarPublicada_() {
+  try { var p = PropertiesService.getScriptProperties(); if (p.getProperty('VERSAO_PUBLICADA') !== VERSAO) p.setProperty('VERSAO_PUBLICADA', VERSAO); } catch (e) { }
 }
 
 /* Senhas: ficam nas Propriedades do script (não vão para o GitHub). O CONFIG só serve na primeira instalação. */
@@ -1333,6 +1340,7 @@ function INSTALAR_FAROL() {
   ScriptApp.newTrigger('VERIFICAR_ATUALIZACAO').timeBased().everyMinutes(15).create();
   Logger.log('Verificação automática ligada (a cada 15 min).');
   var pub = publicarVersao_('Farol ' + VERSAO + ' (instalação)');   // publica este código no mesmo endereço /exec
+  props.setProperty('VERSAO_PUBLICADA', VERSAO);
   logAtualizacao_('receptor', '', VERSAO, 'OK instalação (implantação ' + pub + ')');
   Logger.log('App da Web publicado: ' + pub);
   var r = ATUALIZAR_AGORA();
@@ -1358,7 +1366,7 @@ function ATUALIZAR_AGORA() {
     var falhou = String(props.getProperty('FALHOU_RECEPTOR') || '').split('|');   // depois de erro, tenta de novo só após 2 h
     var esperar = falhou[0] === String(v.receptor) && Date.now() - Number(falhou[1] || 0) < 2 * 3600e3;
     if (v.receptor && versaoMaior_(String(v.receptor), VERSAO) && !esperar) {
-      try { feito.receptor = atualizarReceptor_(v); props.deleteProperty('FALHOU_RECEPTOR'); logAtualizacao_('receptor', VERSAO, v.receptor, 'OK (implantação ' + feito.receptor + ')'); }
+      try { feito.receptor = atualizarReceptor_(v); props.deleteProperty('FALHOU_RECEPTOR'); props.setProperty('VERSAO_PUBLICADA', String(v.receptor)); logAtualizacao_('receptor', VERSAO, v.receptor, 'OK (implantação ' + feito.receptor + ')'); }
       catch (e) { props.setProperty('FALHOU_RECEPTOR', v.receptor + '|' + Date.now()); logAtualizacao_('receptor', VERSAO, v.receptor, 'ERRO: ' + e.message); feito.erroReceptor = e.message; }
     }
     // 2) portal
@@ -1372,7 +1380,8 @@ function ATUALIZAR_AGORA() {
       } catch (e) { logAtualizacao_('portal', '', v.portal, 'ERRO: ' + e.message); }
     }
     // 3) agente (só depois que o receptor já está na versão exigida)
-    if (v.agente && props.getProperty('INST_AGENTE') !== String(v.agente) && !versaoMaior_(String(v.receptorMinimoAgente || '0'), VERSAO)) {
+    var publicada = String(props.getProperty('VERSAO_PUBLICADA') || '0');
+    if (v.agente && props.getProperty('INST_AGENTE') !== String(v.agente) && !versaoMaior_(String(v.receptorMinimoAgente || '0'), publicada)) {
       try {
         var ps = baixarGit_('agente/lcxml.ps1'), txt = ps.getDataAsString('UTF-8');
         var m = txt.match(/\$VERSAO\s*=\s*'([\d.]+)'/);
@@ -1438,7 +1447,8 @@ function apiScript_(metodo, url, corpo) {
   if (corpo) { o.contentType = 'application/json'; o.payload = JSON.stringify(corpo); }
   var r = UrlFetchApp.fetch(url, o), t = r.getContentText();
   if (r.getResponseCode() >= 300) {
-    if (/has not been used|is disabled|SERVICE_DISABLED|User has not enabled/i.test(t)) throw new Error('Ligue a "API do Google Apps Script" em https://script.google.com/home/usersettings');
+    var msg = t; try { msg = JSON.parse(t).error.message; } catch (e) { }
+    if (/User has not enabled/i.test(t)) throw new Error('Ligue a "API do Google Apps Script" em https://script.google.com/home/usersettings e espere 5 minutos. (Google: ' + msg.slice(0, 200) + ')');
     throw new Error('Apps Script API ' + r.getResponseCode() + ': ' + t.slice(0, 250));
   }
   return t ? JSON.parse(t) : {};
