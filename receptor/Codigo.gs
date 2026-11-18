@@ -2,7 +2,8 @@
  * LC XML -> GOOGLE DRIVE  |  RECEPTOR (Google Apps Script)
  * CPUSIS - versão 1.8  (receptor + PORTAL FAROL CONTÁBIL + atualização automática pelo GitHub)
  *
- * Código oficial: https://github.com/CPUSISCODE/farol.contabil  (este arquivo se atualiza sozinho de lá).
+ * Código oficial: https://github.com/CPUSISCODE/farol.contabil
+ * No Apps Script fica só o CARREGADOR (receptor/Carregador.gs), que baixa este arquivo do GitHub e o executa.
  * As senhas NÃO ficam no código: ficam em Configurações do projeto > Propriedades do script (SENHA e SENHA_BACKUP).
  *
  * Recebe os ZIPs mensais enviados pelos agentes instalados nos servidores
@@ -39,7 +40,7 @@ var CONFIG = {
   GUARDAR_DIAS: 7, GUARDAR_SEMANAS: 4, GUARDAR_MESES: 6
 };
 
-var VERSAO = '1.8.1';
+var VERSAO = '1.9';
 var PASTA_PORTAL = '_PORTAL_DADOS';   // resumos fiscais (JSON) e versão do agente
 var MESES = ['JANEIRO','FEVEREIRO','MARCO','ABRIL','MAIO','JUNHO','JULHO','AGOSTO','SETEMBRO','OUTUBRO','NOVEMBRO','DEZEMBRO'];
 var MESES_TXT = ['JANEIRO','FEVEREIRO','MARÇO','ABRIL','MAIO','JUNHO','JULHO','AGOSTO','SETEMBRO','OUTUBRO','NOVEMBRO','DEZEMBRO'];
@@ -1308,13 +1309,12 @@ function portalSalvarServidor(token, s) {
 
 /* ======================================================================
    ATUALIZAÇÃO AUTOMÁTICA PELO GITHUB (Farol Contábil)
-   A cada 15 minutos o receptor lê versao.json no repositório público
+   A cada 15 minutos o carregador lê versao.json no repositório público
    CPUSISCODE/farol.contabil e, se houver versão nova:
-     1) receptor: troca o código deste projeto, cria versão nova e atualiza a implantação (mesma URL /exec);
+     1) receptor: o carregador baixa este arquivo e passa a usá-lo na hora (mesma URL /exec);
      2) portal:   troca _PORTAL_DADOS/portal/Portal.html no Drive;
      3) agente:   troca _PORTAL_DADOS/agente/lcxml.ps1 no Drive (os agentes baixam sozinhos na próxima execução).
    Tudo fica registrado na aba "Atualizações" da planilha.
-   Precisa (uma vez): API do Apps Script ligada em https://script.google.com/home/usersettings
    ====================================================================== */
 var GITHUB_RAW = 'https://raw.githubusercontent.com/CPUSISCODE/farol.contabil/main/';
 
@@ -1328,7 +1328,6 @@ function INSTALAR_FAROL() {
     if (c && !/^TROQUE/.test(c)) props.setProperty(k, c);
     if (!props.getProperty(k)) Logger.log('ATENÇÃO: falta a propriedade ' + k + ' (Configurações do projeto > Propriedades do script).');
   });
-  props.deleteProperty('FALHOU_RECEPTOR');
   TESTAR_E_AUTORIZAR();
   try {   // nome do portal: Farol Contábil (só se ainda estiver com o nome padrão antigo)
     var ap = abaAparencia_(planilha_()), d = ap.getDataRange().getValues();
@@ -1339,10 +1338,6 @@ function INSTALAR_FAROL() {
   ScriptApp.getProjectTriggers().forEach(function (t) { if (t.getHandlerFunction() === 'VERIFICAR_ATUALIZACAO') ScriptApp.deleteTrigger(t); });
   ScriptApp.newTrigger('VERIFICAR_ATUALIZACAO').timeBased().everyMinutes(15).create();
   Logger.log('Verificação automática ligada (a cada 15 min).');
-  var pub = publicarVersao_('Farol ' + VERSAO + ' (instalação)');   // publica este código no mesmo endereço /exec
-  props.setProperty('VERSAO_PUBLICADA', VERSAO);
-  logAtualizacao_('receptor', '', VERSAO, 'OK instalação (implantação ' + pub + ')');
-  Logger.log('App da Web publicado: ' + pub);
   var r = ATUALIZAR_AGORA();
   Logger.log(JSON.stringify(r));
 }
@@ -1363,12 +1358,7 @@ function ATUALIZAR_AGORA() {
   try {
     var v = JSON.parse(baixarGit_('versao.json').getDataAsString('UTF-8'));
     // 1) receptor
-    var falhou = String(props.getProperty('FALHOU_RECEPTOR') || '').split('|');   // depois de erro, tenta de novo só após 2 h
-    var esperar = falhou[0] === String(v.receptor) && Date.now() - Number(falhou[1] || 0) < 2 * 3600e3;
-    if (v.receptor && versaoMaior_(String(v.receptor), VERSAO) && !esperar) {
-      try { feito.receptor = atualizarReceptor_(v); props.deleteProperty('FALHOU_RECEPTOR'); props.setProperty('VERSAO_PUBLICADA', String(v.receptor)); logAtualizacao_('receptor', VERSAO, v.receptor, 'OK (implantação ' + feito.receptor + ')'); }
-      catch (e) { props.setProperty('FALHOU_RECEPTOR', v.receptor + '|' + Date.now()); logAtualizacao_('receptor', VERSAO, v.receptor, 'ERRO: ' + e.message); feito.erroReceptor = e.message; }
-    }
+    // 1) receptor: quem atualiza é o carregador (Carregador.gs) — aqui só portal e agente
     // 2) portal
     if (v.portal && props.getProperty('INST_PORTAL') !== String(v.portal)) {
       try {
@@ -1380,7 +1370,7 @@ function ATUALIZAR_AGORA() {
       } catch (e) { logAtualizacao_('portal', '', v.portal, 'ERRO: ' + e.message); }
     }
     // 3) agente (só depois que o receptor já está na versão exigida)
-    var publicada = String(props.getProperty('VERSAO_PUBLICADA') || '0');
+    var publicada = props.getProperty('FAROL_RECEPTOR') ? VERSAO : String(props.getProperty('VERSAO_PUBLICADA') || '0');   // pelo carregador, o código que roda é o publicado
     if (v.agente && props.getProperty('INST_AGENTE') !== String(v.agente) && !versaoMaior_(String(v.receptorMinimoAgente || '0'), publicada)) {
       try {
         var ps = baixarGit_('agente/lcxml.ps1'), txt = ps.getDataAsString('UTF-8');
@@ -1413,45 +1403,6 @@ function trocarArquivoDrive_(pasta, nome, blob, tipo) {
     headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }
   });
   if (r.getResponseCode() !== 200) throw new Error('Drive: ' + r.getContentText().slice(0, 200));
-}
-
-// Troca o código deste projeto pelo do GitHub, cria versão e aponta a(s) implantação(ões) do App da Web para ela
-function atualizarReceptor_(v) {
-  var codigo = baixarGit_('receptor/Codigo.gs').getDataAsString('UTF-8');
-  if (codigo.indexOf("var VERSAO = '" + v.receptor + "'") < 0) throw new Error('Codigo.gs do GitHub não é a versão ' + v.receptor);
-  var portal = baixarGit_('receptor/Portal.html').getDataAsString('UTF-8');
-  var manifesto = baixarGit_('receptor/appsscript.json').getDataAsString('UTF-8'); JSON.parse(manifesto);
-  var id = ScriptApp.getScriptId(), base = 'https://script.googleapis.com/v1/projects/' + id;
-  var atual = apiScript_('get', base + '/content');
-  var arquivos = (atual.files || []).filter(function (f) { return ['appsscript', 'Codigo', 'Portal'].indexOf(f.name) < 0; });
-  arquivos = [{ name: 'appsscript', type: 'JSON', source: manifesto }, { name: 'Codigo', type: 'SERVER_JS', source: codigo }, { name: 'Portal', type: 'HTML', source: portal }].concat(arquivos);
-  apiScript_('put', base + '/content', { scriptId: id, files: arquivos });
-  return publicarVersao_('Farol ' + v.receptor + ' (GitHub)');
-}
-// Cria uma versão com o código atual do projeto e aponta a(s) implantação(ões) do App da Web para ela (mesma URL)
-function publicarVersao_(descricao) {
-  var id = ScriptApp.getScriptId(), base = 'https://script.googleapis.com/v1/projects/' + id;
-  var ver = apiScript_('post', base + '/versions', { description: descricao });
-  var deps = apiScript_('get', base + '/deployments').deployments || [], ids = [];
-  deps.forEach(function (d) {
-    var web = (d.entryPoints || []).some(function (e) { return e.entryPointType === 'WEB_APP'; });
-    if (!web || !d.deploymentConfig || !d.deploymentConfig.versionNumber) return;   // ignora a de teste (HEAD)
-    apiScript_('put', base + '/deployments/' + d.deploymentId, { deploymentConfig: { scriptId: id, versionNumber: ver.versionNumber, manifestFileName: 'appsscript', description: descricao } });
-    ids.push(d.deploymentId.slice(0, 10) + '… v' + ver.versionNumber);
-  });
-  if (!ids.length) throw new Error('nenhuma implantação de App da Web encontrada');
-  return ids.join(', ');
-}
-function apiScript_(metodo, url, corpo) {
-  var o = { method: metodo, muteHttpExceptions: true, headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() } };
-  if (corpo) { o.contentType = 'application/json'; o.payload = JSON.stringify(corpo); }
-  var r = UrlFetchApp.fetch(url, o), t = r.getContentText();
-  if (r.getResponseCode() >= 300) {
-    var msg = t; try { msg = JSON.parse(t).error.message; } catch (e) { }
-    if (/User has not enabled/i.test(t)) throw new Error('Ligue a "API do Google Apps Script" em https://script.google.com/home/usersettings e espere 5 minutos. (Google: ' + msg.slice(0, 200) + ')');
-    throw new Error('Apps Script API ' + r.getResponseCode() + ': ' + t.slice(0, 250));
-  }
-  return t ? JSON.parse(t) : {};
 }
 
 function logAtualizacao_(oque, de, para, resultado) {
