@@ -40,7 +40,7 @@ var CONFIG = {
   GUARDAR_DIAS: 7, GUARDAR_SEMANAS: 4, GUARDAR_MESES: 6
 };
 
-var VERSAO = '1.9.1';
+var VERSAO = '1.10';
 var PASTA_PORTAL = '_PORTAL_DADOS';   // resumos fiscais (JSON) e versão do agente
 var MESES = ['JANEIRO','FEVEREIRO','MARCO','ABRIL','MAIO','JUNHO','JULHO','AGOSTO','SETEMBRO','OUTUBRO','NOVEMBRO','DEZEMBRO'];
 var MESES_TXT = ['JANEIRO','FEVEREIRO','MARÇO','ABRIL','MAIO','JUNHO','JULHO','AGOSTO','SETEMBRO','OUTUBRO','NOVEMBRO','DEZEMBRO'];
@@ -153,6 +153,8 @@ function doPost(e) {
       r = portalApi_(req);
     } else if (req.senha !== segredo_('SENHA')) {
       r = { ok: false, erro: 'Senha inválida. Confira o arquivo conexao.txt do agente.' };
+    } else if (!redirecionarUnificado_(req)) {   // cliente unificado: envio sem subpasta vai para a que ficou (sempre segue)
+      r = { ok: false };
     } else if (req.acao === 'ping') {
       r = { ok: true, versao: VERSAO, raiz: pastaRaiz_().getName() };
     } else if (req.acao === 'iniciar') {
@@ -202,7 +204,7 @@ function segredo_(nome) {
 /* ---------- Portal pelo GitHub (Farol Contábil): as telas chamam as mesmas funções via POST ---------- */
 var PORTAL_API = ['portalAparencia', 'portalLogin', 'portalSair', 'portalDados', 'portalResumo', 'portalArquivo', 'portalParte',
   'portalIndicadores', 'portalIndicadoresLote', 'portalAdmin', 'portalSalvarUsuario', 'portalExcluirUsuario', 'portalCriarContabilidade',
-  'portalCriarCliente', 'portalSalvarRegime', 'portalServidores', 'portalSalvarServidor'];
+  'portalCriarCliente', 'portalSalvarRegime', 'portalServidores', 'portalSalvarServidor', 'portalUnificar'];
 function portalApi_(req) {
   var fn = String(req.fn || '');
   if (PORTAL_API.indexOf(fn) < 0) return { ok: false, erro: 'Função não permitida: ' + fn };
@@ -210,7 +212,7 @@ function portalApi_(req) {
     portalArquivo: portalArquivo, portalParte: portalParte, portalIndicadores: portalIndicadores, portalIndicadoresLote: portalIndicadoresLote,
     portalAdmin: portalAdmin, portalSalvarUsuario: portalSalvarUsuario, portalExcluirUsuario: portalExcluirUsuario,
     portalCriarContabilidade: portalCriarContabilidade, portalCriarCliente: portalCriarCliente, portalSalvarRegime: portalSalvarRegime,
-    portalServidores: portalServidores, portalSalvarServidor: portalSalvarServidor };
+    portalServidores: portalServidores, portalSalvarServidor: portalSalvarServidor, portalUnificar: portalUnificar };
   var f = mapa[fn]; if (typeof f !== 'function') return { ok: false, erro: 'Função não encontrada: ' + fn };
   try { return { ok: true, r: f.apply(null, Array.isArray(req.args) ? req.args : []) }; }
   catch (e) { return { ok: false, erro: String(e && e.message ? e.message : e) }; }
@@ -534,7 +536,7 @@ function arvorePortal_() {
   var pastas = driveLista_(PASTA + ' and trashed=false', 'id,name,parents');
   var filhos = {};
   pastas.forEach(function (f) { (f.parents || []).forEach(function (p) { (filhos[p] = filhos[p] || []).push(f); }); });
-  var contabs = (filhos[pid] || []).filter(function (c) { return ['agente', 'portal', 'cache'].indexOf(c.name) < 0; });
+  var contabs = (filhos[pid] || []).filter(function (c) { return ['agente', 'portal', 'cache', 'receptor'].indexOf(c.name) < 0 && c.name.charAt(0) !== '_'; });
   var cli = {}, sub = {};
   contabs.forEach(function (c) {
     (filhos[c.id] || []).forEach(function (k) {
@@ -1415,4 +1417,154 @@ function logAtualizacao_(oque, de, para, resultado) {
     if (!a) { a = ss.insertSheet('Atualizações'); a.getRange(1, 1, 1, 5).setValues([['Data/hora', 'O quê', 'De', 'Para', 'Resultado']]).setFontWeight('bold').setBackground('#0f6b55').setFontColor('#ffffff'); a.setFrozenRows(1); a.getRange('C:D').setNumberFormat('@'); }
     a.appendRow([new Date(), oque, "'" + (de || ''), "'" + (para || ''), resultado]);
   } catch (e) { }
+}
+
+
+/* ======================================================================
+   UNIFICAR CLIENTES DUPLICADOS (ex.: "COMERCIAL 59" e "COMERCIAL 59 / MATRIZ")
+   Mesmo cliente com meses soltos (sem subpasta, em geral os enviados à mão) e meses numa subpasta
+   (em geral MATRIZ, a do agente). Fica só a subpasta: o que faltar nela vem da parte solta.
+   Quando os dois lados têm o mesmo arquivo, fica o maior na subpasta e o outro vai para
+   _PORTAL_DADOS/_unificados (nada é apagado). Depois disso, envios novos sem subpasta desse cliente
+   vão sozinhos para a subpasta (propriedade UNIFICADOS).
+   Portal > Configurações > Clientes duplicados (primeiro mostra a prévia, depois executa).
+   ====================================================================== */
+var RE_MES_PASTA = /^\d{2}\.\d{4}$/, RE_ANO_PASTA = /^XML \d{4}$/i, RE_JSON_MES = /^\d{4}-\d{2}\.json$/;
+
+function mapaUnificados_() { try { return JSON.parse(PropertiesService.getScriptProperties().getProperty('UNIFICADOS') || '{}'); } catch (e) { return {}; } }
+// envio sem subpasta de cliente já unificado: manda para a subpasta que ficou
+function redirecionarUnificado_(req) {
+  if (['iniciar', 'concluir', 'manuais'].indexOf(req.acao) < 0) return true;
+  if (req.subpasta || !req.contabilidade || !req.cliente || req.destino === 'backup') return true;
+  var alvo = mapaUnificados_()[normal_(req.contabilidade) + '|' + normal_(req.cliente)];
+  if (alvo) req.subpasta = alvo;
+  return true;
+}
+function pastasDe_(pai) { var o = [], it = pai.getFolders(); while (it.hasNext()) { var f = it.next(); if (!f.isTrashed()) o.push(f); } return o; }
+function arquivosDe_(pai) { var o = [], it = pai.getFiles(); while (it.hasNext()) { var f = it.next(); if (!f.isTrashed()) o.push(f); } return o; }
+
+// Levanta os casos: [{contabilidade, cliente, destino, ambiguo, subpastas, json:{mover,conflito}, xml:{mover,mesclar}}]
+function casosUnificar_() {
+  var raiz = pastaRaiz_(), pd = existente_(raiz, PASTA_PORTAL), casos = {};
+  var caso = function (c, k) { var ch = normal_(c) + '|' + normal_(k); return casos[ch] = casos[ch] || { contabilidade: c, cliente: k, subs: {}, jsonsSoltos: [], mesesXmlSoltos: [] }; };
+  // resumos do portal
+  if (pd) pastasDe_(pd).forEach(function (pc) {
+    if (['agente', 'portal', 'cache', 'receptor'].indexOf(pc.getName()) >= 0 || pc.getName().charAt(0) === '_') return;
+    pastasDe_(pc).forEach(function (pk) {
+      var x = caso(pc.getName(), pk.getName());
+      arquivosDe_(pk).forEach(function (f) { if (RE_JSON_MES.test(f.getName())) x.jsonsSoltos.push(f.getName().slice(0, 7)); });
+      pastasDe_(pk).forEach(function (ps) { x.subs[ps.getName().toUpperCase()] = 1; });
+    });
+  });
+  // pastas dos XML
+  pastasDe_(raiz).forEach(function (pc) {
+    if (pc.getName() === PASTA_PORTAL || pc.getName().charAt(0) === '_') return;
+    pastasDe_(pc).forEach(function (pk) {
+      var x = null;
+      pastasDe_(pk).forEach(function (pa) {
+        if (!RE_ANO_PASTA.test(pa.getName())) return;
+        pastasDe_(pa).forEach(function (pm) {
+          x = x || caso(pc.getName(), pk.getName());
+          if (RE_MES_PASTA.test(pm.getName())) x.mesesXmlSoltos.push(pa.getName() + ' / ' + pm.getName());
+          else x.subs[pm.getName().toUpperCase()] = 1;
+        });
+      });
+    });
+  });
+  return Object.keys(casos).map(function (k) { return casos[k]; }).filter(function (x) {
+    return (x.jsonsSoltos.length || x.mesesXmlSoltos.length) && Object.keys(x.subs).length;
+  }).map(function (x) {
+    var subs = Object.keys(x.subs).sort();
+    return { contabilidade: x.contabilidade, cliente: x.cliente, subpastas: subs, destino: subs.length === 1 ? subs[0] : '',
+      ambiguo: subs.length !== 1, jsons: x.jsonsSoltos.sort(), xml: x.mesesXmlSoltos.sort() };
+  }).sort(function (a, b) { return (a.contabilidade + a.cliente).localeCompare(b.contabilidade + b.cliente); });
+}
+
+// Move tudo de "de" para "para"; mesmo nome nos dois: fica o maior em "para", o outro vai para "sobras"
+function mesclarPasta_(de, para, sobras, rel) {
+  var r = { movidos: 0, conflitos: 0 };
+  arquivosDe_(de).forEach(function (f) {
+    var it = para.getFilesByName(f.getName()), g = null;
+    while (it.hasNext()) { var y = it.next(); if (!y.isTrashed()) { g = y; break; } }
+    if (!g) { f.moveTo(para); r.movidos++; return; }
+    r.conflitos++;
+    var dest = filha_(sobras, rel);
+    if (f.getSize() > g.getSize()) { g.moveTo(dest); f.moveTo(para); } else f.moveTo(dest);
+  });
+  pastasDe_(de).forEach(function (sub) {
+    var alvo = existente_(para, sub.getName());
+    if (!alvo) { sub.moveTo(para); r.movidos++; return; }
+    var q = mesclarPasta_(sub, alvo, sobras, rel + ' - ' + sub.getName()); r.movidos += q.movidos; r.conflitos += q.conflitos;
+  });
+  if (!arquivosDe_(de).length && !pastasDe_(de).length) de.setTrashed(true);
+  return r;
+}
+
+// escolhas: [{contabilidade, cliente, destino}] (sem escolhas = só a prévia)
+function portalUnificar(token, escolhas) {
+  admin_(token);
+  var todos = casosUnificar_();
+  if (!escolhas || !escolhas.length) return { casos: todos };
+  var casos = [];
+  escolhas.forEach(function (e) {
+    var x = todos.filter(function (c) { return normal_(c.contabilidade) === normal_(e.contabilidade) && normal_(c.cliente) === normal_(e.cliente); })[0];
+    if (!x) return;
+    var d = x.subpastas.filter(function (s) { return normal_(s) === normal_(e.destino); })[0];
+    if (!d) throw new Error('Subpasta inválida para ' + x.cliente + ': ' + e.destino);
+    x.destino = d; x.ambiguo = false; casos.push(x);
+  });
+  var lock = LockService.getScriptLock(); lock.waitLock(60000);
+  var feitos = [], props = PropertiesService.getScriptProperties(), mapa = mapaUnificados_();
+  try {
+    var raiz = pastaRaiz_(), pd = filha_(raiz, PASTA_PORTAL), sobras = filha_(pd, '_unificados');
+    casos.forEach(function (x) {
+      if (x.ambiguo) return;
+      var tot = { movidos: 0, conflitos: 0 }, soma = function (q) { tot.movidos += q.movidos; tot.conflitos += q.conflitos; };
+      var sob = filha_(filha_(sobras, x.contabilidade), x.cliente);
+      // resumos do portal: CLIENTE/AAAA-MM.json -> CLIENTE/SUBPASTA/
+      var pk = existente_(existente_(pd, x.contabilidade), x.cliente);
+      if (pk) {
+        var alvoJ = existente_(pk, x.destino) || filha_(pk, x.destino);
+        arquivosDe_(pk).forEach(function (f) {
+          if (!RE_JSON_MES.test(f.getName())) return;
+          var it = alvoJ.getFilesByName(f.getName()), g = null;
+          while (it.hasNext()) { var y = it.next(); if (!y.isTrashed()) { g = y; break; } }
+          if (!g) { f.moveTo(alvoJ); tot.movidos++; }
+          else { tot.conflitos++; if (f.getSize() > g.getSize()) { g.moveTo(filha_(sob, 'resumos')); f.moveTo(alvoJ); } else f.moveTo(filha_(sob, 'resumos')); }
+        });
+      }
+      // XML: CLIENTE/XML AAAA/MM.AAAA -> CLIENTE/XML AAAA/SUBPASTA/MM.AAAA
+      var ck = existente_(existente_(raiz, x.contabilidade), x.cliente);
+      if (ck) pastasDe_(ck).forEach(function (pa) {
+        if (!RE_ANO_PASTA.test(pa.getName())) return;
+        var alvoS = null;
+        pastasDe_(pa).forEach(function (pm) {
+          if (!RE_MES_PASTA.test(pm.getName())) return;
+          alvoS = alvoS || existente_(pa, x.destino) || filha_(pa, x.destino);
+          var alvoM = existente_(alvoS, pm.getName());
+          if (!alvoM) { pm.moveTo(alvoS); tot.movidos++; }
+          else soma(mesclarPasta_(pm, alvoM, sob, pa.getName() + ' - ' + pm.getName()));
+        });
+      });
+      renomearClientePlanilha_(x.contabilidade, x.cliente, x.cliente + ' / ' + x.destino);
+      mapa[normal_(x.contabilidade) + '|' + normal_(x.cliente)] = x.destino;
+      feitos.push({ contabilidade: x.contabilidade, cliente: x.cliente, destino: x.destino, movidos: tot.movidos, conflitos: tot.conflitos });
+    });
+    props.setProperty('UNIFICADOS', JSON.stringify(mapa));
+    props.setProperty('DADOS_V', String(Date.now())); mudouCfg_();
+  } finally { lock.releaseLock(); }
+  if (feitos.length) { try { CORRIGIR_PAINEL(); } catch (e) { } }   // junta as linhas do Painel que ficaram iguais
+  try { logAcesso_(sessao_(token).login, 'unificar', feitos.map(function (f) { return f.contabilidade + '/' + f.cliente + '>' + f.destino; }).join('; ').slice(0, 400)); } catch (e) { }
+  return { feitos: feitos, casos: casosUnificar_() };
+}
+
+// Painel e Histórico: "CLIENTE" passa a ser "CLIENTE / SUBPASTA"
+function renomearClientePlanilha_(contab, de, para) {
+  var ss = planilha_();
+  [['Painel', 0, 1], ['Histórico', 1, 2]].forEach(function (a) {
+    var aba = ss.getSheetByName(a[0]); if (!aba || aba.getLastRow() < 2) return;
+    var col = aba.getRange(2, a[2] + 1, aba.getLastRow() - 1, 1).getValues(), cs = aba.getRange(2, a[1] + 1, aba.getLastRow() - 1, 1).getValues(), mudou = false;
+    for (var i = 0; i < col.length; i++) if (normal_(cs[i][0]) === normal_(contab) && normal_(col[i][0]) === normal_(de)) { col[i][0] = para; mudou = true; }
+    if (mudou) aba.getRange(2, a[2] + 1, col.length, 1).setValues(col);
+  });
 }

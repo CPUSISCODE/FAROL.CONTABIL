@@ -1,6 +1,6 @@
 {
-  "receptor": "1.9.1",
-  "portal": "1.8.0",
+  "receptor": "1.10",
+  "portal": "1.10.0",
   "agente": "1.6.1",
   "receptorMinimoAgente": "1.8.1"
 }

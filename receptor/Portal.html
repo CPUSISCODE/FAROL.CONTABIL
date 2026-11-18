@@ -1267,12 +1267,54 @@ function avisoCfg(txt, erro) { var a = $('cfgAviso'); if (!a) return; a.classNam
 function contabsCfg() { return CFG.estrutura.map(function (c) { return c.nome; }); }
 
 function desenharConfig() {
-  var abas = [['logins', 'Logins dos contadores'], ['estrutura', 'Contabilidades e clientes'], ['regimes', 'Regimes']];
+  var abas = [['logins', 'Logins dos contadores'], ['estrutura', 'Contabilidades e clientes'], ['regimes', 'Regimes'], ['unificar', 'Clientes duplicados']];
   $('tela').innerHTML = '<div class="cab"><div><h1>Configurações</h1><p class="sub">Só o administrador vê esta área. As mudanças valem na hora (o contador precisa entrar de novo para ver contabilidades novas).</p></div></div>' +
     '<div class="abas" role="tablist">' + abas.map(function (a) { return '<button class="tab" role="tab" type="button" data-c="' + a[0] + '" aria-selected="' + (a[0] === CFG_ABA) + '">' + a[1] + '</button>'; }).join('') + '</div>' +
     '<p id="cfgAviso" class="aviso" role="status"></p><div id="cfgCorpo"></div><dialog id="dlgUsu" aria-labelledby="dlgUsuTit"></dialog>';
   document.querySelector('.abas').addEventListener('click', function (ev) { var b = ev.target.closest('.tab'); if (b) { CFG_ABA = b.dataset.c; desenharConfig(); } });
-  if (CFG_ABA === 'logins') cfgLogins(); else if (CFG_ABA === 'estrutura') cfgEstrutura(); else cfgRegimes();
+  if (CFG_ABA === 'logins') cfgLogins(); else if (CFG_ABA === 'estrutura') cfgEstrutura(); else if (CFG_ABA === 'unificar') cfgUnificar(); else cfgRegimes();
+}
+
+/* ---- clientes duplicados: "CLIENTE" (meses soltos) + "CLIENTE / MATRIZ" viram um só ---- */
+var UNIF = null;
+function cfgUnificar() {
+  $('cfgCorpo').innerHTML = carregando('Procurando clientes repetidos no Drive…');
+  chamar('portalUnificar', TOKEN, null).then(function (r) { UNIF = r; desenharUnificar(); })
+    .catch(function (e) { $('cfgCorpo').innerHTML = '<div class="card erro">' + esc(e.message) + '</div>'; });
+}
+function desenharUnificar(feitos) {
+  var c = UNIF.casos || [];
+  var html = '<div class="card"><p class="sub">Mesmo cliente aparecendo duas vezes: uma com os meses soltos (em geral os XML enviados à mão) e outra numa subpasta (em geral <b>MATRIZ</b>, a do agente). ' +
+    'Ao unificar, os meses que faltam na subpasta são completados com os da parte solta, e só a subpasta continua aparecendo. Se os dois lados tiverem o mesmo arquivo, fica o maior; o outro vai para <code>_PORTAL_DADOS/_unificados</code> (nada é apagado). ' +
+    'Envios futuros sem subpasta desse cliente vão sozinhos para a subpasta escolhida.</p></div>';
+  if (feitos && feitos.length) html += '<div class="card"><b>Unificados agora:</b><ul>' + feitos.map(function (f) { return '<li>' + esc(f.contabilidade + ' · ' + f.cliente) + ' → <b>' + esc(f.destino) + '</b> (' + f.movidos + ' item(ns) movido(s)' + (f.conflitos ? ', ' + f.conflitos + ' repetido(s) guardado(s) em _unificados' : '') + ')</li>'; }).join('') + '</ul></div>';
+  if (!c.length) { $('cfgCorpo').innerHTML = html + '<div class="card vazio">Nenhum cliente duplicado encontrado.</div>'; return; }
+  html += '<div class="tbl"><table><thead><tr><th></th><th>Contabilidade</th><th>Cliente</th><th>Meses soltos (resumos)</th><th>Pastas de XML soltas</th><th>Fica em</th></tr></thead><tbody>' +
+    c.map(function (x, i) {
+      var sel = x.subpastas.length === 1 ? '<b>' + esc(x.cliente + ' / ' + x.subpastas[0]) + '</b>' :
+        '<select data-d="' + i + '"><option value="">escolha…</option>' + x.subpastas.map(function (s) { return '<option>' + esc(s) + '</option>'; }).join('') + '</select>';
+      return '<tr><td><input type="checkbox" data-i="' + i + '"' + (x.ambiguo ? '' : ' checked') + ' aria-label="unificar ' + esc(x.cliente) + '"></td><td>' + esc(x.contabilidade) + '</td><td class="m">' + esc(x.cliente) + '</td>' +
+        '<td class="w">' + (x.jsons.length ? esc(x.jsons.join(', ')) : '—') + '</td><td class="w">' + (x.xml.length ? esc(x.xml.join(', ')) : '—') + '</td><td>' + sel + '</td></tr>';
+    }).join('') + '</tbody></table></div>' +
+    '<div class="ferr"><button class="btn" type="button" id="bUnif">Unificar os marcados</button><span class="sub">Quando há mais de uma subpasta (ex.: MATRIZ e FILIAL), escolha para qual vão os meses soltos.</span></div>';
+  $('cfgCorpo').innerHTML = html;
+  $('bUnif').addEventListener('click', function () {
+    var esc_ = [], falta = '';
+    document.querySelectorAll('#cfgCorpo input[data-i]').forEach(function (cb) {
+      if (!cb.checked) return; var x = c[Number(cb.dataset.i)], d = x.subpastas.length === 1 ? x.subpastas[0] : (document.querySelector('#cfgCorpo select[data-d="' + cb.dataset.i + '"]') || {}).value;
+      if (!d) { falta = x.cliente; return; }
+      esc_.push({ contabilidade: x.contabilidade, cliente: x.cliente, destino: d });
+    });
+    if (falta) { avisoCfg('Escolha a subpasta de ' + falta + '.', true); return; }
+    if (!esc_.length) { avisoCfg('Marque pelo menos um cliente.', true); return; }
+    if (!confirm('Unificar ' + esc_.length + ' cliente(s)? Os arquivos serão movidos no Drive.')) return;
+    $('bUnif').disabled = true; $('bUnif').textContent = 'Unificando… (pode levar 1 a 2 minutos)';
+    chamar('portalUnificar', TOKEN, esc_).then(function (r) {
+      UNIF = r; desenharUnificar(r.feitos); avisoCfg('Pronto: ' + r.feitos.length + ' cliente(s) unificado(s).', false);
+      try { sessionStorage.removeItem('portal_dados'); } catch (e) {}
+      chamar('portalDados', TOKEN).then(function (d) { DADOS = d; }).catch(function () {});
+    }).catch(function (e) { $('bUnif').disabled = false; $('bUnif').textContent = 'Unificar os marcados'; avisoCfg(e.message, true); });
+  });
 }
 
 function cfgLogins() {
