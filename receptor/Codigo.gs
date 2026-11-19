@@ -40,7 +40,7 @@ var CONFIG = {
   GUARDAR_DIAS: 10, GUARDAR_SEMANAS: 0, GUARDAR_MESES: 0   // no máximo 10 dias (um backup por dia; mais velhos que 10 dias são apagados)
 };
 
-var VERSAO = '1.13.1';
+var VERSAO = '1.14';
 var PASTA_PORTAL = '_PORTAL_DADOS';   // resumos fiscais (JSON) e versão do agente
 var MESES = ['JANEIRO','FEVEREIRO','MARCO','ABRIL','MAIO','JUNHO','JULHO','AGOSTO','SETEMBRO','OUTUBRO','NOVEMBRO','DEZEMBRO'];
 var MESES_TXT = ['JANEIRO','FEVEREIRO','MARÇO','ABRIL','MAIO','JUNHO','JULHO','AGOSTO','SETEMBRO','OUTUBRO','NOVEMBRO','DEZEMBRO'];
@@ -765,6 +765,18 @@ function indicadores_(r) {
   o.semXml = 0;
   (r.porDia || []).forEach(function (d) { o.semXml += Math.max(0, (d.sisNfe || 0) - (d.sisNfeXml || 0)) + Math.max(0, (d.sisNfce || 0) - (d.sisNfceXml || 0)); });
   o.falhasLista = (r.falhasNumeracao || []).slice(0, 10);
+  // reforma tributária (IBS/CBS): agente 2.0+ conta documento a documento; antes disso, só pelos valores destacados
+  var rf = r.reforma, em = { docs: 0, docsCom: 0, itens: 0, itensCom: 0, itensSemClass: 0 };
+  if (rf && rf.porOrigem) {
+    ['NFe', 'NFCe'].forEach(function (k) { var x = rf.porOrigem[k]; if (x) for (var c in em) em[c] += Number(x[c]) || 0; });
+    var cp = rf.porOrigem.Compras || {};
+    o.rf = { det: true, docs: em.docs, docsCom: em.docsCom, itens: em.itens, itensCom: em.itensCom, semClass: em.itensSemClass,
+      comprasDocs: cp.docs || 0, comprasCom: cp.docsCom || 0, forn: (rf.fornecedores || {}).total || 0, fornCom: (rf.fornecedores || {}).com || 0,
+      semGrupo: (rf.semGrupo || []).slice(0, 5) };
+  } else {
+    o.rf = { det: false, docs: (o.nfeQtd || 0) + (o.nfceQtd || 0) };
+  }
+  o.rf.vIBS = arred(o.ibs); o.rf.vCBS = arred(o.cbs);
   o.monofasico = arred(o.monofasico); o.stSaidas = arred(o.stSaidas);
   ['vendas', 'saidas', 'icms', 'st', 'ipi', 'pis', 'cofins', 'ibs', 'cbs', 'compras', 'comprasST', 'cancValor', 'devVenda', 'devCompra', 'nfeValor', 'nfceValor', 'cteValor'].forEach(function (k) { o[k] = arred(o[k]); });
   return o;
@@ -792,7 +804,7 @@ function portalIndicadoresLote(token, meses) {
   var cache = CacheService.getScriptCache(), inicio = Date.now(), res = {};
   meses.forEach(function (mes) {
     var lista = unid.filter(function (u) { return u.arqs[mes]; });
-    var chaves = lista.map(function (u) { var f = u.arqs[mes]; return 'ind3_' + f.id + '_' + f.mod; });
+    var chaves = lista.map(function (u) { var f = u.arqs[mes]; return 'ind4_' + f.id + '_' + f.mod; });
     var tudo = {};
     for (var i = 0; i < chaves.length; i += 100) { var g = cache.getAll(chaves.slice(i, i + 100)); for (var k in g) tudo[k] = g[k]; }
     var mem = null, mudou = false, itens = [], faltam = 0;
@@ -815,7 +827,7 @@ function portalIndicadoresLote(token, meses) {
     });
     if (mudou) {
       // guarda só as chaves dos arquivos atuais (as antigas saem)
-      var validas = {}; arvorePortal_().forEach(function (u) { var f = u.arqs[mes]; if (f) validas['ind3_' + f.id + '_' + f.mod] = 1; });
+      var validas = {}; arvorePortal_().forEach(function (u) { var f = u.arqs[mes]; if (f) validas['ind4_' + f.id + '_' + f.mod] = 1; });
       var limpo = {}; for (var k2 in mem.mapa) if (validas[k2]) limpo[k2] = mem.mapa[k2];
       var lock = LockService.getScriptLock();
       if (lock.tryLock(5000)) {

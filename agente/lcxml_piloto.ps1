@@ -30,7 +30,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$VERSAO = '1.9'
+$VERSAO = '2.0'
 $BASE = $PSScriptRoot
 if (-not $Config) { $Config = Join-Path $BASE 'config.json' }
 $PASTA_LOG = Join-Path $BASE 'logs'
@@ -237,9 +237,15 @@ function Analisar-Doc([string]$grupo, [string]$texto) {
     $pis = $null; $nPis = Filho $im 'PIS'; if ($nPis) { $pis = $nPis.FirstChild }
     $cof = $null; $nCof = Filho $im 'COFINS'; if ($nCof) { $cof = $nCof.FirstChild }
     $vIPI = [decimal]0; $nIpi = Filho $im 'IPI'; if ($nIpi) { $vIPI = Num (Filho (Filho $nIpi 'IPITrib') 'vIPI') }
-    $vIBS = [decimal]0; $vCBS = [decimal]0; $cstIBS = ''
+    $vIBS = [decimal]0; $vCBS = [decimal]0; $cstIBS = ''; $cClass = ''; $bcIbs = [decimal]0; $pUF = [decimal]0; $pMun = [decimal]0; $pCBS = [decimal]0
     $nIbs = Filho $im 'IBSCBS'
-    if ($nIbs) { $cstIBS = Txt (Filho $nIbs 'CST'); $a = $nIbs.GetElementsByTagName('vIBS'); if ($a.Count) { $vIBS = Num $a[0] }; $a = $nIbs.GetElementsByTagName('vCBS'); if ($a.Count) { $vCBS = Num $a[0] } }
+    if ($nIbs) {
+      # reforma tributária (NT 2025.002): CST e cClassTrib do IBS/CBS, base, alíquotas e valores
+      $cstIBS = Txt (Filho $nIbs 'CST'); $cClass = Txt (Filho $nIbs 'cClassTrib')
+      $a = $nIbs.GetElementsByTagName('vIBS'); if ($a.Count) { $vIBS = Num $a[0] }; $a = $nIbs.GetElementsByTagName('vCBS'); if ($a.Count) { $vCBS = Num $a[0] }
+      $g = Filho $nIbs 'gIBSCBS'
+      if ($g) { $bcIbs = Num (Filho $g 'vBC'); $pUF = Num (Filho (Filho $g 'gIBSUF') 'pIBSUF'); $pMun = Num (Filho (Filho $g 'gIBSMun') 'pIBSMun'); $pCBS = Num (Filho (Filho $g 'gCBS') 'pCBS') }
+    }
     $vST = Num (Filho $icms 'vICMSST'); $vFCPST = Num (Filho $icms 'vFCPST')
     $vDeson = [decimal]0; if ((Txt (Filho $icms 'indDeduzDeson')) -ne '0') { $vDeson = Num (Filho $icms 'vICMSDeson') }
     $vII = [decimal]0; $nII = Filho $im 'II'; if ($nII) { $vII = Num (Filho $nII 'vII') }
@@ -248,7 +254,7 @@ function Analisar-Doc([string]$grupo, [string]$texto) {
       cfop = (Txt $pr['CFOP']); cst = $cst; orig = (Txt (Filho $icms 'orig')); aliq = (Num (Filho $icms 'pICMS'))
       valor = $vItem; vBC = (Num (Filho $icms 'vBC')); vICMS = (Num (Filho $icms 'vICMS')); vBCST = (Num (Filho $icms 'vBCST')); vST = $vST
       vIPI = $vIPI; cstPis = (Txt (Filho $pis 'CST')); vPIS = (Num (Filho $pis 'vPIS')); cstCofins = (Txt (Filho $cof 'CST')); vCOFINS = (Num (Filho $cof 'vCOFINS'))
-      cstIBS = $cstIBS; vIBS = $vIBS; vCBS = $vCBS
+      cstIBS = $cstIBS; vIBS = $vIBS; vCBS = $vCBS; temIbs = [bool]$nIbs; cClass = $cClass; bcIbs = $bcIbs; pUF = $pUF; pMun = $pMun; pCBS = $pCBS
       ncm = (Txt $pr['NCM']); cest = (Txt $pr['CEST']); cProd = (Txt $pr['cProd']); xProd = (Txt $pr['xProd']); un = (Txt $pr['uCom']); qtd = (Num $pr['qCom'])
     })
   }
@@ -282,6 +288,25 @@ function Montar-Resumo($emp, [datetime]$mes) {
   $trib = @{}; $ncm = @{}; $prod = @{}; $pc = @{}; $pagto = @{}; $tot = @{}
   $canc = New-Object System.Collections.ArrayList; $devol = New-Object System.Collections.ArrayList
   $numeros = @{}; $crts = @{}
+  # reforma tributária: quem já destaca IBS/CBS nos XML (por documento e por item)
+  $rfOrig = @{}; $rfCls = @{}; $rfSem = New-Object System.Collections.ArrayList; $rfForn = @{}
+  foreach ($d in $script:AN.docs.Values) {
+    if ($script:AN.canceladas.ContainsKey($d.chave)) { continue }
+    $o = $d.origem
+    if (-not $rfOrig.ContainsKey($o)) { $rfOrig[$o] = [ordered]@{ docs = 0; docsCom = 0; itens = 0; itensCom = 0; itensSemClass = 0 } }
+    $r = $rfOrig[$o]; $r.docs++; $com = 0
+    foreach ($it in $d.itens) {
+      $r.itens++
+      if (-not $it.temIbs) { continue }
+      $com++; $r.itensCom++; if (-not $it.cClass) { $r.itensSemClass++ }
+      $kc = '{0}|{1}|{2}|{3}|{4}|{5}' -f $o, $it.cstIBS, $it.cClass, $it.pUF, $it.pMun, $it.pCBS
+      if (-not $rfCls.ContainsKey($kc)) { $rfCls[$kc] = [ordered]@{ origem = $o; cst = $it.cstIBS; cClassTrib = $it.cClass; pIBSUF = $it.pUF; pIBSMun = $it.pMun; pCBS = $it.pCBS; itens = 0; valor = [decimal]0; vBC = [decimal]0; vIBS = [decimal]0; vCBS = [decimal]0 } }
+      $c = $rfCls[$kc]; $c.itens++; $c.valor += $it.valor; $c.vBC += $it.bcIbs; $c.vIBS += $it.vIBS; $c.vCBS += $it.vCBS
+    }
+    if ($com -gt 0) { $r.docsCom++ }
+    elseif ($o -ne 'Compras' -and $d.itens.Count -and $rfSem.Count -lt 50) { [void]$rfSem.Add([ordered]@{ origem = $o; modelo = $d.modelo; serie = $d.serie; numero = $d.numero; data = $d.data; valor = (R2 $d.vNF); chave = $d.chave }) }
+    if ($o -eq 'Compras' -and $d.emitDoc) { if (-not $rfForn.ContainsKey($d.emitDoc)) { $rfForn[$d.emitDoc] = $false }; if ($com -gt 0) { $rfForn[$d.emitDoc] = $true } }
+  }
   foreach ($d in $script:AN.docs.Values) {
     $o = $d.origem
     if ($o -ne 'Compras' -and $d.crt) { $crts[$d.crt] = 1 + [int]$crts[$d.crt] }
@@ -384,6 +409,10 @@ function Montar-Resumo($emp, [datetime]$mes) {
     devolucoes = @($devol); canceladas = @($canc); inutilizacoes = @($script:AN.inut); falhasNumeracao = @($falhas)
     porDia = $porDia; comSistema = [bool]$script:AN.sistemaDia
     pendencias = @($(if ($script:AN.pendencias) { $script:AN.pendencias } else { @() })); comPendencias = ($null -ne $script:AN.pendencias)
+    reforma = [ordered]@{
+      porOrigem = $rfOrig; classes = @(Fechar $rfCls); semGrupo = @($rfSem)
+      fornecedores = [ordered]@{ total = $rfForn.Count; com = @($rfForn.Values | Where-Object { $_ }).Count }
+    }
   }
 }
 
@@ -1193,8 +1222,16 @@ try {
           if ($Manuais) { $prm.Manuais = $true }
           if ($Tudo) { $prm.Tudo = $true }
           if ($Config) { $prm.Config = $Config }
-          & $PSCommandPath @prm
-          exit $LASTEXITCODE
+          try { & $PSCommandPath @prm; exit $LASTEXITCODE }
+          catch {
+            # versão nova bloqueada (ex.: antivírus) ou com erro ao abrir: volta a anterior e roda com ela
+            $msgNova = $_.Exception.Message
+            if (Test-Path ($PSCommandPath + '.anterior')) { Copy-Item ($PSCommandPath + '.anterior') $PSCommandPath -Force }
+            Log ('A versão ' + $up.versao + ' não abriu neste servidor (' + $msgNova + ') - voltei para a ' + $VERSAO + '.')
+            $prm.SemAtualizar = $true
+            & $PSCommandPath @prm
+            exit $LASTEXITCODE
+          }
         } else { Log 'Atualização recebida com erro - mantida a versão atual.' }
       }
     } catch { Log ('(verificação de atualização falhou: ' + $_.Exception.Message + ')') }

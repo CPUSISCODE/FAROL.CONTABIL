@@ -146,7 +146,7 @@ fieldset{border:1px solid var(--line);border-radius:8px;padding:10px 12px;displa
 legend{font-size:12.5px;color:var(--muted);padding:0 4px}
 #uLista{max-height:220px;overflow:auto}
 input[type=checkbox]{accent-color:var(--brand);width:16px;height:16px}
-.aviso{margin:0;font-size:13px;font-weight:600;color:var(--brand)}.aviso:empty{display:none}.aviso.bad{color:var(--bad)}
+.aviso{margin:0;font-size:13px;font-weight:600;color:var(--brand)}.aviso:empty{display:none}.aviso.bad{color:var(--bad)}.aviso.warn{color:var(--warn)}.aviso.info{color:var(--info)}
 .btn.perigo{border-color:var(--bad);color:var(--bad);margin-left:auto}
 details{border-bottom:1px solid var(--line);padding:8px 0}details summary{cursor:pointer;padding:4px 0}details .tbl{margin-top:8px}
 #dlgUsu{width:min(560px,calc(100vw - 32px))}
@@ -222,6 +222,8 @@ td.b{font-weight:700;white-space:normal}
 #fcAba td .sub,#fCorpo td .sub{display:block;font-size:11.5px}
 #fCorpo,#fcAba{display:grid;gap:14px;min-width:0}#fcAba{margin-top:14px}#fcAba>*{min-width:0}
 #dlgFin label{display:grid;gap:4px;font-size:13px}
+#rfSec .minis.rf4{grid-template-columns:repeat(4,minmax(0,1fr))}@media (max-width:760px){#rfSec .minis.rf4{grid-template-columns:repeat(2,minmax(0,1fr))}}
+ul.lst{margin:6px 0 10px;padding-left:20px;display:grid;gap:4px}
 </style>
 </head>
 <body>
@@ -1009,15 +1011,144 @@ function desenharPainel() {
       return '<li data-ck="' + esc(x.ck) + '"><span><i class="dot d-wn"></i><b>' + esc(x.rotulo) + '</b></span><span class="sub">' + esc(p.join(' · ')) + '</span></li>';
     }).join('') + semXmlMes.map(function (u) { return '<li data-ck="' + esc(chaveUnid(u.contabilidade, rotuloPainel(u))) + '"><span><i class="dot d-bad"></i><b>' + esc(rotuloUnid(u)) + '</b></span><span class="sub">XML de ' + nomeMes(mes) + ' não chegou</span></li>'; }).join('') + '</ul>' : '<p class="nota ok">Todos os clientes estão prontos para fechar.</p>') +
     '<div class="minis"><div><span class="r">IBS + CBS destacados</span><b>' + mi(soma(lista, 'ibs') + soma(lista, 'cbs')) + '</b></div><div><span class="r">Prazo para inutilizar</span><b>' + (temFalha ? '10/' + mesSeguinte(mes).slice(5, 7) + '/' + mesSeguinte(mes).slice(0, 4) : 'sem números pulados') + '</b></div></div></section></div>';
+  // reforma tributária
+  var RF = rfSecaoPainel(lista, mes); html += RF.html;
   // tabela completa
   html += '<section class="card"><div class="ch"><h2>Todos os clientes no mês</h2><div class="ferr"><input type="search" id="pFiltro" placeholder="Filtrar…" aria-label="Filtrar clientes"><button class="btn sec" type="button" id="pCsv">Exportar para Excel (CSV)</button></div></div><div id="pTab"></div></section>';
   $('pCorpo').innerHTML = html;
   var abrirCk = function (ck, aba) { var u = unidPorChave(ck); if (u) { ATUAL = { aba: aba || 'dias' }; abrir(u, u.meses.indexOf(mes) >= 0 ? mes : null); } };
   $('pCorpo').querySelectorAll('[data-ck]').forEach(function (el) { el.addEventListener('click', function () { abrirCk(el.dataset.ck, el.closest('.lim') ? 'trib' : 'dias'); }); });
   $('pCorpo').querySelectorAll('[data-a]').forEach(function (el) { el.addEventListener('click', function () { var a = alertas[+el.dataset.a]; abrirCk(a.x.ck, /CEST/.test(a.t) ? 'ncm' : 'trib'); }); });
+  $('pCorpo').querySelectorAll('[data-rf]').forEach(function (el) { el.addEventListener('click', function () { abrirCk(RF.linhas[+el.dataset.rf].x.ck, 'rf'); }); });
+  $('rfCsv').addEventListener('click', function () { csv([['rotulo', 'Cliente'], ['contabilidade', 'Contabilidade'], ['regimeNome', 'Regime'], ['desde', 'Obrigatório desde'], ['docs', 'Notas emitidas', 'int'], ['docsCom', 'Com IBS/CBS', 'int'], ['pctTxt', '% com IBS/CBS'], ['vIBS', 'IBS'], ['vCBS', 'CBS'], ['situacao', 'Situação']], RF.linhas, 'Reforma IBS-CBS ' + mes + '.csv'); });
   var t = tabela($('pTab'), COL.dash, lista, 'vendas', true, { clicar: function (x) { abrirCk(x.ck, 'dias'); } });
   $('pFiltro').addEventListener('input', function () { t.filtrar(this.value); });
   $('pCsv').addEventListener('click', function () { csv(COL.dash, t.linhas(), 'Painel ' + mes + '.csv'); });
+}
+
+/* ---------------- reforma tributária: IBS/CBS nos XML (NT 2025.002) ----------------
+   Regime normal (CRT 3): obrigatório desde 03/08/2026. Simples/MEI (CRT 1, 2 e 4): a partir de 04/01/2027.
+   Em 2026 as alíquotas de teste são CBS 0,9% e IBS 0,1%. */
+var RF_NORMAL = '2026-08', RF_SIMPLES = '2027-01';
+function rfObrigacao(regime, mes) {
+  if (regime === 'SN' || regime === 'MEI') return { desde: '04/01/2027', obrig: mes >= RF_SIMPLES };
+  if (regime) return { desde: '03/08/2026', obrig: mes >= RF_NORMAL };
+  return { desde: '?', obrig: false };
+}
+// situação de um cliente no mês (x = indicador do painel)
+function rfSituacao(x, mes) {
+  var ob = rfObrigacao(x.regime, mes), rf = x.rf || { det: false, docs: x.docs || 0 };
+  var s = { ob: ob, det: !!rf.det, docs: rf.docs || 0, docsCom: rf.docsCom || 0, pct: null, vIBS: rf.vIBS || x.ibs || 0, vCBS: rf.vCBS || x.cbs || 0 };
+  if (!s.docs) { s.id = 'semnotas'; s.txt = 'Sem notas emitidas'; s.cls = 'info'; s.ordem = 0; return s; }
+  if (rf.det) {
+    s.pct = 100 * s.docsCom / s.docs;
+    if (s.docsCom >= s.docs) { s.id = 'ok'; s.txt = 'Preenchendo'; s.cls = ''; s.ordem = 1; }
+    else if (s.docsCom > 0) { s.id = 'parcial'; s.txt = 'Parcial · ' + Math.floor(s.pct) + '%'; s.cls = 'warn'; s.ordem = ob.obrig ? 4 : 2; }
+    else { s.id = 'nao'; s.ordem = ob.obrig ? 5 : 2; }
+  } else {
+    if (s.vIBS + s.vCBS > 0) { s.id = 'destaca'; s.txt = 'Destaca IBS/CBS'; s.cls = ''; s.ordem = 1; }
+    else { s.id = 'nao'; s.ordem = ob.obrig ? 5 : 2; }
+  }
+  if (s.id === 'nao') { s.txt = ob.obrig ? 'Não preenche' : 'Ainda não preenche'; s.cls = ob.obrig ? 'bad' : 'info'; }
+  return s;
+}
+function rfSecaoPainel(lista, mes) {
+  var linhas = lista.map(function (x) {
+    var s = rfSituacao(x, mes);
+    return { x: x, s: s, rotulo: x.rotulo, contabilidade: x.contabilidade, regimeNome: x.regimeNome || '—', desde: s.ob.desde, docs: s.docs, docsCom: s.det ? s.docsCom : null,
+      pctTxt: s.pct == null ? (s.det ? '' : 'sem detalhe') : Math.floor(s.pct) + '%', vIBS: s.vIBS, vCBS: s.vCBS, situacao: s.txt };
+  }).sort(function (a, b) { return b.s.ordem - a.s.ordem || b.docs - a.docs; });
+  var obrig = linhas.filter(function (l) { return l.s.ob.obrig && l.s.id !== 'semnotas'; });
+  var obrigFalta = obrig.filter(function (l) { return l.s.id === 'nao' || l.s.id === 'parcial'; });
+  var sn = linhas.filter(function (l) { return !l.s.ob.obrig && l.s.ob.desde === '04/01/2027' && l.s.id !== 'semnotas'; });
+  var snPronto = sn.filter(function (l) { return l.s.id === 'ok' || l.s.id === 'destaca'; });
+  var semDet = linhas.filter(function (l) { return !l.s.det && l.s.id !== 'semnotas'; }).length;
+  var html = '<section class="card" id="rfSec"><div class="ch"><h2>Reforma tributária · IBS e CBS nos XML</h2><div class="ferr"><span>' + nomeMes(mes) + ' · NT 2025.002</span><button class="btn sec" type="button" id="rfCsv">Exportar para Excel (CSV)</button></div></div>' +
+    '<div class="minis rf4"><div><span class="r">Regime normal preenchendo</span><b' + (obrigFalta.length ? ' style="color:var(--bad)"' : '') + '>' + (obrig.length - obrigFalta.length) + ' de ' + obrig.length + '</b></div>' +
+    '<div><span class="r">Regime normal sem preencher</span><b' + (obrigFalta.length ? ' style="color:var(--bad)"' : '') + '>' + obrigFalta.length + '</b></div>' +
+    '<div><span class="r">Simples/MEI já preparados para 2027</span><b>' + snPronto.length + ' de ' + sn.length + '</b></div>' +
+    '<div><span class="r">IBS + CBS destacados</span><b>' + mi(soma(lista, 'ibs') + soma(lista, 'cbs')) + '</b></div></div>' +
+    '<div class="tbl"><table><thead><tr><th>Cliente</th><th>Regime</th><th>Obrigatório desde</th><th class="n">Notas emitidas</th><th class="n">Com IBS/CBS</th><th class="n">IBS</th><th class="n">CBS</th><th>Situação</th></tr></thead><tbody>' +
+    linhas.map(function (l, i) {
+      return '<tr class="cli" data-rf="' + i + '"><td class="b">' + esc(l.rotulo) + '</td><td>' + esc(l.regimeNome) + '</td><td>' + esc(l.desde) + '</td><td class="n">' + int(l.docs) + '</td>' +
+        '<td class="n">' + (l.docsCom == null ? '<span class="sub">' + l.pctTxt + '</span>' : int(l.docsCom) + ' <span class="sub">' + l.pctTxt + '</span>') + '</td>' +
+        '<td class="n">' + brl(l.vIBS) + '</td><td class="n">' + brl(l.vCBS) + '</td><td><span class="pill ' + l.s.cls + '">' + esc(l.situacao) + '</span></td></tr>';
+    }).join('') + '</tbody></table></div>' +
+    '<p class="nota">Regime normal (Presumido/Real): o grupo IBSCBS em cada item da NF-e e da NFC-e é obrigatório desde 03/08/2026. A SEFAZ adiou a rejeição, mas a nota sem o grupo continua irregular. Simples Nacional e MEI: obrigatório a partir de 04/01/2027.' +
+    (semDet ? ' <b>' + semDet + ' cliente(s) com "sem detalhe"</b>: o programa do servidor ainda é anterior à contagem nota a nota; a situação vem dos valores de IBS/CBS destacados e fica exata depois da próxima atualização automática.' : '') + ' Clique no cliente para ver CST, cClassTrib e as notas sem IBS/CBS.</p></section>';
+  return { html: html, linhas: linhas };
+}
+
+// aba "Reforma (IBS/CBS)" do cliente
+function rfDosXml(mes) {
+  var R = { porOrigem: {}, classes: {}, semGrupo: [], forn: {} };
+  BUSCA.docs.forEach(function (d) {
+    if (d.mes !== mes || !d.rfItens || d.sit !== 'Autorizada') return;
+    var o = d.tipo === 'nfce' ? 'NFCe' : d.tipo === 'compra' ? 'Compras' : 'NFe';
+    var r = R.porOrigem[o] = R.porOrigem[o] || { docs: 0, docsCom: 0, itens: 0, itensCom: 0, itensSemClass: 0 };
+    r.docs++; r.itens += d.rfItens; r.itensCom += d.rfCls.length;
+    d.rfCls.forEach(function (c) {
+      if (!c[1]) r.itensSemClass++;
+      var k = [o].concat(c.slice(0, 5)).join('|'), x = R.classes[k] = R.classes[k] || { origem: o, cst: c[0], cClassTrib: c[1], pIBSUF: c[2], pIBSMun: c[3], pCBS: c[4], itens: 0, valor: 0, vBC: 0, vIBS: 0, vCBS: 0 };
+      x.itens++; x.valor += c[5]; x.vBC += c[6]; x.vIBS += c[7]; x.vCBS += c[8];
+    });
+    if (d.rfCls.length) r.docsCom++;
+    else if (o !== 'Compras' && R.semGrupo.length < 50) R.semGrupo.push({ origem: o, modelo: d.mod, serie: d.serie, numero: d.n, data: d.data, valor: d.valor, chave: d.chave });
+    if (o === 'Compras' && d.emitDoc) { R.forn[d.emitDoc] = R.forn[d.emitDoc] || d.rfCls.length > 0; }
+  });
+  var fk = Object.keys(R.forn);
+  return { porOrigem: R.porOrigem, classes: Object.keys(R.classes).map(function (k) { return R.classes[k]; }), semGrupo: R.semGrupo, fornecedores: { total: fk.length, com: fk.filter(function (k) { return R.forn[k]; }).length }, fonte: 'xml' };
+}
+function telaReforma(c) {
+  if (RESUMO.reforma) { desenharReforma(c, RESUMO.reforma); return; }
+  var u = ATUAL.u, ck = chaveUnid(u.contabilidade, rotuloPainel(u));
+  if (BUSCA && BUSCA.ck === ck && BUSCA.meses[ATUAL.mes] && BUSCA.meses[ATUAL.mes].carregado) { desenharReforma(c, rfDosXml(ATUAL.mes)); return; }
+  c.innerHTML = '<div class="card"><h2>Reforma tributária · IBS e CBS</h2><p class="nota">O resumo deste mês foi gerado por uma versão anterior do programa do servidor, que ainda não contava o IBS/CBS nota a nota. ' +
+    'Depois da próxima atualização automática ele vem pronto. Enquanto isso, dá para analisar agora pelos XML do mês (o arquivo é aberto aqui no seu computador).</p>' +
+    '<div class="ferr"><button class="btn" type="button" id="rfMontar">Analisar os XML do mês</button><div class="barra hidden" id="rfBarra"><i></i></div><span class="sub" id="rfInfo"></span></div></div>';
+  $('rfMontar').addEventListener('click', function () {
+    if (!BUSCA || BUSCA.ck !== ck) BUSCA = { ck: ck, meses: {}, docs: [], porChave: {}, sel: {}, ord: 'data', asc: false, cnpj: RESUMO && RESUMO.cnpj };
+    $('rfMontar').disabled = true;
+    var info = function (t, p) { if (!$('rfInfo')) return; $('rfInfo').textContent = t; var b = $('rfBarra'); if (p == null) b.classList.add('hidden'); else { b.classList.remove('hidden'); b.firstChild.style.width = (100 * p) + '%'; } };
+    carregarMesBusca(u, ATUAL.mes, info).then(function () { if (ATUAL && ATUAL.aba === 'rf' && $('conteudo')) desenharReforma($('conteudo'), rfDosXml(ATUAL.mes)); })
+      .catch(function (e) { info(e.message, null); if ($('rfMontar')) $('rfMontar').disabled = false; });
+  });
+}
+function desenharReforma(c, R) {
+  var mes = ATUAL.mes, crt = String(RESUMO.crt || ''), regime = crt === '3' ? 'NORMAL' : (crt === '1' || crt === '2') ? 'SN' : crt === '4' ? 'MEI' : '';
+  var u = ATUAL.u, ri = IND[mes] && IND[mes].itens.filter(function (i) { return i.contabilidade === u.contabilidade && i.cliente === u.cliente && (i.subpasta || '') === (u.subpasta || ''); })[0];
+  var rInf = DADOS.regimes && DADOS.regimes[chaveUnid(u.contabilidade, rotuloPainel(u))];
+  if (rInf) regime = rInf; else if (ri && ri.regime) regime = ri.regime;
+  var ob = rfObrigacao(regime, mes), po = R.porOrigem || {};
+  var bloco = function (o, nome) {
+    var x = po[o]; if (!x || !x.docs) return '';
+    var pct = Math.floor(100 * x.docsCom / x.docs), cor = x.docsCom >= x.docs ? 'ok' : (x.docsCom ? 'warn' : (o === 'Compras' || !ob.obrig ? 'muted' : 'bad'));
+    return kpi2(nome + ' com IBS/CBS', int(x.docsCom) + ' de ' + int(x.docs), pct + '% das notas · ' + int(x.itensCom) + ' de ' + int(x.itens) + ' itens' + (x.itensSemClass ? ' · ' + x.itensSemClass + ' sem cClassTrib' : ''), null, cor);
+  };
+  var em = ['NFe', 'NFCe'].reduce(function (a, o) { var x = po[o] || {}; a.docs += x.docs || 0; a.com += x.docsCom || 0; return a; }, { docs: 0, com: 0 });
+  var sit = !em.docs ? ['info', 'Sem notas emitidas autorizadas neste mês.'] : em.com >= em.docs ? ['', 'Todas as notas emitidas já trazem o grupo IBS/CBS.']
+    : em.com ? ['warn', 'Só ' + Math.floor(100 * em.com / em.docs) + '% das notas emitidas trazem o grupo IBS/CBS.'] : [ob.obrig ? 'bad' : 'info', 'Nenhuma nota emitida traz o grupo IBS/CBS.'];
+  var obTxt = regime ? (ob.obrig ? 'Para este cliente (' + (NOME_REG[regime] || regime) + ') o preenchimento é obrigatório desde ' + ob.desde + '.' : 'Para este cliente (' + (NOME_REG[regime] || regime) + ') o preenchimento passa a ser obrigatório em ' + ob.desde + '.') : 'Regime do cliente não identificado neste mês.';
+  var cls = (R.classes || []).slice().sort(function (a, b) { return b.valor - a.valor; });
+  var forn = R.fornecedores || { total: 0, com: 0 };
+  c.innerHTML =
+    '<div class="card"><p class="aviso ' + sit[0] + '" style="margin:0"><b>' + esc(sit[1]) + '</b> ' + esc(obTxt) + (R.fonte === 'xml' ? ' (analisado agora pelos XML do mês)' : '') + '</p></div>' +
+    '<div class="kpis kpis4">' + bloco('NFe', 'NF-e emitidas') + bloco('NFCe', 'NFC-e') + bloco('Compras', 'Compras') +
+      (forn.total ? kpi2('Fornecedores que destacam', forn.com + ' de ' + forn.total, 'notas de compra com IBS/CBS', null, forn.com >= forn.total ? 'ok' : 'warn') : '') + '</div>' +
+    '<section class="card"><div class="ch"><h2>CST e cClassTrib usados</h2><div class="ferr"><span>alíquotas de teste em 2026: CBS 0,9% · IBS 0,1%</span><button class="btn sec" type="button" id="rfCsvCls">Exportar para Excel (CSV)</button></div></div>' +
+      (cls.length ? '<div class="tbl"><table><thead><tr><th>Origem</th><th>CST</th><th>cClassTrib</th><th class="n">IBS UF %</th><th class="n">IBS Mun %</th><th class="n">CBS %</th><th class="n">Itens</th><th class="n">Valor dos itens</th><th class="n">Base</th><th class="n">IBS</th><th class="n">CBS</th></tr></thead><tbody>' +
+        cls.map(function (x) { return '<tr><td>' + esc(NOME_ORIGEM[x.origem] || x.origem) + '</td><td>' + esc(x.cst || '—') + '</td><td>' + (x.cClassTrib ? esc(x.cClassTrib) : '<span class="pill bad">vazio</span>') + '</td><td class="n">' + aliq(x.pIBSUF) + '</td><td class="n">' + aliq(x.pIBSMun) + '</td><td class="n">' + aliq(x.pCBS) + '</td><td class="n">' + int(x.itens) + '</td><td class="n">' + brl(x.valor) + '</td><td class="n">' + brl(x.vBC) + '</td><td class="n">' + brl(x.vIBS) + '</td><td class="n">' + brl(x.vCBS) + '</td></tr>'; }).join('') +
+        '</tbody></table></div>' : '<p class="nota">Nenhum item com o grupo IBS/CBS neste mês.</p>') + '</section>' +
+    '<section class="card"><div class="ch"><h2>Notas emitidas sem IBS/CBS</h2><span>' + ((R.semGrupo || []).length >= 50 ? 'as 50 primeiras' : (R.semGrupo || []).length + ' nota(s)') + '</span></div>' +
+      ((R.semGrupo || []).length ? '<div class="tbl"><table><thead><tr><th>Tipo</th><th class="n">Número</th><th>Série</th><th>Data</th><th class="n">Valor</th><th>Chave de acesso</th></tr></thead><tbody>' +
+        R.semGrupo.map(function (x) { return '<tr><td>' + esc(NOME_ORIGEM[x.origem] || x.origem) + '</td><td class="n">' + esc(x.numero) + '</td><td>' + esc(x.serie) + '</td><td>' + dataBR(x.data) + '</td><td class="n">' + brl(x.valor) + '</td><td class="sub">' + esc(x.chave) + '</td></tr>'; }).join('') +
+        '</tbody></table></div>' : '<p class="nota ok">Nenhuma nota emitida sem o grupo IBS/CBS.</p>') + '</section>' +
+    '<section class="card"><h2>O que precisa vir em cada item da nota</h2><ul class="lst"><li><b>CST</b> do IBS/CBS (3 dígitos) e <b>cClassTrib</b> (6 dígitos), que diz o tratamento do item na LC 214/2025.</li>' +
+      '<li><b>Base de cálculo</b> e as alíquotas de <b>IBS estadual</b>, <b>IBS municipal</b> e <b>CBS</b>, com os valores de cada um.</li><li>Os <b>totais de IBS e CBS</b> da nota, que devem bater com a soma dos itens.</li></ul>' +
+      '<p class="nota">Quem preenche é o sistema emissor do cliente (configuração fiscal dos produtos). Se aparecer "Não preenche" ou "vazio" em cClassTrib, o cadastro fiscal do produto ou a versão do emissor precisa ser ajustada.</p></section>';
+  if ($('rfCsvCls')) $('rfCsvCls').addEventListener('click', function () {
+    csv([['origem', 'Origem'], ['cst', 'CST'], ['cClassTrib', 'cClassTrib', 'm'], ['pIBSUF', 'IBS UF %'], ['pIBSMun', 'IBS Mun %'], ['pCBS', 'CBS %'], ['itens', 'Itens', 'int'], ['valor', 'Valor dos itens'], ['vBC', 'Base'], ['vIBS', 'IBS'], ['vCBS', 'CBS']], cls, 'IBS-CBS ' + rotuloUnid(ATUAL.u) + ' ' + mes + '.csv');
+  });
 }
 
 /* ---------------- busca de XML (dentro do cliente) ----------------
@@ -1084,6 +1215,14 @@ function indexarXml(s, cnpjCli) {
       emitDoc: xTag(emit, 'CNPJ') || xTag(emit, 'CPF'), emitNome: xTag(emit, 'xNome'), destDoc: xTag(dest, 'CNPJ') || xTag(dest, 'CPF') || xTag(dest, 'idEstrangeiro'), destNome: xTag(dest, 'xNome'),
       valor: Number(xTag(xBloco(s, 'ICMSTot'), 'vNF')) || 0, chave: m ? m[1] : '', cStat: xTag(prot, 'cStat'), nProt: xTag(prot, 'nProt') };
     d.tipo = d.mod === '65' ? 'nfce' : (soDig(d.emitDoc) === cnpjCli || !cnpjCli && d.tpNF === '1' ? 'nfe' : 'compra');
+    // reforma tributária: grupo IBSCBS de cada item [CST, cClassTrib, pIBSUF, pIBSMun, pCBS, valor, base, vIBS, vCBS]
+    var dets = s.split(/<(?:\w+:)?det\s/).slice(1); d.rfItens = dets.length; d.rfCls = [];
+    dets.forEach(function (det) {
+      var g = xBloco(det, 'IBSCBS'); if (!g) return;
+      var gg = xBloco(g, 'gIBSCBS'), n = function (v) { return Number(v) || 0; };
+      d.rfCls.push([xTag(g, 'CST'), xTag(g, 'cClassTrib'), n(xTag(xBloco(gg, 'gIBSUF'), 'pIBSUF')), n(xTag(xBloco(gg, 'gIBSMun'), 'pIBSMun')), n(xTag(xBloco(gg, 'gCBS'), 'pCBS')),
+        n(xTag(det, 'vProd')), n(xTag(gg, 'vBC')), n(xTag(gg, 'vIBS')), n(xTag(gg, 'vCBS'))]);
+    });
     if (d.tipo === 'nfe' && d.tpNF === '0') d.obs = 'entrada própria';
   } else if (/<(?:\w+:)?infCte[\s>]/.test(s)) {
     var ic = xBloco(s, 'ide'), ec = xBloco(s, 'emit'), dc = xBloco(s, 'dest'), pc = xBloco(s, 'infProt');
@@ -1642,7 +1781,7 @@ var COL = {
 };
 var ABAS = [
   { id: 'dias', nome: 'Dia a dia' }, { id: 'trib', nome: 'Tributação' }, { id: 'ncm', nome: 'NCMs' }, { id: 'pis', nome: 'PIS/COFINS' }, { id: 'prod', nome: 'Produtos' },
-  { id: 'dev', nome: 'Devoluções' }, { id: 'canc', nome: 'Cancelamentos e numeração' }, { id: 'pag', nome: 'Pagamentos' }, { id: 'xml', nome: 'Buscar XML' }
+  { id: 'dev', nome: 'Devoluções' }, { id: 'canc', nome: 'Cancelamentos e numeração' }, { id: 'pag', nome: 'Pagamentos' }, { id: 'rf', nome: 'Reforma (IBS/CBS)' }, { id: 'xml', nome: 'Buscar XML' }
 ];
 var ORIGENS = ['Todas', 'NFe', 'NFCe', 'Compras'];
 var NOME_ORIGEM = { NFe: 'NF-e emitida', NFCe: 'NFC-e', Compras: 'Compra' };
@@ -1651,6 +1790,7 @@ function desenharAba() {
   var r = RESUMO, a = ATUAL.aba, c = $('conteudo'), html = '';
   if (a === 'xml') { telaBusca(c); return; }
   if (a === 'dias') { telaDias(c); return; }
+  if (a === 'rf') { telaReforma(c); return; }
   var ferr = function (comOrigem, nota) {
     return '<div class="ferr">' + (comOrigem ? '<div class="seg" role="group" aria-label="Origem">' + ORIGENS.map(function (o) { return '<button type="button" data-o="' + o + '" aria-pressed="' + (o === ATUAL.origem) + '">' + (o === 'Todas' ? 'Todas' : NOME_ORIGEM[o]) + '</button>'; }).join('') + '</div>' : '') +
       '<input type="search" id="fTab" placeholder="Filtrar…" aria-label="Filtrar tabela"><button class="btn sec" type="button" id="bCsv">Exportar para Excel (CSV)</button></div>' + (nota ? '<p class="nota">' + nota + '</p>' : '');
@@ -2185,9 +2325,9 @@ function guiaPassos(d) {
   } else {
     P.push({ t: 'Bem-vindo ao ' + esc(document.title), h: '<p>Este portal reúne os <b>XML fiscais e os resumos de cada cliente</b>. Um agente instalado no servidor do cliente (LC Sistemas ou Gestores) envia os XML <b>todas as noites</b> para a pasta da contabilidade no Google Drive; o portal lê esses arquivos e monta os números.</p><p>Você não precisa pedir XML ao cliente: o que foi emitido ontem já aparece hoje. Este guia mostra o que significa cada tela. Ele leva 2 minutos e pode ser aberto de novo a qualquer hora no botão <b>Ajuda</b>, no topo.</p>' });
     if (admin) P.push({ t: 'Central (só CPUSIS)', h: '<p>Visão de operação de <b>todos</b> os clientes de todas as contabilidades: quantos estão em dia, parados ou com erro, e quais precisam de atenção agora.</p>', ir: 'central' });
-    P.push({ t: 'Painel: o fechamento do mês', h: '<p>Escolha o <b>mês</b> no topo. O painel mostra:</p><ul><li><b>Fechamento do mês</b>: quais clientes estão prontos para fechar e quais têm pendências.</li><li><b>Alertas inteligentes</b>: notas em contingência, rejeitadas, numeração pulada, notas sem XML, com o prazo para resolver.</li><li><b>Limite do Simples Nacional</b>: quanto cada cliente do Simples já faturou no ano.</li><li><b>Receitas a segregar no DAS</b>: vendas com PIS/COFINS monofásico e com ICMS por substituição tributária, para informar separado no PGDAS-D e o cliente não pagar imposto duas vezes.</li><li><b>Prazo para inutilizar</b>: numerações puladas que ainda precisam ser inutilizadas.</li></ul><p>Quase toda tabela tem <b>Exportar para Excel (CSV)</b>.</p>', ir: 'painel' });
+    P.push({ t: 'Painel: o fechamento do mês', h: '<p>Escolha o <b>mês</b> no topo. O painel mostra:</p><ul><li><b>Fechamento do mês</b>: quais clientes estão prontos para fechar e quais têm pendências.</li><li><b>Alertas inteligentes</b>: notas em contingência, rejeitadas, numeração pulada, notas sem XML, com o prazo para resolver.</li><li><b>Limite do Simples Nacional</b>: quanto cada cliente do Simples já faturou no ano.</li><li><b>Receitas a segregar no DAS</b>: vendas com PIS/COFINS monofásico e com ICMS por substituição tributária, para informar separado no PGDAS-D e o cliente não pagar imposto duas vezes.</li><li><b>Prazo para inutilizar</b>: numerações puladas que ainda precisam ser inutilizadas.</li><li><b>Reforma tributária (IBS e CBS)</b>: quais clientes já trazem o IBS e a CBS nas notas e quais ainda não preenchem.</li></ul><p>Quase toda tabela tem <b>Exportar para Excel (CSV)</b>.</p>', ir: 'painel' });
     P.push({ t: 'Clientes: a situação de cada um', h: '<p>Lista dos seus clientes com o último envio e os meses disponíveis. A coluna <b>Situação</b> diz se o agente do cliente está mandando os XML:</p><ul class="guia-leg"><li>' + pill('', 'Em dia') + ' enviou nas últimas 24 horas</li><li>' + pill('warn', 'Atenção') + ' 2 a 6 dias sem enviar</li><li>' + pill('bad', 'Parados') + ' 7 dias ou mais sem enviar</li><li>' + pill('bad', 'Com erro') + ' o último envio deu erro</li><li>' + pill('info', 'Envio manual') + ' os XML foram colocados à mão no Drive</li><li>' + pill('info', 'Sem registro') + ' o agente nunca se comunicou</li></ul><p>Clique no nome para abrir o cliente. Para baixar de vários de uma vez, <b>marque</b> os clientes e use <b>Baixar tudo em um ZIP</b>.</p>', ir: 'clientes' });
-    P.push({ t: 'A tela do cliente', h: '<p>No topo ficam os números do mês: NF-e emitidas, NFC-e, compras (XML importados), canceladas e ICMS. O botão <b>Baixar XML do mês (ZIP)</b> traz todos os arquivos organizados em pastas (emitidas, NFC-e, compras, eventos, inutilizações).</p><p>As abas detalham o mês:</p><ul><li><b>Dia a dia</b>: notas por dia, conferidas com o banco do sistema do cliente. Se faltar algum XML, aparece aqui.</li><li><b>Tributação</b>, <b>NCMs</b>, <b>PIS/COFINS</b>: valores por CST/CSOSN, CFOP, NCM e tributação monofásica.</li><li><b>Produtos</b>: o que foi vendido e comprado, com quantidade e valor.</li><li><b>Devoluções</b>, <b>Cancelamentos e numeração</b>: notas canceladas, inutilizações e falhas na numeração.</li><li><b>Pagamentos</b>: formas de pagamento das vendas (dinheiro, PIX, cartão…).</li></ul>' });
+    P.push({ t: 'A tela do cliente', h: '<p>No topo ficam os números do mês: NF-e emitidas, NFC-e, compras (XML importados), canceladas e ICMS. O botão <b>Baixar XML do mês (ZIP)</b> traz todos os arquivos organizados em pastas (emitidas, NFC-e, compras, eventos, inutilizações).</p><p>As abas detalham o mês:</p><ul><li><b>Dia a dia</b>: notas por dia, conferidas com o banco do sistema do cliente. Se faltar algum XML, aparece aqui.</li><li><b>Tributação</b>, <b>NCMs</b>, <b>PIS/COFINS</b>: valores por CST/CSOSN, CFOP, NCM e tributação monofásica.</li><li><b>Produtos</b>: o que foi vendido e comprado, com quantidade e valor.</li><li><b>Devoluções</b>, <b>Cancelamentos e numeração</b>: notas canceladas, inutilizações e falhas na numeração.</li><li><b>Pagamentos</b>: formas de pagamento das vendas (dinheiro, PIX, cartão…).</li><li><b>Reforma (IBS/CBS)</b>: quantas notas já trazem o IBS e a CBS, os CST e cClassTrib usados e a lista das notas sem esses campos.</li></ul>' });
     P.push({ t: 'Buscar XML', h: '<p>Na aba <b>Buscar XML</b> da tela do cliente você acha qualquer nota do mês por <b>número, chave, nome ou CNPJ/CPF, valor e data</b>.</p><ul><li>Clique na nota para ver os dados principais (produtos, impostos, protocolo) ou <b>Ver o XML completo</b>.</li><li>Marque várias e use <b>Baixar marcados (ZIP)</b>, ou exporte a lista para o Excel.</li></ul>' });
     P.push({ t: 'O que significam as pendências', h: '<p>As pendências vêm do próprio sistema do cliente e mostram o que ainda não está certo na SEFAZ:</p><ul class="guia-leg"><li>' + pill('warn', 'Contingência') + ' nota emitida sem internet: precisa ser transmitida hoje</li><li>' + pill('bad', 'Rejeitada') + ' a SEFAZ recusou: corrigir e reenviar</li><li>' + pill('bad', 'Numeração pulada') + ' faltam números na sequência: inutilizar</li><li>' + pill('info', 'Sem XML') + ' a nota existe no sistema, mas o XML autorizado não está lá: verificar</li><li>' + pill('info', 'Em digitação') + ' nota começada e não transmitida: transmitir ou excluir</li></ul><p>Quando a pendência é resolvida no sistema do cliente, ela some do portal no envio da noite seguinte.</p>' });
     P.push({ t: 'Financeiro (BPO)', h: '<p>Para os clientes que contratam o <b>BPO financeiro</b>, a aba <b>Financeiro</b> mostra a carteira e, em cada cliente, o resumo, o extrato dos bancos categorizado, os comprovantes, as pendências e a <b>DRE e o fluxo de caixa</b> do mês.</p><p>Os clientes sem BPO simplesmente não aparecem nessa aba.</p>', ir: 'financeiro' });

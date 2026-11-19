@@ -1,10 +1,10 @@
 {
-  "receptor": "1.13.1",
-  "portal": "1.14",
-  "agente": "1.6.3",
+  "receptor": "1.14",
+  "portal": "1.15",
+  "agente": "2.0",
   "receptorMinimoAgente": "1.8.1",
   "agentePiloto": {
-    "versao": "1.9",
+    "versao": "2.0",
     "maquinas": [
       "DESKTOP-TOUC79I"
     ]
