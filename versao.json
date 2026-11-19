@@ -5,6 +5,8 @@
   "receptorMinimoAgente": "1.8.1",
   "agentePiloto": {
     "versao": "1.7",
-    "maquinas": []
+    "maquinas": [
+      "DESKTOP-TOUC79I"
+    ]
   }
 }
