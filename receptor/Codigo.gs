@@ -40,7 +40,7 @@ var CONFIG = {
   GUARDAR_DIAS: 7, GUARDAR_SEMANAS: 4, GUARDAR_MESES: 6
 };
 
-var VERSAO = '1.12';
+var VERSAO = '1.13';
 var PASTA_PORTAL = '_PORTAL_DADOS';   // resumos fiscais (JSON) e versão do agente
 var MESES = ['JANEIRO','FEVEREIRO','MARCO','ABRIL','MAIO','JUNHO','JULHO','AGOSTO','SETEMBRO','OUTUBRO','NOVEMBRO','DEZEMBRO'];
 var MESES_TXT = ['JANEIRO','FEVEREIRO','MARÇO','ABRIL','MAIO','JUNHO','JULHO','AGOSTO','SETEMBRO','OUTUBRO','NOVEMBRO','DEZEMBRO'];
@@ -151,6 +151,8 @@ function doPost(e) {
     var req = JSON.parse(e.postData.contents);
     if (req.acao === 'portal') {
       r = portalApi_(req);
+    } else if (req.acao === 'whatsapp') {
+      r = whatsapp_(req);
     } else if (req.senha !== segredo_('SENHA')) {
       r = { ok: false, erro: 'Senha inválida. Confira o arquivo conexao.txt do agente.' };
     } else if (!redirecionarUnificado_(req)) {   // cliente unificado: envio sem subpasta vai para a que ficou (sempre segue)
@@ -209,7 +211,8 @@ function segredo_(nome) {
 var PORTAL_API = ['portalAparencia', 'portalLogin', 'portalSair', 'portalDados', 'portalResumo', 'portalArquivo', 'portalParte',
   'portalIndicadores', 'portalIndicadoresLote', 'portalAdmin', 'portalSalvarUsuario', 'portalExcluirUsuario', 'portalCriarContabilidade',
   'portalCriarCliente', 'portalSalvarRegime', 'portalServidores', 'portalSalvarServidor', 'portalUnificar', 'portalFinCarteira', 'portalFinSalvarBpo', 'portalFinLoginEmpresa', 'portalFinCliente', 'portalFinImportar',
-  'portalFinCategorizar', 'portalFinSolicitar', 'portalFinJustificar', 'portalFinAnexo', 'portalFinRemoverRegra', 'portalFinPlano', 'portalComando'];
+  'portalFinCategorizar', 'portalFinSolicitar', 'portalFinJustificar', 'portalFinAnexo', 'portalFinRemoverRegra', 'portalFinPlano', 'portalComando',
+  'portalFinComprovante', 'portalFinComprovantes', 'portalFinCorrigirComprovante'];
 function portalApi_(req) {
   var fn = String(req.fn || '');
   if (PORTAL_API.indexOf(fn) < 0) return { ok: false, erro: 'Função não permitida: ' + fn };
@@ -220,7 +223,8 @@ function portalApi_(req) {
     portalServidores: portalServidores, portalSalvarServidor: portalSalvarServidor, portalUnificar: portalUnificar,
     portalFinCarteira: portalFinCarteira, portalFinSalvarBpo: portalFinSalvarBpo, portalFinLoginEmpresa: portalFinLoginEmpresa, portalFinCliente: portalFinCliente,
     portalFinImportar: portalFinImportar, portalFinCategorizar: portalFinCategorizar, portalFinSolicitar: portalFinSolicitar, portalFinJustificar: portalFinJustificar,
-    portalFinAnexo: portalFinAnexo, portalFinRemoverRegra: portalFinRemoverRegra, portalFinPlano: portalFinPlano, portalComando: portalComando };
+    portalFinAnexo: portalFinAnexo, portalFinRemoverRegra: portalFinRemoverRegra, portalFinPlano: portalFinPlano, portalComando: portalComando,
+    portalFinComprovante: portalFinComprovante, portalFinComprovantes: portalFinComprovantes, portalFinCorrigirComprovante: portalFinCorrigirComprovante };
   var f = mapa[fn]; if (typeof f !== 'function') return { ok: false, erro: 'Função não encontrada: ' + fn };
   try { return { ok: true, r: f.apply(null, Array.isArray(req.args) ? req.args : []) }; }
   catch (e) { return { ok: false, erro: String(e && e.message ? e.message : e) }; }
@@ -1623,7 +1627,7 @@ function renomearClientePlanilha_(contab, de, para) {
    Quem vê: administrador (operador CPUSIS) tudo; contabilidade só consulta os clientes dela;
    login de empresa vê só a própria empresa e responde as pendências.
    ====================================================================== */
-var CAB_BPO = ['Contabilidade', 'Cliente', 'BPO ativo (S/N)', 'Início (AAAA-MM-DD)', 'Operador', 'Observação', 'Último OFX', 'Pendências abertas', 'Saldo nos bancos (R$)', 'Atualizado em'];
+var CAB_BPO = ['Contabilidade', 'Cliente', 'BPO ativo (S/N)', 'Início (AAAA-MM-DD)', 'Operador', 'Observação', 'Último OFX', 'Pendências abertas', 'Saldo nos bancos (R$)', 'Atualizado em', 'WhatsApp autorizados (separe por vírgula)'];
 
 // Plano de contas padrão (comércio). g = grupo da DRE; fora = não entra na DRE (só no fluxo de caixa)
 var PLANO_FIN = [
@@ -1722,7 +1726,8 @@ function bpoLinhas_() {
     if (!String(d[i][0]).trim() || !String(d[i][1]).trim()) continue;
     var ini = d[i][3] instanceof Date ? Utilities.formatDate(d[i][3], Session.getScriptTimeZone(), 'yyyy-MM-dd') : String(d[i][3] || '').trim();
     o.push({ lin: i + 1, contabilidade: String(d[i][0]).trim(), cliente: String(d[i][1]).trim(), ativo: sn_(d[i][2], false), inicio: ini, operador: String(d[i][4] || ''),
-      obs: String(d[i][5] || ''), ultimoOfx: d[i][6] instanceof Date ? d[i][6].toISOString() : '', pendencias: Number(d[i][7] || 0), saldo: Number(d[i][8] || 0) });
+      obs: String(d[i][5] || ''), ultimoOfx: d[i][6] instanceof Date ? d[i][6].toISOString() : '', pendencias: Number(d[i][7] || 0), saldo: Number(d[i][8] || 0),
+      telefones: String(d[i][10] || '').split(/[,;\s]+/).map(foneNormal_).filter(String) });
   }
   return o;
 }
@@ -1787,6 +1792,14 @@ function portalFinSalvarBpo(token, b) {
     var aba = abaBpo_(planilha_()), x = bpoDe_(contab, cliente), lin = x ? x.lin : Math.max(aba.getLastRow(), 1) + 1;
     aba.getRange(lin, 4).setNumberFormat('@');
     aba.getRange(lin, 1, 1, 6).setValues([[contab, cliente, b.ativo ? 'S' : 'N', b.inicio || '', String(b.operador || ''), String(b.obs || '')]]);
+    if (b.telefones !== undefined) {
+      if (!String(aba.getRange(1, 11).getValue())) aba.getRange(1, 11).setValue(CAB_BPO[10]).setFontWeight('bold').setBackground('#0f6b55').setFontColor('#ffffff');
+      var fones = String(b.telefones || '').split(/[,;\n]+/).map(foneNormal_).filter(String);
+      fones.forEach(function (f) { if (f.length < 12 || f.length > 13) throw new Error('Telefone inválido: ' + f + ' (use DDD + número, ex.: 68 99999-1234)'); });
+      var outro = bpoLinhas_().filter(function (o) { return o.lin !== lin && o.telefones.some(function (t) { return fones.indexOf(t) >= 0; }); })[0];
+      if (outro) throw new Error('Este telefone já está autorizado para ' + outro.cliente + '.');
+      aba.getRange(lin, 11).setNumberFormat('@').setValue(fones.join(', '));
+    }
   } finally { lock.releaseLock(); }
   return portalFinCarteira(token);
 }
@@ -1867,12 +1880,14 @@ function portalFinImportar(token, contab, cliente, ofx) {
         if (ja[t.id]) { res.repetidos++; return; }
         var c = finCategorizar_(t, regras);
         t.cat = c.cat; t.orig = c.origem; t.st = c.cat ? 'ok' : 'pend';
+        if (t.valor < 0) { try { ligarComprovante_(pasta, t, id, m); } catch (e) { } }
         if (!c.cat) res.pendentes++;
         d.trans.push(t); ja[t.id] = 1; res.novos++;
       });
       d.trans.sort(function (a, b) { return a.data < b.data ? -1 : a.data > b.data ? 1 : 0; });
       gravarJson_(pc, m + '.json', d); res.meses.push(m);
     });
+    try { gravarComprovantes_(pasta); } catch (e) { }
     var ind = lerJson_(pasta, 'indice.json', { contas: {}, meses: [] });
     var ci = ind.contas[id] || {}; ci.banco = conta.banco; ci.nome = conta.nome; ci.agencia = conta.agencia; ci.conta = conta.conta;
     if (ofx.saldo != null && ofx.dataSaldo && (!ci.dataSaldo || String(ofx.dataSaldo) >= ci.dataSaldo)) { ci.saldo = Number(ofx.saldo); ci.dataSaldo = String(ofx.dataSaldo); }
@@ -1894,6 +1909,7 @@ function finAtualizarPlanilha_(contab, cliente) {
       var pc = existente_(existente_(pasta, 'contas'), id);
       (ind.meses || []).slice(-6).forEach(function (m) { var d = pc ? lerJson_(pc, m + '.json', null) : null; (d && d.trans || []).forEach(function (t) { if (t.st && t.st !== 'ok') pend++; }); });
     });
+    lerJson_(pasta, 'comprovantes.json', []).forEach(function (c) { if (c.st && c.st !== 'ok') pend++; });
     var x = bpoDe_(contab, cliente); if (!x) return;
     abaBpo_(planilha_()).getRange(x.lin, 7, 1, 4).setValues([[ind.ultimoOfx ? new Date(ind.ultimoOfx) : '', pend, Math.round(saldo * 100) / 100, new Date()]]);
   } catch (e) { }
@@ -1960,7 +1976,8 @@ function portalFinJustificar(token, contab, cliente, conta, mes, id, texto, anex
 function portalFinAnexo(token, contab, cliente, anexoId) {
   finAcesso_(token, contab, cliente, 'ver');
   var f = DriveApp.getFileById(anexoId), pai = f.getParents();
-  var ok = false; while (pai.hasNext()) { if (pai.next().getId() === filha_(finPasta_(contab, cliente), 'anexos').getId()) ok = true; }
+  var anx = filha_(finPasta_(contab, cliente), 'anexos'), ids = [anx.getId(), filha_(anx, 'comprovantes').getId()], ok = false;
+  while (pai.hasNext()) { if (ids.indexOf(pai.next().getId()) >= 0) ok = true; }
   if (!ok) throw new Error('Arquivo não pertence a esta empresa.');
   var b = f.getBlob(); return { nome: f.getName(), tipo: b.getContentType(), base64: Utilities.base64Encode(b.getBytes()) };
 }
@@ -2044,4 +2061,231 @@ function portalComando(token, contab, cliente, cmd, args) {
   } finally { lock.releaseLock(); }
   logAcesso_(s.login, 'comando', contab + ' / ' + cliente + ': ' + cmd + (args ? ' ' + args : ''));
   return portalServidores(token);
+}
+
+/* ======================================================================
+   COMPROVANTES (BPO): chegam pelo WhatsApp ou pelo portal, a IA lê (PDF ou imagem),
+   o sistema categoriza, liga ao lançamento do extrato (OFX) e o que não entende vai para o operador.
+   A baixa é só no Farol (nunca no LC).
+   Propriedades do script (Configurações do projeto > Propriedades):
+     ANTHROPIC_KEY      chave da API do Claude (leitura dos comprovantes)
+     ANTHROPIC_MODELO   opcional (padrão claude-haiku-5-5)
+     WA_TOKEN, WA_PHONE_ID, WA_SEGREDO, WA_VERSAO   WhatsApp oficial (Meta) + ponte
+   ====================================================================== */
+function foneNormal_(f) {
+  var d = String(f || '').replace(/\D/g, '');
+  if (!d) return '';
+  if (d.length === 10 || d.length === 11) d = '55' + d;               // DDD + número
+  if (d.length === 12 && /^55\d{2}[6-9]/.test(d)) d = d.slice(0, 4) + '9' + d.slice(4);   // celular sem o 9
+  return d;
+}
+function bpoPorFone_(fone) {
+  var f = foneNormal_(fone);
+  return bpoLinhas_().filter(function (b) { return b.ativo && b.telefones.indexOf(f) >= 0; })[0] || null;
+}
+
+function lerComprovanteIA_(b64, mime, texto) {
+  var props = PropertiesService.getScriptProperties(), key = props.getProperty('ANTHROPIC_KEY');
+  if (!key) return { ok: false, motivo: 'leitura automática desligada (falta a chave da IA)' };
+  mime = String(mime || '').toLowerCase();
+  var bloco;
+  if (/pdf/.test(mime)) bloco = { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: b64 } };
+  else if (/image\/(jpe?g|png|gif|webp)/.test(mime)) bloco = { type: 'image', source: { type: 'base64', media_type: mime.replace('jpg', 'jpeg'), data: b64 } };
+  else return { ok: false, motivo: 'formato não suportado (' + mime + ')' };
+  var cats = PLANO_FIN.map(function (c) { return c.id + ' = ' + c.nome; }).join('\n');
+  var pedido = 'Você lê comprovantes de pagamento de empresas brasileiras (PIX, boleto, TED, cartão, DAS, guias).\n' +
+    (texto ? 'Mensagem que o cliente mandou junto: "' + String(texto).slice(0, 500) + '"\n' : '') +
+    'Responda SOMENTE com um JSON, sem texto antes ou depois, com estes campos:\n' +
+    '{"tipo_documento":"comprovante|boleto|nota|outro","entrada":false,"valor":0.00,"data":"AAAA-MM-DD","hora":"HH:MM","forma":"PIX|BOLETO|TED|DOC|TRANSFERENCIA|CARTAO|DINHEIRO|DEBITO_AUTOMATICO|OUTRO",' +
+    '"pagador":"","recebedor":"","documento_recebedor":"","banco":"","observacao":"","codigo_barras":"","descricao":"","categoria":"","confianca":0.0}\n' +
+    '- entrada = true só se o documento for de dinheiro RECEBIDO pela empresa.\n' +
+    '- observacao = o texto de descrição/mensagem escrito no próprio comprovante, se houver.\n' +
+    '- descricao = uma frase curta dizendo o que foi o pagamento.\n' +
+    '- categoria = um dos códigos abaixo, só se tiver segurança pelo recebedor, observação, código de barras ou mensagem; senão "".\n' + cats + '\n' +
+    '- confianca de 0 a 1. Campos que não aparecem: "" ou 0.';
+  var r = UrlFetchApp.fetch('https://api.anthropic.com/v1/messages', {
+    method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+    headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01' },
+    payload: JSON.stringify({ model: props.getProperty('ANTHROPIC_MODELO') || 'claude-haiku-5-5', max_tokens: 700, messages: [{ role: 'user', content: [bloco, { type: 'text', text: pedido }] }] })
+  });
+  if (r.getResponseCode() !== 200) return { ok: false, motivo: 'IA respondeu ' + r.getResponseCode() + ': ' + r.getContentText().slice(0, 200) };
+  try {
+    var txt = (JSON.parse(r.getContentText()).content || []).map(function (c) { return c.text || ''; }).join('');
+    var d = JSON.parse((txt.match(/\{[\s\S]*\}/) || ['{}'])[0]);
+    d.valor = Math.abs(Number(String(d.valor).replace(',', '.')) || 0);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(d.data || ''))) d.data = '';
+    return { ok: true, dados: d };
+  } catch (e) { return { ok: false, motivo: 'não entendi a resposta da IA' }; }
+}
+
+// categoria do comprovante: regra aprendida > sugestão da IA > regras gerais
+function categoriaComprovante_(c, regras) {
+  var desc = [c.recebedor, c.obs, c.descricao, c.texto].filter(String).join(' ');
+  var r = finCategorizar_({ desc: desc, valor: c.entrada ? c.valor : -c.valor }, regras);
+  if (r.origem === 'regra') return { cat: r.cat, origem: 'regra' };
+  if (c.catIA && planoFin_()[c.catIA]) return { cat: c.catIA, origem: 'ia' };
+  if (r.cat) return { cat: r.cat, origem: 'padrao' };
+  if (/^8\d{2}[0-9]/.test(String(c.codigoBarras || '').replace(/\D/g, ''))) {   // boletos de concessionária/tributo começam com 8
+    var seg = String(c.codigoBarras).replace(/\D/g, '').charAt(1);
+    if (seg === '1') return { cat: 'imp_impostos', origem: 'padrao' };
+  }
+  return { cat: '', origem: '' };
+}
+
+// cache por execução: comprovantes de um cliente (usado na importação do OFX)
+var COMP_CACHE_ = {};
+function comprovantesDe_(pasta) { var k = pasta.getId(); if (!COMP_CACHE_[k]) COMP_CACHE_[k] = { lista: lerJson_(pasta, 'comprovantes.json', []), mudou: false }; return COMP_CACHE_[k]; }
+function gravarComprovantes_(pasta) { var c = COMP_CACHE_[pasta.getId()]; if (c && c.mudou) { gravarJson_(pasta, 'comprovantes.json', c.lista.slice(-3000)); c.mudou = false; } }
+function diasEntre_(a, b) { return Math.abs((Date.parse(a + 'T12:00:00Z') - Date.parse(b + 'T12:00:00Z')) / 864e5); }
+
+// lançamento do extrato novo: procura comprovante do mesmo valor (até 3 dias de diferença) e usa a categoria dele
+function ligarComprovante_(pasta, t, conta, mes) {
+  var C = comprovantesDe_(pasta);
+  var c = C.lista.filter(function (x) { return !x.conciliado && !x.entrada === (t.valor < 0) && x.valor && Math.abs(x.valor - Math.abs(t.valor)) < 0.005 && (!x.data || diasEntre_(x.data, t.data) <= 3); })[0];
+  if (!c) return;
+  c.conciliado = { conta: conta, mes: mes, id: t.id, data: t.data }; C.mudou = true;
+  t.comprovante = c.id;
+  if (c.cat) { t.cat = c.cat; t.orig = 'comprovante'; t.st = 'ok'; }
+  if (c.texto || c.descricao) t.just = { texto: c.texto || c.descricao, anexo: c.arquivoId, anexoNome: c.arquivoNome, quem: c.de || 'comprovante', quando: c.recebidoEm };
+}
+// comprovante novo: procura lançamento do extrato já importado (mesmo valor, até 3 dias)
+function conciliarComprovante_(pasta, c) {
+  if (!c.valor || !c.data) return null;
+  var ind = lerJson_(pasta, 'indice.json', { contas: {}, meses: [] }), m0 = c.data.slice(0, 7), achou = null;
+  var meses = (ind.meses || []).filter(function (m) { return Math.abs((Date.parse(m + '-01') - Date.parse(m0 + '-01')) / 864e5) <= 40; });
+  Object.keys(ind.contas || {}).some(function (id) {
+    var pc = existente_(existente_(pasta, 'contas'), id); if (!pc) return false;
+    return meses.some(function (m) {
+      var d = lerJson_(pc, m + '.json', null); if (!d) return false;
+      var t = d.trans.filter(function (x) { return !x.comprovante && (x.valor < 0) === !c.entrada && Math.abs(Math.abs(x.valor) - c.valor) < 0.005 && diasEntre_(x.data, c.data) <= 3; })[0];
+      if (!t) return false;
+      t.comprovante = c.id;
+      if (c.cat && (t.st !== 'ok' || t.orig !== 'manual')) { t.cat = c.cat; t.orig = 'comprovante'; t.st = 'ok'; }
+      if (!t.just && (c.texto || c.descricao)) t.just = { texto: c.texto || c.descricao, anexo: c.arquivoId, anexoNome: c.arquivoNome, quem: c.de || 'comprovante', quando: c.recebidoEm };
+      gravarJson_(pc, m + '.json', d);
+      achou = { conta: id, mes: m, id: t.id, data: t.data };
+      return true;
+    });
+  });
+  return achou;
+}
+
+// núcleo: recebe o arquivo, lê, categoriza, concilia e devolve a mensagem de resposta
+function novoComprovante_(contab, cliente, arq, texto, origem, de) {
+  if (!arq || !arq.base64) throw new Error('Envie o comprovante (foto ou PDF).');
+  var bytes = Utilities.base64Decode(arq.base64);
+  if (bytes.length > 8 * 1024 * 1024) throw new Error('Arquivo grande demais (máximo 8 MB).');
+  var pasta = finPasta_(contab, cliente), agora = new Date();
+  var id = 'cp' + agora.getTime().toString(36) + Math.floor(Math.random() * 1e3);
+  var nome = Utilities.formatDate(agora, Session.getScriptTimeZone(), 'yyyy-MM-dd_HHmm') + '_' + id + '_' + String(arq.nome || 'comprovante').replace(/[\\\/:*?"<>|]/g, '-').slice(-60);
+  var f = filha_(filha_(pasta, 'anexos'), 'comprovantes').createFile(Utilities.newBlob(bytes, arq.tipo || 'application/octet-stream', nome));
+  var leitura = lerComprovanteIA_(arq.base64, arq.tipo, texto);
+  var d = leitura.ok ? leitura.dados : {};
+  var c = { id: id, recebidoEm: agora.toISOString(), origem: origem, de: de || '', arquivoId: f.getId(), arquivoNome: nome, tipoArquivo: arq.tipo || '',
+    texto: String(texto || '').slice(0, 500), lido: !!leitura.ok, motivo: leitura.ok ? '' : leitura.motivo,
+    valor: Number(d.valor || 0), data: d.data || '', hora: d.hora || '', forma: d.forma || '', recebedor: d.recebedor || '', docRecebedor: d.documento_recebedor || '',
+    banco: d.banco || '', obs: d.observacao || '', codigoBarras: d.codigo_barras || '', descricao: d.descricao || '', catIA: d.categoria || '', confianca: Number(d.confianca || 0),
+    entrada: d.entrada === true, tipoDoc: d.tipo_documento || '' };
+  var cat = categoriaComprovante_(c, lerJson_(pasta, 'regras.json', []));
+  c.cat = cat.cat; c.origemCat = cat.origem;
+  c.st = !c.lido ? 'ler' : (c.cat ? 'ok' : 'pend');
+  var lock = LockService.getScriptLock(); lock.waitLock(30000);
+  try {
+    try { c.conciliado = conciliarComprovante_(pasta, c); } catch (e) { }
+    var lista = lerJson_(pasta, 'comprovantes.json', []); lista.push(c); gravarJson_(pasta, 'comprovantes.json', lista.slice(-3000));
+  } finally { lock.releaseLock(); }
+  finAtualizarPlanilha_(contab, cliente);
+  return { comprovante: c, msg: msgComprovante_(c, cliente) };
+}
+function msgComprovante_(c, cliente) {
+  var brl = function (v) { return 'R$ ' + Number(v || 0).toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.'); };
+  var dt = c.data ? c.data.slice(8, 10) + '/' + c.data.slice(5, 7) + '/' + c.data.slice(0, 4) : '';
+  if (!c.lido) return '📎 Recebido! Nossa equipe vai conferir e lançar este comprovante. (' + cliente + ')';
+  var linha = brl(c.valor) + (c.recebedor ? ' · ' + c.recebedor : '') + (c.forma ? ' · ' + c.forma : '') + (dt ? ' · ' + dt : '');
+  if (c.cat) return '✅ Recebido e lançado – ' + cliente + '\n' + linha + '\nCategoria: ' + (planoFin_()[c.cat] || {}).nome;
+  return '⚠️ Recebido – ' + cliente + '\n' + linha + '\nNão consegui identificar o que foi este pagamento. Responda esta mensagem com uma frase explicando (ex.: compra de material de limpeza).';
+}
+
+/* ---------- portal ---------- */
+function portalFinComprovante(token, contab, cliente, arq, texto) {
+  var ac = finAcesso_(token, contab, cliente, 'responder');
+  return novoComprovante_(contab, cliente, arq, texto, 'portal', ac.s.nome);
+}
+function portalFinComprovantes(token, contab, cliente) {
+  finAcesso_(token, contab, cliente, 'ver');
+  var l = lerJson_(finPasta_(contab, cliente), 'comprovantes.json', []);
+  return { comprovantes: l.slice(-400).reverse(), iaLigada: !!PropertiesService.getScriptProperties().getProperty('ANTHROPIC_KEY') };
+}
+// operador corrige o que a IA leu (ou preenche quando ela não leu) e pode ensinar a regra
+function portalFinCorrigirComprovante(token, contab, cliente, id, campos, criarRegra) {
+  finAcesso_(token, contab, cliente, 'operar');
+  var pasta = finPasta_(contab, cliente), res = null;
+  var lock = LockService.getScriptLock(); lock.waitLock(30000);
+  try {
+    var lista = lerJson_(pasta, 'comprovantes.json', []), c = lista.filter(function (x) { return x.id === id; })[0];
+    if (!c) throw new Error('Comprovante não encontrado.');
+    if (campos.valor !== undefined) c.valor = Math.abs(Number(String(campos.valor).replace(',', '.')) || 0);
+    if (campos.data !== undefined && /^\d{4}-\d{2}-\d{2}$/.test(campos.data)) c.data = campos.data;
+    ['recebedor', 'forma', 'descricao'].forEach(function (k) { if (campos[k] !== undefined) c[k] = String(campos[k]).slice(0, 200); });
+    if (campos.cat !== undefined) { if (campos.cat && !planoFin_()[campos.cat]) throw new Error('Categoria inválida.'); c.cat = campos.cat; c.origemCat = 'manual'; }
+    c.lido = true; c.st = c.cat ? 'ok' : 'pend';
+    if (criarRegra && c.cat && c.recebedor) {
+      var regras = lerJson_(pasta, 'regras.json', []), ch = finChave_(c.recebedor);
+      if (ch.length >= 4) { regras = regras.filter(function (r) { return !(r.chave === ch && r.sinal === 'D'); }); regras.unshift({ chave: ch, sinal: c.entrada ? 'C' : 'D', cat: c.cat, criada: new Date().toISOString() }); gravarJson_(pasta, 'regras.json', regras.slice(0, 500)); }
+    }
+    if (!c.conciliado) { try { c.conciliado = conciliarComprovante_(pasta, c); } catch (e) { } }
+    else if (c.cat) {   // já ligado: leva a categoria para o lançamento do extrato
+      var pc = existente_(existente_(pasta, 'contas'), c.conciliado.conta), d = pc && lerJson_(pc, c.conciliado.mes + '.json', null);
+      if (d) { d.trans.forEach(function (t) { if (t.id === c.conciliado.id && t.orig !== 'manual') { t.cat = c.cat; t.orig = 'comprovante'; t.st = 'ok'; } }); gravarJson_(pc, c.conciliado.mes + '.json', d); }
+    }
+    gravarJson_(pasta, 'comprovantes.json', lista); res = c;
+  } finally { lock.releaseLock(); }
+  finAtualizarPlanilha_(contab, cliente);
+  return { comprovante: res };
+}
+
+/* ---------- WhatsApp (API oficial da Meta, via ponte) ---------- */
+// a ponte (supabase/functions/whatsapp) recebe da Meta e repassa: { acao:'whatsapp', segredo, de, nome, tipo, texto, mediaId, mime, arquivo }
+function whatsapp_(req) {
+  var props = PropertiesService.getScriptProperties(), seg = props.getProperty('WA_SEGREDO');
+  if (!seg || req.segredo !== seg) return { ok: false, erro: 'não autorizado' };
+  var b = bpoPorFone_(req.de);
+  if (!b) return { ok: true, ignorado: 'número não autorizado' };   // números fora da lista: não responde nada
+  var cache = CacheService.getScriptCache(), chUlt = 'wa_ult_' + foneNormal_(req.de), resposta = '';
+  if (req.mediaId) {
+    var arq = waBaixarMidia_(req.mediaId, req.mime, req.arquivo);
+    var r = novoComprovante_(b.contabilidade, b.cliente, arq, req.texto || '', 'whatsapp', foneNormal_(req.de) + (req.nome ? ' (' + req.nome + ')' : ''));
+    cache.put(chUlt, r.comprovante.id, 1800);
+    resposta = r.msg;
+  } else {
+    var ult = cache.get(chUlt), txt = String(req.texto || '').trim();
+    if (ult && txt) {   // texto logo depois de um comprovante = explicação dele
+      var pasta = finPasta_(b.contabilidade, b.cliente), lista = lerJson_(pasta, 'comprovantes.json', []), c = lista.filter(function (x) { return x.id === ult; })[0];
+      if (c) {
+        c.texto = (c.texto ? c.texto + ' | ' : '') + txt.slice(0, 300);
+        if (!c.cat) { var cat = categoriaComprovante_(c, lerJson_(pasta, 'regras.json', [])); if (cat.cat) { c.cat = cat.cat; c.origemCat = cat.origem; c.st = 'ok'; } else c.st = c.lido ? 'just' : 'ler'; }
+        gravarJson_(pasta, 'comprovantes.json', lista);
+        resposta = c.cat ? '✅ Anotado e lançado como: ' + planoFin_()[c.cat].nome : '📝 Anotado! Nossa equipe vai lançar com essa explicação.';
+      }
+    }
+    if (!resposta) resposta = 'Olá! Este é o número do BPO financeiro da CPUSIS (' + b.cliente + '). Envie aqui a foto ou o PDF do comprovante de pagamento, de preferência dizendo o que foi.';
+  }
+  try { waEnviar_(req.de, resposta); } catch (e) { }
+  return { ok: true, resposta: resposta };
+}
+function waVersao_() { return PropertiesService.getScriptProperties().getProperty('WA_VERSAO') || 'v24.0'; }
+function waBaixarMidia_(mediaId, mime, nome) {
+  var tk = PropertiesService.getScriptProperties().getProperty('WA_TOKEN');
+  if (!tk) throw new Error('WhatsApp não configurado (falta WA_TOKEN).');
+  var info = JSON.parse(UrlFetchApp.fetch('https://graph.facebook.com/' + waVersao_() + '/' + encodeURIComponent(mediaId), { headers: { Authorization: 'Bearer ' + tk } }).getContentText());
+  var blob = UrlFetchApp.fetch(info.url, { headers: { Authorization: 'Bearer ' + tk } }).getBlob();
+  return { nome: nome || ('whatsapp.' + (/pdf/.test(mime || info.mime_type) ? 'pdf' : 'jpg')), tipo: mime || info.mime_type || blob.getContentType(), base64: Utilities.base64Encode(blob.getBytes()) };
+}
+function waEnviar_(para, texto) {
+  var p = PropertiesService.getScriptProperties(), tk = p.getProperty('WA_TOKEN'), fid = p.getProperty('WA_PHONE_ID');
+  if (!tk || !fid) return;
+  UrlFetchApp.fetch('https://graph.facebook.com/' + waVersao_() + '/' + fid + '/messages', {
+    method: 'post', contentType: 'application/json', muteHttpExceptions: true, headers: { Authorization: 'Bearer ' + tk },
+    payload: JSON.stringify({ messaging_product: 'whatsapp', to: String(para).replace(/\D/g, ''), type: 'text', text: { body: String(texto).slice(0, 4000) } })
+  });
 }

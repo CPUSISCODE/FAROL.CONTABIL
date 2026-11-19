@@ -219,6 +219,7 @@ td.b{font-weight:700;white-space:normal}
 .evl .q{color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums}.evl .x{color:var(--muted);font-size:12px;overflow-wrap:anywhere}
 @media (max-width:700px){.evl li{grid-template-columns:1fr}}
 .tot td{border-top:1px solid var(--line)}
+#fcAba td .sub,#fCorpo td .sub{display:block;font-size:11.5px}
 #fCorpo,#fcAba{display:grid;gap:14px;min-width:0}#fcAba{margin-top:14px}#fcAba>*{min-width:0}
 #dlgFin label{display:grid;gap:4px;font-size:13px}
 </style>
@@ -1794,7 +1795,7 @@ function desenharCarteira() {
     L.map(function (b, i) {
       var velho = !b.ultimoOfx || Date.now() - new Date(b.ultimoOfx).getTime() > 8 * 864e5;
       return '<tr><td class="b">' + esc(b.cliente) + '<span class="sub">' + esc(b.contabilidade) + (b.operador ? ' · operador: ' + esc(b.operador) : '') + '</span></td>' +
-        '<td>' + (b.ativo ? '<span class="pill">ligado</span>' : '<span class="pill info">desligado</span>') + '<span class="sub">desde ' + esc(dataBR(b.inicio) || '—') + '</span></td>' +
+        '<td>' + (b.ativo ? '<span class="pill">ligado</span>' : '<span class="pill info">desligado</span>') + '<span class="sub">desde ' + esc(dataBR(b.inicio) || '—') + '</span>' + (b.telefones && b.telefones.length ? '<span class="sub">WhatsApp: ' + b.telefones.length + ' número(s)</span>' : '') + '</td>' +
         '<td>' + (b.ultimoOfx ? '<span class="pill ' + (velho && b.ativo ? 'warn' : '') + '">' + esc(haTempo(b.ultimoOfx)) + '</span>' : '<span class="sub">nenhum ainda</span>') + '</td>' +
         '<td class="n">' + (b.pendencias ? '<span class="pill warn">' + b.pendencias + '</span>' : '0') + '</td><td class="n">' + (b.ultimoOfx ? moeda(b.saldo) : '—') + '</td>' +
         (FIN.operador ? '<td>' + (b.login ? '<span class="m">' + esc(b.login) + '</span>' : '<span class="sub">sem login</span>') + ' <button class="lnk" type="button" data-l="' + i + '">' + (b.login ? 'trocar senha' : 'criar') + '</button></td>' +
@@ -1820,6 +1821,7 @@ function dlgBpo(b) {
     '<label>Início dos dados<input type="date" id="bIni" value="' + esc(b ? b.inicio : '2027-01-01') + '"></label>' +
     '<label>Operador responsável<input id="bOp" value="' + esc(b ? b.operador : '') + '" placeholder="nome de quem acompanha"></label>' +
     '<label>Observação<input id="bObs" value="' + esc(b ? b.obs : '') + '"></label>' +
+    '<label>WhatsApp autorizados a mandar comprovantes (DDD + número, separe por vírgula)<textarea id="bFones" rows="2" placeholder="68 99999-1234, 68 98888-4321">' + esc(b && b.telefones ? b.telefones.join(', ') : '') + '</textarea></label>' +
     '<p class="nota">Use 01/01/2027 para os clientes do serviço. Para o piloto, 01/12/2026.</p>' +
     '<div class="ferr"><button class="btn" type="button" id="bSalvar">Salvar</button><button class="btn sec" type="button" id="bFechar">Cancelar</button></div>';
   d.showModal();
@@ -1827,7 +1829,7 @@ function dlgBpo(b) {
   $('bSalvar').addEventListener('click', function () {
     var x = b || emp[+$('bEmp').value]; if (!x) return;
     $('bSalvar').disabled = true;
-    chamar('portalFinSalvarBpo', TOKEN, { contabilidade: x.contabilidade, cliente: x.cliente, ativo: $('bAtivo').checked, inicio: $('bIni').value, operador: $('bOp').value, obs: $('bObs').value })
+    chamar('portalFinSalvarBpo', TOKEN, { contabilidade: x.contabilidade, cliente: x.cliente, ativo: $('bAtivo').checked, inicio: $('bIni').value, operador: $('bOp').value, obs: $('bObs').value, telefones: $('bFones').value })
       .then(function (r) { FIN = r; d.close(); desenharCarteira(); avisoFin('Salvo.', false); })
       .catch(function (e) { $('bSalvar').disabled = false; avisoFin(e.message, true); d.close(); });
   });
@@ -1869,12 +1871,12 @@ function desenharFinCliente() {
   var meses = FINC.meses.indexOf(FINC.mes) < 0 ? [FINC.mes].concat(FINC.meses) : FINC.meses;
   $('fcFiltro').innerHTML = '<label for="fcMes">Mês<select id="fcMes">' + meses.map(function (m) { return '<option value="' + m + '"' + (m === FINC.mes ? ' selected' : '') + '>' + nomeMes(m) + '</option>'; }).join('') + '</select></label>';
   $('fcMes').addEventListener('change', function () { telaFinCliente(FINC.contabilidade, FINC.cliente, this.value); });
-  var abas = [['resumo', 'Resumo'], ['extrato', 'Extrato'], ['pendencias', 'Pendências' + (FINC.pendencias.length ? ' (' + FINC.pendencias.length + ')' : '')], ['dre', 'DRE e fluxo de caixa']];
+  var abas = [['resumo', 'Resumo'], ['extrato', 'Extrato'], ['comprovantes', 'Comprovantes'], ['pendencias', 'Pendências' + (FINC.pendencias.length ? ' (' + FINC.pendencias.length + ')' : '')], ['dre', 'DRE e fluxo de caixa']];
   if (FINC.papel === 'operador') abas.push(['importar', 'Importar OFX'], ['regras', 'Regras']);
   var aviso = FINC.bpo ? (FINC.bpo.ativo ? '' : '<div class="card aviso">O BPO desta empresa está desligado.</div>') : '<div class="card aviso">Empresa ainda não está na carteira do BPO.</div>';
   $('fcCorpo').innerHTML = aviso + '<div class="abas" role="tablist">' + abas.map(function (a) { return '<button class="tab" role="tab" type="button" data-f="' + a[0] + '" aria-selected="' + (a[0] === FIN_ABA) + '">' + a[1] + '</button>'; }).join('') + '</div><div id="fcAba"></div>';
   $('fcCorpo').querySelector('.abas').addEventListener('click', function (ev) { var b = ev.target.closest('.tab'); if (b) { FIN_ABA = b.dataset.f; desenharFinCliente(); } });
-  ({ resumo: finResumo, extrato: finExtrato, pendencias: finPendencias, dre: finDre, importar: finImportar, regras: finRegras })[FIN_ABA]();
+  ({ resumo: finResumo, extrato: finExtrato, comprovantes: finComprovantes, pendencias: finPendencias, dre: finDre, importar: finImportar, regras: finRegras })[FIN_ABA]();
 }
 var AGUARDA_LC = '<p class="nota">Caixa físico, contas a pagar e a receber, vendas em dinheiro e compras pelo XML entram aqui quando a leitura do sistema (LC) estiver ligada para esta empresa.</p>';
 
@@ -2064,6 +2066,95 @@ function finImportar() {
       }).catch(function (e) { avisoFin(ok[i].arquivo + ': ' + e.message, true); b.disabled = false; b.textContent = 'Importar'; });
     };
     prox(0);
+  });
+}
+
+/* ---------- comprovantes (pelo portal ou pelo WhatsApp) ---------- */
+// fotos grandes são reduzidas aqui antes de enviar (a leitura fica igual e gasta menos)
+function prepararArquivo(f) {
+  return new Promise(function (ok, falha) {
+    var rd = new FileReader();
+    rd.onerror = function () { falha(new Error('Não consegui ler o arquivo.')); };
+    if (!/^image\//.test(f.type) || /gif/.test(f.type)) { rd.onload = function () { ok({ nome: f.name, tipo: f.type || 'application/pdf', base64: String(rd.result).split(',')[1] }); }; rd.readAsDataURL(f); return; }
+    rd.onload = function () {
+      var img = new Image();
+      img.onload = function () {
+        var k = Math.min(1, 1600 / Math.max(img.width, img.height)), cv = document.createElement('canvas');
+        cv.width = Math.round(img.width * k); cv.height = Math.round(img.height * k); cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+        ok({ nome: f.name.replace(/\.\w+$/, '') + '.jpg', tipo: 'image/jpeg', base64: cv.toDataURL('image/jpeg', 0.85).split(',')[1] });
+      };
+      img.onerror = function () { ok({ nome: f.name, tipo: f.type, base64: String(rd.result).split(',')[1] }); };
+      img.src = rd.result;
+    };
+    rd.readAsDataURL(f);
+  });
+}
+var STC = { ok: ['', 'lançado'], pend: ['bad', 'sem categoria'], ler: ['warn', 'conferir (não lido)'], just: ['warn', 'explicado, conferir'] };
+function finComprovantes() {
+  var op = FINC.papel === 'operador', pode = op || FINC.papel === 'empresa';
+  $('fcAba').innerHTML = (pode ? '<section class="card"><div class="ch"><h2>Enviar comprovante</h2><span>foto ou PDF · também chega pelo WhatsApp do BPO</span></div>' +
+    '<div class="ferr"><input type="file" id="cpArq" accept="image/*,application/pdf" multiple><input id="cpTxt" placeholder="O que foi? (opcional) Ex.: conta de energia de novembro" style="flex:1;min-width:240px"><button class="btn" type="button" id="cpEnviar">Enviar</button></div>' +
+    '<p class="nota">A leitura automática pega valor, data, quem recebeu, forma de pagamento e a descrição escrita no comprovante. Se o pagamento já estiver no extrato, os dois são ligados sozinhos.</p></section>' : '') +
+    '<div id="cpLista">' + carregando('Lendo os comprovantes…') + '</div>';
+  if (pode) $('cpEnviar').addEventListener('click', function () {
+    var b = this, fs = Array.prototype.slice.call($('cpArq').files), txt = $('cpTxt').value, msgs = [];
+    if (!fs.length) { avisoFin('Escolha o arquivo do comprovante.', true); return; }
+    b.disabled = true;
+    var prox = function (i) {
+      if (i >= fs.length) { b.disabled = false; b.textContent = 'Enviar'; $('cpArq').value = ''; $('cpTxt').value = ''; avisoFin(msgs.join(' · '), false); carregarComprovantes(); return; }
+      b.textContent = 'Lendo ' + (i + 1) + ' de ' + fs.length + '…';
+      prepararArquivo(fs[i]).then(function (arq) { return chamar('portalFinComprovante', TOKEN, FINC.contabilidade, FINC.cliente, arq, txt); })
+        .then(function (r) { msgs.push(r.msg.split('\n')[0]); prox(i + 1); })
+        .catch(function (e) { msgs.push(fs[i].name + ': ' + e.message); prox(i + 1); });
+    };
+    prox(0);
+  });
+  carregarComprovantes();
+}
+function carregarComprovantes() {
+  chamar('portalFinComprovantes', TOKEN, FINC.contabilidade, FINC.cliente).then(function (r) {
+    var L = r.comprovantes, op = FINC.papel === 'operador', el = $('cpLista'); if (!el) return;
+    var aviso = r.iaLigada ? '' : '<div class="card aviso">Leitura automática desligada: falta colocar a chave da IA (ANTHROPIC_KEY) nas propriedades do receptor. Os comprovantes ficam guardados para o operador lançar.</div>';
+    if (!L.length) { el.innerHTML = aviso + '<div class="card vazio">Nenhum comprovante ainda.</div>'; return; }
+    el.innerHTML = aviso + '<div class="tbl"><table><thead><tr><th>Recebido</th><th>Pagamento</th><th class="n">Valor</th><th>Recebedor / o que foi</th><th>Categoria</th><th>Situação</th><th></th></tr></thead><tbody>' + L.map(function (c, i) {
+      var st = STC[c.st] || ['', c.st];
+      return '<tr><td>' + esc(dataHora(c.recebidoEm)) + '<span class="sub">' + esc(c.origem === 'whatsapp' ? 'WhatsApp ' + c.de : 'portal · ' + c.de) + '</span></td>' +
+        '<td>' + esc(dataBR(c.data)) + (c.hora ? ' ' + esc(c.hora) : '') + '<span class="sub">' + esc(c.forma || '') + '</span></td>' +
+        '<td class="n"' + (c.entrada ? '' : ' style="color:var(--bad)"') + '>' + (c.valor ? moeda(c.entrada ? c.valor : -c.valor) : '—') + '</td>' +
+        '<td class="w">' + esc(c.recebedor || '') + (c.descricao || c.obs ? '<span class="sub">' + esc(c.obs || c.descricao) + '</span>' : '') + (c.texto ? '<span class="sub">cliente: ' + esc(c.texto) + '</span>' : '') + '</td>' +
+        '<td>' + esc(c.cat ? catNome(c.cat) : '—') + (c.origemCat === 'ia' ? '<span class="sub">sugerida pela IA</span>' : '') + '</td>' +
+        '<td><span class="pill ' + st[0] + '">' + esc(st[1]) + '</span>' + (c.conciliado ? '<span class="sub">ligado ao extrato ' + esc(dataBR(c.conciliado.data)) + '</span>' : '<span class="sub">aguardando o extrato</span>') + '</td>' +
+        '<td><button class="lnk" type="button" data-ver="' + i + '">ver</button>' + (op ? ' <button class="lnk" type="button" data-cor="' + i + '">corrigir</button>' : '') + '</td></tr>';
+    }).join('') + '</tbody></table></div>';
+    el.querySelectorAll('[data-ver]').forEach(function (b) { b.addEventListener('click', function () {
+      var c = L[+b.dataset.ver]; b.textContent = 'abrindo…';
+      chamar('portalFinAnexo', TOKEN, FINC.contabilidade, FINC.cliente, c.arquivoId).then(function (a) {
+        var bin = atob(a.base64), u8 = new Uint8Array(bin.length); for (var k = 0; k < bin.length; k++) u8[k] = bin.charCodeAt(k);
+        window.open(URL.createObjectURL(new Blob([u8], { type: a.tipo })), '_blank'); b.textContent = 'ver';
+      }).catch(function (e) { b.textContent = 'ver'; avisoFin(e.message, true); });
+    }); });
+    el.querySelectorAll('[data-cor]').forEach(function (b) { b.addEventListener('click', function () { dlgComprovante(L[+b.dataset.cor]); }); });
+  }).catch(function (e) { if ($('cpLista')) $('cpLista').innerHTML = '<div class="card erro">' + esc(e.message) + '</div>'; });
+}
+function dlgComprovante(c) {
+  var d = $('dlgFin');
+  d.innerHTML = '<h2 id="dlgFinTit">Conferir comprovante</h2>' + (c.motivo ? '<p class="nota">' + esc(c.motivo) + '</p>' : '') +
+    '<label>Valor (R$)<input id="ccVal" inputmode="decimal" value="' + esc(c.valor ? String(c.valor).replace('.', ',') : '') + '"></label>' +
+    '<label>Data do pagamento<input id="ccData" type="date" value="' + esc(c.data || '') + '"></label>' +
+    '<label>Recebedor<input id="ccRec" value="' + esc(c.recebedor || '') + '"></label>' +
+    '<label>Forma<input id="ccForma" value="' + esc(c.forma || '') + '" placeholder="PIX, BOLETO, TED…"></label>' +
+    '<label>O que foi<input id="ccDesc" value="' + esc(c.descricao || c.texto || '') + '"></label>' +
+    '<label>Categoria<select id="ccCat">' + opcoesCat(c.cat) + '</select></label>' +
+    '<label class="chave"><input type="checkbox" id="ccRegra" checked>lembrar: próximos pagamentos para este recebedor já entram nesta categoria</label>' +
+    '<div class="ferr"><button class="btn" type="button" id="ccSalvar">Salvar</button><button class="btn sec" type="button" id="ccFechar">Cancelar</button></div>';
+  d.showModal();
+  $('ccFechar').addEventListener('click', function () { d.close(); });
+  $('ccSalvar').addEventListener('click', function () {
+    $('ccSalvar').disabled = true;
+    chamar('portalFinCorrigirComprovante', TOKEN, FINC.contabilidade, FINC.cliente, c.id,
+      { valor: $('ccVal').value, data: $('ccData').value, recebedor: $('ccRec').value, forma: $('ccForma').value, descricao: $('ccDesc').value, cat: $('ccCat').value }, $('ccRegra').checked)
+      .then(function () { d.close(); avisoFin('Comprovante salvo.', false); carregarComprovantes(); })
+      .catch(function (e) { $('ccSalvar').disabled = false; avisoFin(e.message, true); d.close(); });
   });
 }
 
