@@ -37,10 +37,10 @@ var CONFIG = {
   // Pasta dos backups. '' = cria "_BACKUPS_CPUSIS" no seu Meu Drive (fora das pastas das contabilidades).
   PASTA_BACKUP_ID: '',
   // Quantos guardar de cada cliente: últimos N dias, N semanas e N meses (o resto é apagado sozinho)
-  GUARDAR_DIAS: 7, GUARDAR_SEMANAS: 4, GUARDAR_MESES: 6
+  GUARDAR_DIAS: 10, GUARDAR_SEMANAS: 0, GUARDAR_MESES: 0   // no máximo 10 dias (um backup por dia; mais velhos que 10 dias são apagados)
 };
 
-var VERSAO = '1.13';
+var VERSAO = '1.13.1';
 var PASTA_PORTAL = '_PORTAL_DADOS';   // resumos fiscais (JSON) e versão do agente
 var MESES = ['JANEIRO','FEVEREIRO','MARCO','ABRIL','MAIO','JUNHO','JULHO','AGOSTO','SETEMBRO','OUTUBRO','NOVEMBRO','DEZEMBRO'];
 var MESES_TXT = ['JANEIRO','FEVEREIRO','MARÇO','ABRIL','MAIO','JUNHO','JULHO','AGOSTO','SETEMBRO','OUTUBRO','NOVEMBRO','DEZEMBRO'];
@@ -1259,9 +1259,10 @@ function limparBackups_(contab, cliente, atual) {
   arqs.sort(function (a, b) { return b.d - a.d; });
   var manter = {}, dias = {}, semanas = {}, meses = {};
   var semana = function (d) { var x = new Date(d.getFullYear(), d.getMonth(), d.getDate()); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return x.toDateString(); };
+  var limite = new Date(); limite.setHours(0, 0, 0, 0); limite.setDate(limite.getDate() - (CONFIG.GUARDAR_DIAS - 1));
   arqs.forEach(function (a) {
     var kd = a.d.toDateString(), ks = semana(a.d), km = a.d.getFullYear() + '-' + a.d.getMonth();
-    if (!dias[kd] && Object.keys(dias).length < CONFIG.GUARDAR_DIAS) { dias[kd] = 1; manter[a.nome] = 1; }
+    if (!dias[kd] && Object.keys(dias).length < CONFIG.GUARDAR_DIAS && a.d >= limite) { dias[kd] = 1; manter[a.nome] = 1; }
     if (!semanas[ks] && Object.keys(semanas).length < CONFIG.GUARDAR_SEMANAS) { semanas[ks] = 1; manter[a.nome] = 1; }
     if (!meses[km] && Object.keys(meses).length < CONFIG.GUARDAR_MESES) { meses[km] = 1; manter[a.nome] = 1; }
   });
