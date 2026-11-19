@@ -33,7 +33,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$VERSAO = '1.7.1'
+$VERSAO = '1.7.2'
 $BASE = $PSScriptRoot
 if (-not $Config) { $Config = Join-Path $BASE 'config.json' }
 $PASTA_LOG = Join-Path $BASE 'logs'
@@ -1042,6 +1042,7 @@ function Gerar-Backup([string]$destino, [string]$senha, [switch]$Devagar) {
       if ($total -ge $proxConf) {   # confere o disco durante o backup: se apertar, para (o servidor do cliente vem primeiro)
         $proxConf = $total + 256MB; $lv = Espaco-Livre $destino
         if ($null -ne $lv -and $lv.gb -lt 3) { try { $p.Kill() } catch { }; throw ('backup interrompido: o disco ' + $lv.letra + ' ficou com menos de 3 GB livres') }
+        if ($script:LIMITE_BACKUP -and (Get-Date) -ge $script:LIMITE_BACKUP) { try { $p.Kill() } catch { }; throw 'backup interrompido às 04:45 para não pesar no banco na abertura do cliente (tenta de novo na próxima noite)' }
       }
     }
   } finally { $gz.Dispose(); $cs.Dispose(); $fs.Dispose(); $aes.Dispose() }
@@ -1126,8 +1127,11 @@ function Rotina-Servidor {
   try { $conf = Chamar-Receptor @{ acao = 'servidor'; contabilidade = $EMP0.contabilidade; cliente = $EMP0.cliente; maquina = $env:COMPUTERNAME; versao = $VERSAO; banco = $DB.banco; servico = (Servico-MySql) } }
   catch { Log ('servidor: portal sem as opções de backup ainda (' + $_.Exception.Message + ')'); return }
   $agora = Get-Date; $h = $agora.Hour
-  $madrugada = ($h -lt 6)                 # 00:00 a 05:59
-  $comercial = ($h -ge 7 -and $h -lt 21)
+  # janela segura (sem movimento): 21:30 às 04:30. Há clientes que abrem às 05:00 e fecham às 21:00 (horário local do servidor).
+  $minDia = $h * 60 + $agora.Minute
+  $madrugada = ($minDia -lt 270)                          # 00:00 a 04:29 (reinício programado)
+  $janelaBackup = ($minDia -ge 1290 -or $minDia -lt 270)   # 21:30 a 04:29 (backup automático)
+  $comercial = -not $janelaBackup
   $estado = Ler-Estado
   $bk = $estado['_backup']
   $ultimo = $null; if ($bk -and $bk.ultimoOk) { try { $ultimo = [datetime]::Parse($bk.ultimoOk) } catch { } }
@@ -1135,7 +1139,7 @@ function Rotina-Servidor {
   if ($conf.backup -and $conf.senhaBackup) {
     $fazer = $true
     if ($ultimo -and $ultimo.Date -eq $agora.Date) { $fazer = $false; Log 'backup: já feito hoje' }
-    elseif ($h -ge 7 -and $h -lt 21) { $fazer = $false; Log 'backup: horário de movimento (07h às 21h) - fica para esta noite' }   # nunca pesa no banco durante o expediente
+    elseif (-not $janelaBackup) { $fazer = $false; Log 'backup: fora da janela da noite (21:30 às 04:30) - fica para esta noite' }   # nunca pesa no banco durante o expediente
     if ($ForcarBackup -and -not $fazer) { $fazer = $true; Log 'backup: pedido pelo portal - fazendo agora' }
     if ($fazer) {
       $nome = (Nome-Seguro $EMP0.cliente) + '_' + $agora.ToString('yyyy-MM-dd_HHmm') + '.lcbk'
@@ -1145,6 +1149,8 @@ function Rotina-Servidor {
         Log "backup: gerando $nome"
         $livre = Espaco-Livre $PASTA_TMP
         if ($null -ne $livre -and ($livre.gb -lt 5 -or $livre.pct -lt 10)) { throw ('pouco espaço no disco ' + $livre.letra + ' (' + $livre.gb + ' GB livres, ' + $livre.pct + '%) - backup não feito para não lotar o disco do servidor') }
+        $script:LIMITE_BACKUP = $null
+        if (-not $ForcarBackup) { $lim = $agora.Date.AddMinutes(285); if ($agora -ge $lim) { $lim = $lim.AddDays(1) }; $script:LIMITE_BACKUP = $lim }   # passa das 04:45: para
         $g = Gerar-Backup $arq $conf.senhaBackup -Devagar
         $tam = (Get-Item $arq).Length
         $teste = Abrir-Backup $arq $conf.senhaBackup
@@ -1174,7 +1180,7 @@ function Rotina-Servidor {
 
   # reinício programado: só de madrugada, nunca em horário de movimento
   if ($conf.reiniciar) {
-    if (-not $madrugada) { Log 'reinício programado: pulado (fora da madrugada; o vigia continua cuidando)' }
+    if (-not $madrugada) { Log 'reinício programado: pulado (fora da janela 00:00 às 04:30; o vigia continua cuidando)' }
     elseif (-not (Mysql-Local)) { Log 'reinício programado: pulado (MySQL em outro computador)' }
     else {
       $st = Ler-Json $ARQ_VIGIA
