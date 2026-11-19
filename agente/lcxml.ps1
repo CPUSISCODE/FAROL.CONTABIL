@@ -30,7 +30,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$VERSAO = '1.6.1'
+$VERSAO = '1.6.2'
 $BASE = $PSScriptRoot
 if (-not $Config) { $Config = Join-Path $BASE 'config.json' }
 $PASTA_LOG = Join-Path $BASE 'logs'
@@ -865,12 +865,20 @@ function Exe-Dump {
   foreach ($n in @('mysqldump', 'mariadb-dump')) { $c = Join-Path $pasta ($n + $ext); if (Test-Path $c) { return $c } }
   return $null
 }
+# espaço livre do disco de uma pasta: { letra, gb, pct } (null se não conseguir medir)
+function Espaco-Livre([string]$caminho) {
+  try {
+    $raiz = [IO.Path]::GetPathRoot([IO.Path]::GetFullPath($caminho)); $d = New-Object IO.DriveInfo($raiz)
+    return @{ letra = $d.Name.TrimEnd('\'); gb = [math]::Round($d.AvailableFreeSpace / 1GB, 1); pct = [math]::Round($d.AvailableFreeSpace * 100.0 / [math]::Max($d.TotalSize, 1), 0) }
+  } catch { return $null }
+}
 function Gerar-Backup([string]$destino, [string]$senha, [switch]$Devagar) {
   $dump = Exe-Dump
   if (-not $dump) { throw 'não encontrei o mysqldump.exe na pasta do MySQL (' + (Split-Path $DB.exe -Parent) + ')' }
   $argv = (Args-Conexao) + @('--single-transaction', '--quick', '--routines', '--triggers', '--hex-blob', '--max-allowed-packet=512M', $DB.banco)
   $p = [System.Diagnostics.Process]::Start((Novo-Processo $dump $argv))
   if ($Devagar) { try { $p.PriorityClass = 'BelowNormal' } catch { } }
+  $proxConf = [long]256MB
   $err = $p.StandardError.ReadToEndAsync()
   $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
   $sal = New-Object byte[] 16; $iv = New-Object byte[] 16; $rng.GetBytes($sal); $rng.GetBytes($iv)
@@ -881,7 +889,13 @@ function Gerar-Backup([string]$destino, [string]$senha, [switch]$Devagar) {
   $gz = New-Object System.IO.Compression.GZipStream($cs, [System.IO.Compression.CompressionMode]::Compress)
   try {
     $buf = New-Object byte[] 1048576; $total = [long]0; $ent = $p.StandardOutput.BaseStream
-    while (($n = $ent.Read($buf, 0, $buf.Length)) -gt 0) { $gz.Write($buf, 0, $n); $total += $n }
+    while (($n = $ent.Read($buf, 0, $buf.Length)) -gt 0) {
+      $gz.Write($buf, 0, $n); $total += $n
+      if ($total -ge $proxConf) {   # confere o disco durante o backup: se apertar, para (o servidor do cliente vem primeiro)
+        $proxConf = $total + 256MB; $lv = Espaco-Livre $destino
+        if ($null -ne $lv -and $lv.gb -lt 3) { try { $p.Kill() } catch { }; throw ('backup interrompido: o disco ' + $lv.letra + ' ficou com menos de 3 GB livres') }
+      }
+    }
   } finally { $gz.Dispose(); $cs.Dispose(); $fs.Dispose(); $aes.Dispose() }
   $p.WaitForExit()
   $msg = Limpar-Erro $err.Result
@@ -973,14 +987,16 @@ function Rotina-Servidor {
   if ($conf.backup -and $conf.senhaBackup) {
     $fazer = $true
     if ($ultimo -and $ultimo.Date -eq $agora.Date) { $fazer = $false; Log 'backup: já feito hoje' }
-    elseif ($comercial -and $ultimo -and ($agora - $ultimo).TotalHours -lt 36) { $fazer = $false; Log 'backup: horário comercial - fica para esta noite (o último tem menos de 36 h)' }
+    elseif ($h -ge 7 -and $h -lt 21) { $fazer = $false; Log 'backup: horário de movimento (07h às 21h) - fica para esta noite' }   # nunca pesa no banco durante o expediente
     if ($fazer) {
       $nome = (Nome-Seguro $EMP0.cliente) + '_' + $agora.ToString('yyyy-MM-dd_HHmm') + '.lcbk'
       $arq = Join-Path $PASTA_TMP $nome
       $t0 = Get-Date
       try {
         Log "backup: gerando $nome"
-        $g = Gerar-Backup $arq $conf.senhaBackup -Devagar:$comercial
+        $livre = Espaco-Livre $PASTA_TMP
+        if ($null -ne $livre -and ($livre.gb -lt 5 -or $livre.pct -lt 10)) { throw ('pouco espaço no disco ' + $livre.letra + ' (' + $livre.gb + ' GB livres, ' + $livre.pct + '%) - backup não feito para não lotar o disco do servidor') }
+        $g = Gerar-Backup $arq $conf.senhaBackup -Devagar
         $tam = (Get-Item $arq).Length
         $teste = Abrir-Backup $arq $conf.senhaBackup
         if (-not $teste.completo -or $teste.sql -ne $g.sql) { throw 'o backup gerado não passou na conferência (arquivo incompleto)' }

@@ -891,6 +891,7 @@ function desenharServidores() {
       if (!cmd) return;
       if (cmd === 'reenviar_mes') { args = prompt('Qual mês reenviar? (AAAA-MM)', new Date().toISOString().slice(0, 7)); if (!args) return; }
       if (cmd === 'reiniciar_mysql' && !confirm('Reiniciar o MySQL de ' + s.cliente + ' agora? O sistema do cliente fica alguns segundos sem banco.')) return;
+      if (cmd === 'backup_agora' && !confirm('Fazer o backup de ' + s.cliente + ' agora? O backup pesa no banco enquanto roda. Em cliente com banco grande e em horário de movimento, prefira deixar para a noite (ele já roda sozinho de madrugada).')) return;
       b.disabled = true;
       chamar('portalComando', TOKEN, s.contabilidade, s.cliente, cmd, args).then(function (r) { SRV = r; desenharServidores(); })
         .catch(function (e) { b.disabled = false; alert(e.message); });
