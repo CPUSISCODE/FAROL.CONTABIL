@@ -33,7 +33,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$VERSAO = '1.7.2'
+$VERSAO = '1.8'
 $BASE = $PSScriptRoot
 if (-not $Config) { $Config = Join-Path $BASE 'config.json' }
 $PASTA_LOG = Join-Path $BASE 'logs'
@@ -78,6 +78,10 @@ function Nome-Seguro([string]$s) { return ($s -replace '[\\/:*?"<>|]', '-').Trim
 if (-not (Test-Path $Config)) { Log "ERRO: não encontrei $Config. Rode o INSTALAR.bat."; exit 2 }
 $CFG = Get-Content -Path $Config -Raw -Encoding UTF8 | ConvertFrom-Json
 $DB = $CFG.mysql
+# sistema de gestão do cliente: 'lc' (LC Sistemas, MySQL) ou 'gestores' (Gestores/Brajan, PostgreSQL)
+$SISTEMA = 'lc'; if ($CFG.sistema) { $SISTEMA = ([string]$CFG.sistema).Trim().ToLower() }
+$PG = $CFG.postgres
+if ($SISTEMA -eq 'gestores') { $DB = $null }   # sem MySQL: vigia do MySQL e reinícios ficam desligados
 $DIAS_MES_ANTERIOR = 10
 if ($CFG.diasMesAnterior) { $DIAS_MES_ANTERIOR = [int]$CFG.diasMesAnterior }
 
@@ -113,6 +117,53 @@ function Invoke-MySql([string]$sql, [scriptblock]$porLinha) {
     throw "MySQL: $msg"
   }
   return $n
+}
+
+# ---------------------------------------------------------------- PostgreSQL (Gestores), via psql.exe do próprio servidor - só leitura
+function Novo-ProcessoPg([string]$exe, $argv) {
+  $psi = New-Object System.Diagnostics.ProcessStartInfo
+  $psi.FileName = $exe
+  $psi.Arguments = ($argv | ForEach-Object { '"' + ($_ -replace '"', '\"') + '"' }) -join ' '
+  $psi.UseShellExecute = $false; $psi.CreateNoWindow = $true
+  $psi.RedirectStandardInput = $true; $psi.RedirectStandardOutput = $true; $psi.RedirectStandardError = $true
+  $psi.StandardOutputEncoding = $UTF8
+  if ($PG.senha) { $psi.EnvironmentVariables['PGPASSWORD'] = [string]$PG.senha }
+  $psi.EnvironmentVariables['PGCLIENTENCODING'] = 'UTF8'
+  $psi.EnvironmentVariables['PGCONNECT_TIMEOUT'] = '30'
+  $psi.EnvironmentVariables['PGAPPNAME'] = 'FarolContabil-agente'
+  return $psi
+}
+function Invoke-Pg([string]$sql, [scriptblock]$porLinha) {
+  $argv = @('-X', '-q', '-A', '-t', '-F', "`t", '-v', 'ON_ERROR_STOP=1', '-h', [string]$PG.host, '-p', [string]$PG.porta, '-U', [string]$PG.usuario, '-d', [string]$PG.banco)
+  $p = [System.Diagnostics.Process]::Start((Novo-ProcessoPg $PG.exe $argv))
+  # sessão somente leitura: o agente nunca grava nada no banco do Gestores
+  $p.StandardInput.WriteLine('SET default_transaction_read_only = on;')
+  $p.StandardInput.WriteLine($sql.TrimEnd(';') + ';')
+  $p.StandardInput.Close()
+  $errTask = $p.StandardError.ReadToEndAsync()
+  $n = 0
+  while ($true) {
+    $l = $p.StandardOutput.ReadLine()
+    if ($null -eq $l) { break }
+    if ($l -eq '') { continue }
+    $n++
+    if ($porLinha) { & $porLinha $l }
+  }
+  $p.WaitForExit()
+  if ($p.ExitCode -ne 0) { throw ('PostgreSQL: ' + (($errTask.Result -split "`n" | Where-Object { $_.Trim() }) -join ' ')) }
+  return $n
+}
+function Invoke-Db([string]$sql, [scriptblock]$porLinha) {
+  if ($SISTEMA -eq 'gestores') { return (Invoke-Pg $sql $porLinha) }
+  return (Invoke-MySql $sql $porLinha)
+}
+function Testar-Pg { try { [void](Invoke-Pg 'SELECT 1' $null); return '' } catch { return $_.Exception.Message } }
+function Servico-Banco {
+  if ($SISTEMA -eq 'gestores') {
+    try { $s = Get-Service -ErrorAction Stop | Where-Object { $_.Name -match '^postgresql' } | Select-Object -First 1; if ($s) { return $s.Name } } catch { }
+    return ''
+  }
+  return (Servico-MySql)
 }
 
 # ---------------------------------------------------------------- identificação de cada XML
@@ -381,7 +432,20 @@ function Gerar-Zip($emp, [datetime]$mes, [string]$destino) {
     @{ g = 'cce';     sql = "SELECT HEX(c.xml_retorno), HEX(c.xml_envio) FROM nfecce c JOIN nfe n ON n.id=c.id_nfe WHERE n.id_empresa=$E AND c.data_hora>='$ini' AND c.data_hora<'$fim'" },
     @{ g = 'inut';    sql = "SELECT HEX(xml) FROM nfeinutilizacao WHERE id_empresa=$E AND data_hora>='$ini' AND data_hora<'$fim' AND xml IS NOT NULL AND xml<>''" }
   )
-  if ($CFG.incluirMDe) {
+  if ($SISTEMA -eq 'gestores') {
+    # Gestores: cada filial (cod_filial) é uma empresa. NFC-e: 1 = autorizada, 2 = cancelada; NF-e: 3 = autorizada, 4 = cancelada
+    # A coluna 'CANC' marca NFC-e cancelada (o XML do cancelamento fica só no PDV da loja)
+    $consultas = @(
+      @{ g = 'nfe';     sql = "SELECT upper(encode(arquivo_xml,'hex')), upper(encode(arquivo_can_xml,'hex')) FROM mv_nota_saida WHERE cod_filial=$E AND modelo='55' AND situacao_xml IN (3,4) AND data_ex IS NULL AND data_emissao>='$ini' AND data_emissao<'$fim' AND arquivo_xml IS NOT NULL" },
+      @{ g = 'nfce';    sql = "SELECT upper(encode(xml,'hex')), CASE WHEN situacao=2 THEN 'CANC' ELSE '' END FROM mv_venda WHERE cod_filial=$E AND modelo='65' AND situacao IN (1,2) AND data_ex IS NULL AND data>='$ini' AND data<'$fim' AND xml IS NOT NULL" },
+      @{ g = 'compras'; sql = "SELECT upper(encode(arquivo,'hex')) FROM mv_nota_entrada WHERE cod_filial=$E AND modelo='55' AND data_ex IS NULL AND COALESCE(data_lancamento,data_emissao)>='$ini' AND COALESCE(data_lancamento,data_emissao)<'$fim' AND arquivo IS NOT NULL" },
+      @{ g = 'cte';     sql = "SELECT upper(encode(arquivo_xml,'hex')), upper(encode(arquivo_can_xml,'hex')) FROM ct_cte WHERE cod_filial=$E AND data_ex IS NULL AND data_emissao>='$ini' AND data_emissao<'$fim' AND arquivo_xml IS NOT NULL" },
+      @{ g = 'mdfe';    sql = "SELECT upper(encode(arquivo_xml,'hex')) FROM fis_mdfe WHERE cod_filial=$E AND data_ex IS NULL AND data_emissao>='$ini' AND data_emissao<'$fim' AND arquivo_xml IS NOT NULL" },
+      @{ g = 'cce';     sql = "SELECT upper(encode(arquivo_xml,'hex')), upper(encode(arquivo_xml_cancelamento,'hex')) FROM fis_eventos WHERE cod_filial=$E AND data_ex IS NULL AND emissao_evento>='$ini' AND emissao_evento<'$fim' AND (arquivo_xml IS NOT NULL OR arquivo_xml_cancelamento IS NOT NULL)" },
+      @{ g = 'inut';    sql = "SELECT upper(encode(xml,'hex')) FROM tab_documentos_inutilizados WHERE cod_filial=$E AND data_ex IS NULL AND data>='$ini' AND data<'$fim' AND xml IS NOT NULL" }
+    )
+  }
+  if ($CFG.incluirMDe -and $SISTEMA -ne 'gestores') {
     $consultas += @{ g = 'mde'; sql = "SELECT HEX(x.xml) FROM mdexml x JOIN mde m ON m.id=x.id_mde WHERE m.id_empresa=$E AND m.emitente_dhEmi>='$ini' AND m.emitente_dhEmi<'$fim' AND x.xml IS NOT NULL AND x.xml<>''" }
   }
 
@@ -392,8 +456,8 @@ function Gerar-Zip($emp, [datetime]$mes, [string]$destino) {
       $porLinha = {
         param($linha)
         $cols = $linha -split "`t"
-        $textos = @()
-        foreach ($c in $cols) { if ($c -and $c -ne 'NULL') { $textos += ,(Bytes-ParaTexto (De-Hex $c)) } }
+        $textos = @(); $marcaCanc = $false
+        foreach ($c in $cols) { if ($c -eq 'CANC') { $marcaCanc = $true; continue }; if ($c -and $c -ne 'NULL') { $textos += ,(Bytes-ParaTexto (De-Hex $c)) } }
         if ($g -eq 'cce') {   # CC-e: prefere o XML com protocolo (procEventoNFe)
           $melhor = $textos | Where-Object { $_ -match '<procEventoNFe' } | Select-Object -First 1
           if (-not $melhor) { $melhor = $textos | Where-Object { $_ -match '<retEvento' } | Select-Object -First 1 }
@@ -409,15 +473,16 @@ function Gerar-Zip($emp, [datetime]$mes, [string]$destino) {
               if ($g -eq 'nfe' -or $g -eq 'nfce') { if ($t -match '<vNF>([\d.]+)</vNF>') { $script:valores[$inf.chave] = @($g, [decimal]::Parse($matches[1], [Globalization.CultureInfo]::InvariantCulture)) } }
               if ($inf.tipo -eq 'inut') { Analisar-Inut $t } else { try { Analisar-Doc $g $t } catch { $script:errosAnalise++ } }
             }
+            if ($marcaCanc -and $inf.tipo -eq 'doc' -and $inf.chave) { $script:canceladas[$inf.chave] = $true; $script:AN.canceladas[$inf.chave] = $true }
           } else {
             if (& $adicionar $rota.ev $inf.nome $bytes) { $cont[$rota.cEv]++ }
             if ($inf.tpEvento -eq '110111' -and $inf.chave) { $script:canceladas[$inf.chave] = $true; $script:AN.canceladas[$inf.chave] = $true }
           }
         }
       }
-      try { [void](Invoke-MySql $q.sql $porLinha) }
+      try { [void](Invoke-Db $q.sql $porLinha) }
       catch {
-        if ($_.Exception.Message -match "doesn't exist|Unknown column") { $avisos += "tabela/coluna de $g não existe nesta versão do LC" }
+        if ($_.Exception.Message -match "doesn't exist|Unknown column|does not exist") { $avisos += "tabela/coluna de $g não existe nesta versão do sistema" }
         else { throw }
       }
     }
@@ -434,7 +499,7 @@ function Gerar-Zip($emp, [datetime]$mes, [string]$destino) {
       ('XML FISCAIS - ' + $emp.cliente),
       ('CNPJ: ' + $emp.cnpj),
       ('Período: ' + $mes.ToString('MM/yyyy')),
-      ('Gerado em: ' + (Get-Date -Format 'dd/MM/yyyy HH:mm') + '  (agente LC XML v' + $VERSAO + ' - CPUSIS)'),
+      ('Gerado em: ' + (Get-Date -Format 'dd/MM/yyyy HH:mm') + '  (agente Farol v' + $VERSAO + ' - CPUSIS - sistema: ' + $(if ($SISTEMA -eq 'gestores') { 'Gestores' } else { 'LC' }) + ')'),
       '',
       ('NF-e emitidas ..................: {0}  (canceladas: {1})  valor autorizado: R$ {2}' -f $cont.nfe, $qCancNfe, $totNfe.ToString('N2', $br)),
       ('NF-e eventos (cancel./CC-e) ....: {0}  (cartas de correção: {1})' -f ($cont.nfeEventos + $cont.cce), $cont.cce),
@@ -459,14 +524,31 @@ function Gerar-Zip($emp, [datetime]$mes, [string]$destino) {
   try {
     $sd = @{}
     $guardar = { param($tipo, $linha) $c = $linha -split "`t"; if ($c[0] -notmatch '^\d{4}-\d{2}-\d{2}$') { return }; if (-not $sd.ContainsKey($c[0])) { $sd[$c[0]] = @{} }; $sd[$c[0]][$tipo] = @([int]$c[1], [int]$c[2]) }
+    if ($SISTEMA -eq 'gestores') {
+      [void](Invoke-Pg "SELECT data_emissao::text, count(*), count(arquivo_xml) FROM mv_nota_saida WHERE cod_filial=$E AND modelo='55' AND data_ex IS NULL AND data_emissao>='$ini' AND data_emissao<'$fim' GROUP BY 1" { param($l) & $guardar 'nfe' $l })
+      [void](Invoke-Pg "SELECT data::text, count(*), count(*) FILTER (WHERE xml IS NOT NULL AND position('nfeProc' in encode(substring(xml from 1 for 300),'escape'))>0) FROM mv_venda WHERE cod_filial=$E AND modelo='65' AND data_ex IS NULL AND data>='$ini' AND data<'$fim' GROUP BY 1" { param($l) & $guardar 'nfce' $l })
+    } else {
     [void](Invoke-MySql "SELECT DATE(dados_dataemissao), COUNT(*), SUM(xml IS NOT NULL AND xml<>'') FROM nfe WHERE id_empresa=$E AND dados_dataemissao>='$ini' AND dados_dataemissao<'$fim' GROUP BY 1" { param($l) & $guardar 'nfe' $l })
     [void](Invoke-MySql "SELECT DATE(n.ide_dhemi), COUNT(DISTINCT n.id), COUNT(DISTINCT CASE WHEN x.xml IS NOT NULL AND x.xml<>'' THEN n.id END) FROM nfce n LEFT JOIN nfcexml x ON x.id_nfce=n.id WHERE n.id_empresa=$E AND n.ide_dhemi>='$ini' AND n.ide_dhemi<'$fim' GROUP BY 1" { param($l) & $guardar 'nfce' $l })
+    }
     $script:AN.sistemaDia = $sd
   } catch { $avisos += ('contagem diária do sistema não feita: ' + $_.Exception.Message) }
   # pendências: documentos do LC sem autorização (em digitação, rejeitados, contingência não transmitida, sem XML)
   try {
     $pend = New-Object System.Collections.ArrayList
     $limpa = { param($s) (($s -replace '\\n', ' ' -replace '\s+', ' ').Trim()) }
+    if ($SISTEMA -eq 'gestores') {
+      [void](Invoke-Pg "SELECT modelo, coalesce(serie,''), coalesce(numero,''), data_emissao::text, situacao_xml::text FROM mv_nota_saida WHERE cod_filial=$E AND modelo='55' AND data_ex IS NULL AND situacao_xml NOT IN (3,4) AND data_emissao>='$ini' AND data_emissao<'$fim' ORDER BY data_emissao LIMIT 300" {
+        param($l) $c = $l -split "`t"; if ($c.Count -lt 5) { return }
+        [void]$pend.Add([ordered]@{ modelo = $c[0]; serie = $c[1]; numero = $c[2]; data = $c[3]; tipo = 'digitacao'; motivo = ('não transmitida (situação ' + $c[4] + ' no Gestores)') })
+      })
+      [void](Invoke-Pg "SELECT modelo, coalesce(serie,''), coalesce(numero,''), data::text, coalesce(chave_cfe,''), coalesce(protocolo_cfe,''), (xml IS NULL)::int FROM mv_venda WHERE cod_filial=$E AND modelo='65' AND situacao=1 AND data_ex IS NULL AND data>='$ini' AND data<'$fim' AND (xml IS NULL OR position('nfeProc' in encode(substring(xml from 1 for 300),'escape'))=0) ORDER BY data, numero LIMIT 300" {
+        param($l) $c = $l -split "`t"; if ($c.Count -lt 7) { return }
+        $mot = $(if ($c[6] -eq '1') { 'o XML não está gravado no Gestores' } else { 'autorizada' + $(if ($c[5]) { ' (protocolo ' + $c[5] + ')' } else { '' }) + ', mas o XML gravado no Gestores não tem a autorização da SEFAZ' })
+        if ($c[4]) { $mot += ' - chave ' + $c[4] }
+        [void]$pend.Add([ordered]@{ modelo = $c[0]; serie = $c[1]; numero = $c[2]; data = $c[3]; tipo = 'semxml'; motivo = $mot })
+      })
+    } else {
     [void](Invoke-MySql "SELECT IFNULL(dados_modelo,'55'), IFNULL(dados_serie,''), IFNULL(dados_n_nota,''), DATE(dados_dataemissao), LEFT(REPLACE(REPLACE(IFNULL(situacao,''),CHAR(9),' '),CHAR(10),' '),200), IFNULL(dados_tpemis,'') FROM nfe WHERE id_empresa=$E AND IFNULL(status,'')<>'EX' AND (xml IS NULL OR xml='') AND IFNULL(inutiliza_motivo,'')='' AND dados_dataemissao>='$ini' AND dados_dataemissao<'$fim' ORDER BY dados_dataemissao LIMIT 300" {
       param($l) $c = $l -split "`t"; if ($c.Count -lt 6) { return }
       $sit = & $limpa $c[4]
@@ -481,6 +563,7 @@ function Gerar-Zip($emp, [datetime]$mes, [string]$destino) {
       elseif ($mot) { $tipo = 'rejeitada' } else { $tipo = 'semxml'; $mot = 'não transmitida' }
       [void]$pend.Add([ordered]@{ modelo = $c[0]; serie = $c[1]; numero = $c[2]; data = $c[3]; tipo = $tipo; motivo = $mot })
     })
+    }
     $script:AN.pendencias = $pend
   } catch { $avisos += ('pendências não verificadas: ' + $_.Exception.Message) }
   $resumo = $null
@@ -851,6 +934,7 @@ function Coletar-Sistema {
     if ($vals.Count) { $o.tempCpu = ($vals | Measure-Object -Maximum).Maximum }
   } catch { }
   if ($DB -and $DB.exe) { try { $o.mysql = -not (Testar-MySql 10) } catch { } }
+  elseif ($SISTEMA -eq 'gestores' -and $PG -and $PG.exe) { try { $o.mysql = -not (Testar-Pg) } catch { } }
   return $o
 }
 
@@ -918,6 +1002,7 @@ function Executar-Comando($st, $c) {
   try {
     switch ([string]$c.cmd) {
       'reiniciar_mysql' {
+        if ($SISTEMA -eq 'gestores') { throw 'este servidor usa o Gestores (PostgreSQL) - o agente não reinicia o banco dele' }
         if (-not (Mysql-Local)) { throw 'o MySQL deste cliente fica em outro computador' }
         $r = Reiniciar-MySql 'pedido pelo portal'; $ok = [bool]$r.ok
         $saida = $(if ($r.ok) { "MySQL voltou em $($r.segundos) s" + $(if ($r.forcado) { ' (precisou forçar)' } else { '' }) } else { 'não voltou: ' + $r.erro })
@@ -1021,10 +1106,19 @@ function Espaco-Livre([string]$caminho) {
   } catch { return $null }
 }
 function Gerar-Backup([string]$destino, [string]$senha, [switch]$Devagar) {
+  if ($SISTEMA -eq 'gestores') {
+    # pg_dump faz uma foto consistente sem travar o banco (o Gestores continua funcionando normalmente)
+    $dump = Join-Path (Split-Path $PG.exe -Parent) 'pg_dump.exe'
+    if (-not (Test-Path $dump)) { throw ('não encontrei o pg_dump.exe na pasta do PostgreSQL (' + (Split-Path $PG.exe -Parent) + ')') }
+    $psi = Novo-ProcessoPg $dump @('-h', [string]$PG.host, '-p', [string]$PG.porta, '-U', [string]$PG.usuario, '-d', [string]$PG.banco, '--no-owner', '--no-privileges', '-Fp')
+    $psi.RedirectStandardInput = $false; $psi.StandardOutputEncoding = $null
+    $p = [System.Diagnostics.Process]::Start($psi)
+  } else {
   $dump = Exe-Dump
   if (-not $dump) { throw 'não encontrei o mysqldump.exe na pasta do MySQL (' + (Split-Path $DB.exe -Parent) + ')' }
   $argv = (Args-Conexao) + @('--single-transaction', '--quick', '--routines', '--triggers', '--hex-blob', '--max-allowed-packet=512M', $DB.banco)
   $p = [System.Diagnostics.Process]::Start((Novo-Processo $dump $argv))
+  }
   if ($Devagar) { try { $p.PriorityClass = 'BelowNormal' } catch { } }
   $proxConf = [long]256MB
   $err = $p.StandardError.ReadToEndAsync()
@@ -1048,7 +1142,7 @@ function Gerar-Backup([string]$destino, [string]$senha, [switch]$Devagar) {
   } finally { $gz.Dispose(); $cs.Dispose(); $fs.Dispose(); $aes.Dispose() }
   $p.WaitForExit()
   $msg = Limpar-Erro $err.Result
-  if ($p.ExitCode -ne 0) { Remove-Item $destino -Force -ErrorAction SilentlyContinue; throw ('mysqldump falhou: ' + $msg) }
+  if ($p.ExitCode -ne 0) { Remove-Item $destino -Force -ErrorAction SilentlyContinue; throw ($(if ($SISTEMA -eq 'gestores') { 'pg_dump' } else { 'mysqldump' }) + ' falhou: ' + $msg) }
   return @{ sql = $total; aviso = $msg }
 }
 # Abre o backup (senha), descompacta e confere se termina com "Dump completed". -Saida grava o .sql.
@@ -1072,7 +1166,7 @@ function Abrir-Backup([string]$arq, [string]$senha, [string]$Saida) {
     finally { if ($out) { $out.Dispose() }; try { $gz.Dispose() } catch { } }
     if ($Saida) { Move-Item $parcial $Saida -Force }
     $txt = [Text.Encoding]::UTF8.GetString([byte[]]$fim)
-    return @{ sql = $total; completo = ($txt -match 'Dump completed') }
+    return @{ sql = $total; completo = ($txt -match 'Dump completed|PostgreSQL database dump complete') }
   } finally { $fs.Dispose() }
 }
 
@@ -1122,9 +1216,11 @@ function Enviar-Grande([string]$url, [string]$arq) {
 
 # Rodada da noite: backup (se ligado no portal) e reinício programado (se ligado e estiver de madrugada)
 function Rotina-Servidor {
-  if (-not $DB -or -not $DB.exe -or -not $EMP0) { return }
+  if (-not $EMP0) { return }
+  if (-not ($DB -and $DB.exe) -and -not ($SISTEMA -eq 'gestores' -and $PG -and $PG.exe)) { return }
+  $nomeBanco = $(if ($SISTEMA -eq 'gestores') { [string]$PG.banco + ' (PostgreSQL)' } else { $DB.banco })
   $conf = $null
-  try { $conf = Chamar-Receptor @{ acao = 'servidor'; contabilidade = $EMP0.contabilidade; cliente = $EMP0.cliente; maquina = $env:COMPUTERNAME; versao = $VERSAO; banco = $DB.banco; servico = (Servico-MySql) } }
+  try { $conf = Chamar-Receptor @{ acao = 'servidor'; contabilidade = $EMP0.contabilidade; cliente = $EMP0.cliente; maquina = $env:COMPUTERNAME; versao = $VERSAO; banco = $nomeBanco; servico = (Servico-Banco) } }
   catch { Log ('servidor: portal sem as opções de backup ainda (' + $_.Exception.Message + ')'); return }
   $agora = Get-Date; $h = $agora.Hour
   # janela segura (sem movimento): 21:30 às 04:30. Há clientes que abrem às 05:00 e fecham às 21:00 (horário local do servidor).
@@ -1180,7 +1276,8 @@ function Rotina-Servidor {
 
   # reinício programado: só de madrugada, nunca em horário de movimento
   if ($conf.reiniciar) {
-    if (-not $madrugada) { Log 'reinício programado: pulado (fora da janela 00:00 às 04:30; o vigia continua cuidando)' }
+    if ($SISTEMA -eq 'gestores') { Log 'reinício programado: não se aplica ao Gestores (PostgreSQL)' }
+    elseif (-not $madrugada) { Log 'reinício programado: pulado (fora da janela 00:00 às 04:30; o vigia continua cuidando)' }
     elseif (-not (Mysql-Local)) { Log 'reinício programado: pulado (MySQL em outro computador)' }
     else {
       $st = Ler-Json $ARQ_VIGIA
@@ -1237,7 +1334,8 @@ try {
         $novo = $UTF8.GetString([Convert]::FromBase64String($up.conteudo)).TrimStart([char]0xFEFF)
         $tk = $null; $er = $null
         [void][System.Management.Automation.Language.Parser]::ParseInput($novo, [ref]$tk, [ref]$er)
-        if ($er.Count -eq 0 -and $novo -match '\$VERSAO = ') {
+        if ($SISTEMA -eq 'gestores' -and $novo -notmatch 'function Invoke-Pg') { Log ('Atualização ' + $up.versao + ' ainda não tem suporte ao Gestores - mantida a versão atual.') }
+        elseif ($er.Count -eq 0 -and $novo -match '\$VERSAO = ') {
           Copy-Item $PSCommandPath ($PSCommandPath + '.anterior') -Force
           [IO.File]::WriteAllText($PSCommandPath, $novo, (New-Object System.Text.UTF8Encoding($true)))
           Log ("Agente atualizado: $VERSAO -> " + $up.versao + '. Reiniciando com a versão nova.')
@@ -1273,7 +1371,7 @@ try {
   foreach ($emp in $CFG.empresas) {
     foreach ($mes in $lista) {
       $rotulo = '{0} {1}' -f $emp.cliente, $mes.ToString('MM/yyyy')
-      $chaveEstado = '{0}|{1}|{2}' -f $DB.banco, $emp.id, $mes.ToString('yyyy-MM')
+      $chaveEstado = '{0}|{1}|{2}' -f $(if ($SISTEMA -eq 'gestores') { 'pg:' + $PG.banco } else { $DB.banco }), $emp.id, $mes.ToString('yyyy-MM')
       $nomeArquivo = (Nome-Seguro $emp.cliente) + ' - XML ' + $mes.ToString('MM.yyyy') + '.zip'
       $zipPath = Join-Path $PASTA_TMP $nomeArquivo
       $info = $null
