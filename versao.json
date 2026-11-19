@@ -4,7 +4,7 @@
   "agente": "1.6.3",
   "receptorMinimoAgente": "1.8.1",
   "agentePiloto": {
-    "versao": "1.8",
+    "versao": "1.9",
     "maquinas": [
       "DESKTOP-TOUC79I"
     ]

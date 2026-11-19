@@ -10,9 +10,7 @@
     lcxml.ps1 -SoGerar        -> só gera os ZIPs na pasta "saida", sem enviar (teste)
     lcxml.ps1 -Manuais        -> PROCESSADOR: monta o resumo do portal dos XML enviados à mão ao Drive
     lcxml.ps1 -Manuais -Tudo  -> reprocessa todos os meses (não só os novos/alterados)
-    lcxml.ps1 -Vigia          -> confere se o MySQL responde e reinicia se travou; manda o monitor do servidor e executa
-                                 os comandos pedidos pelo portal (tarefa a cada 5 min)
-    lcxml.ps1 -ForcarBackup   -> rodada normal fazendo o backup mesmo que já tenha feito hoje
+    lcxml.ps1 -Vigia          -> confere se o MySQL responde e reinicia se travou (tarefa a cada 5 min)
     lcxml.ps1 -Restaurar arquivo.lcbk -SenhaBackup X [-Importar banco_novo] -> abre um backup (gera o .sql)
   Compatível com Windows PowerShell 5.1.
 #>
@@ -28,12 +26,11 @@ param(
   [switch]$Vigia,
   [string]$Restaurar,
   [string]$SenhaBackup,
-  [string]$Importar,
-  [switch]$ForcarBackup
+  [string]$Importar
 )
 
 $ErrorActionPreference = 'Stop'
-$VERSAO = '1.8'
+$VERSAO = '1.9'
 $BASE = $PSScriptRoot
 if (-not $Config) { $Config = Join-Path $BASE 'config.json' }
 $PASTA_LOG = Join-Path $BASE 'logs'
@@ -79,7 +76,10 @@ if (-not (Test-Path $Config)) { Log "ERRO: não encontrei $Config. Rode o INSTAL
 $CFG = Get-Content -Path $Config -Raw -Encoding UTF8 | ConvertFrom-Json
 $DB = $CFG.mysql
 # sistema de gestão do cliente: 'lc' (LC Sistemas, MySQL) ou 'gestores' (Gestores/Brajan, PostgreSQL)
-$SISTEMA = 'lc'; if ($CFG.sistema) { $SISTEMA = ([string]$CFG.sistema).Trim().ToLower() }
+# o mesmo agente serve aos dois sistemas: se adapta pelo banco configurado (config.json)
+$SISTEMA = 'lc'
+if ($CFG.sistema) { $SISTEMA = ([string]$CFG.sistema).Trim().ToLower() }
+elseif ($CFG.postgres -and -not $CFG.mysql) { $SISTEMA = 'gestores' }
 $PG = $CFG.postgres
 if ($SISTEMA -eq 'gestores') { $DB = $null }   # sem MySQL: vigia do MySQL e reinícios ficam desligados
 $DIAS_MES_ANTERIOR = 10
@@ -903,160 +903,13 @@ function Rodar-Vigia {
   } finally { $tv.Dispose() }
 }
 
-# ---------------------------------------------------------------- monitor do servidor + comandos do portal + acesso remoto
-$ARQ_MONITOR = Join-Path $BASE 'monitor.json'
-$RUSTDESK_VERSAO = '1.4.7'
-$RUSTDESK_URL = "https://github.com/rustdesk/rustdesk/releases/download/$RUSTDESK_VERSAO/rustdesk-$RUSTDESK_VERSAO-x86_64.exe"
-
-function Coletar-Sistema {
-  $o = @{ coletado = (Get-Date -Format 'yyyy-MM-dd HH:mm:ss') }
-  try {
-    $os = Get-CimInstance Win32_OperatingSystem
-    $o.windows = [string]$os.Caption
-    $o.memTotalGB = [math]::Round($os.TotalVisibleMemorySize / 1MB, 1); $o.memLivreGB = [math]::Round($os.FreePhysicalMemory / 1MB, 1)
-    $o.ligadoDesde = $os.LastBootUpTime.ToString('yyyy-MM-dd HH:mm:ss')
-  } catch { }
-  try { $o.cpu = [int](Get-CimInstance Win32_Processor | Measure-Object -Property LoadPercentage -Average).Average } catch { }
-  $o.discos = @()
-  try { foreach ($d in @(Get-CimInstance Win32_LogicalDisk -Filter 'DriveType=3')) { if ($d.Size) { $o.discos += @{ letra = [string]$d.DeviceID; totalGB = [math]::Round($d.Size / 1GB, 1); livreGB = [math]::Round($d.FreeSpace / 1GB, 1) } } } } catch { }
-  # saúde (SMART) e temperatura dos discos: recursos do próprio Windows
-  $o.fisicos = @()
-  try {
-    foreach ($d in @(Get-PhysicalDisk -ErrorAction Stop)) {
-      $t = $null; $w = $null
-      try { $rc = $d | Get-StorageReliabilityCounter -ErrorAction Stop; if ($rc.Temperature -gt 0) { $t = [int]$rc.Temperature }; if ($null -ne $rc.Wear) { $w = [int]$rc.Wear } } catch { }
-      $o.fisicos += @{ nome = [string]$d.FriendlyName; tipo = [string]$d.MediaType; saude = [string]$d.HealthStatus; situacao = (@($d.OperationalStatus) -join ', '); tamanhoGB = [math]::Round($d.Size / 1GB, 0); temp = $t; desgaste = $w }
-    }
-  } catch { }
-  # temperatura da placa/processador pela zona térmica do Windows (nem todo computador informa)
-  try {
-    $vals = @(Get-CimInstance -Namespace 'root/wmi' -ClassName MSAcpi_ThermalZoneTemperature -ErrorAction Stop | ForEach-Object { [math]::Round($_.CurrentTemperature / 10 - 273.15, 0) } | Where-Object { $_ -gt 5 -and $_ -lt 120 })
-    if ($vals.Count) { $o.tempCpu = ($vals | Measure-Object -Maximum).Maximum }
-  } catch { }
-  if ($DB -and $DB.exe) { try { $o.mysql = -not (Testar-MySql 10) } catch { } }
-  elseif ($SISTEMA -eq 'gestores' -and $PG -and $PG.exe) { try { $o.mysql = -not (Testar-Pg) } catch { } }
-  return $o
-}
-
-function Exe-RustDesk { if (-not $env:ProgramFiles) { return $null }; $e = Join-Path $env:ProgramFiles 'RustDesk\rustdesk.exe'; if (Test-Path $e) { return $e }; return $null }
-function Id-RustDesk([string]$exe) {
-  $id = ''
-  try { $id = ((& $exe --get-id | Out-String) -replace '\s', '') } catch { }
-  if ($id -notmatch '^\d{6,12}$') {
-    $id = ''
-    foreach ($toml in @('C:\Windows\ServiceProfiles\LocalService\AppData\Roaming\RustDesk\config\RustDesk.toml', (Join-Path $env:APPDATA 'RustDesk\config\RustDesk.toml'))) {
-      try { if (Test-Path $toml) { $m = [regex]::Match((Get-Content $toml -Raw), "(?m)^\s*id\s*=\s*'([0-9]+)'"); if ($m.Success) { $id = $m.Groups[1].Value; break } } } catch { }
-    }
-  }
-  return $id
-}
-function Senha-Aleatoria([int]$n = 12) {
-  $c = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789'; $b = New-Object byte[] $n
-  [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($b)
-  return -join ($b | ForEach-Object { $c[$_ % $c.Length] })
-}
-# instala/configura o RustDesk só quando a CPUSIS liga o "Acesso remoto" deste servidor no portal
-function Garantir-RustDesk($st, $conf) {
-  $ProgressPreference = 'SilentlyContinue'
-  $exe = Exe-RustDesk
-  if (-not $conf.ativo) {
-    if ($exe -and $st.rdInstalouAgente) {
-      Log 'acesso remoto: desligado no portal - removendo o RustDesk'
-      try { Start-Process -FilePath $exe -ArgumentList '--uninstall' -Wait -WindowStyle Hidden } catch { }
-      $st.rdInstalouAgente = $false; $st.rdSenha = ''; $st.rdEnviado = ''
-    }
-    return
-  }
-  if (-not $exe) {
-    if ($st.rdTentativa -and ((Get-Date) - [datetime]::Parse($st.rdTentativa)).TotalHours -lt 6) { return }
-    $st.rdTentativa = (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
-    $tmp = Join-Path $PASTA_TMP ('rustdesk-' + $RUSTDESK_VERSAO + '.exe')
-    Log "acesso remoto: baixando o RustDesk $RUSTDESK_VERSAO"
-    Invoke-WebRequest -Uri $RUSTDESK_URL -OutFile $tmp -UseBasicParsing -TimeoutSec 900
-    $sig = Get-AuthenticodeSignature $tmp
-    if ($sig.Status -ne 'Valid') { Remove-Item $tmp -Force -ErrorAction SilentlyContinue; throw ('instalador do RustDesk sem assinatura válida (' + $sig.Status + ') - não instalei') }
-    Start-Process -FilePath $tmp -ArgumentList '--silent-install' -WindowStyle Hidden
-    for ($i = 0; $i -lt 60 -and -not (Exe-RustDesk); $i++) { Start-Sleep -Seconds 3 }
-    $exe = Exe-RustDesk
-    if (-not $exe) { throw 'o RustDesk não terminou de instalar (tento de novo em 6 h)' }
-    Start-Sleep -Seconds 15
-    $st.rdInstalouAgente = $true; $st.rdSenha = ''
-    Remove-Item $tmp -Force -ErrorAction SilentlyContinue
-    Log 'acesso remoto: RustDesk instalado'
-  }
-  if ($conf.servidor -and $st.rdServidor -ne $conf.servidor) {   # servidor de conexão próprio da CPUSIS (opcional)
-    try { & $exe --config ([string]$conf.servidor) | Out-Null; $st.rdServidor = [string]$conf.servidor; Log 'acesso remoto: servidor de conexão configurado' } catch { }
-  }
-  if (-not $st.rdSenha -or $conf.trocarSenha) {
-    $nova = Senha-Aleatoria 12
-    & $exe --password $nova | Out-Null
-    $st.rdSenha = $nova; $st.rdEnviado = ''
-    Log 'acesso remoto: senha permanente definida'
-  }
-}
-
-function Executar-Comando($st, $c) {
-  $ok = $true; $saida = ''
-  $ps = 'powershell.exe'; $base = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $PSCommandPath + '"'
-  Log ('COMANDO do portal: ' + $c.cmd + $(if ($c.args) { ' ' + $c.args } else { '' }))
-  try {
-    switch ([string]$c.cmd) {
-      'reiniciar_mysql' {
-        if ($SISTEMA -eq 'gestores') { throw 'este servidor usa o Gestores (PostgreSQL) - o agente não reinicia o banco dele' }
-        if (-not (Mysql-Local)) { throw 'o MySQL deste cliente fica em outro computador' }
-        $r = Reiniciar-MySql 'pedido pelo portal'; $ok = [bool]$r.ok
-        $saida = $(if ($r.ok) { "MySQL voltou em $($r.segundos) s" + $(if ($r.forcado) { ' (precisou forçar)' } else { '' }) } else { 'não voltou: ' + $r.erro })
-        Avisar-Evento $st $(if ($r.ok) { 'reiniciado' } else { 'falhou' }) 'pedido pelo portal' @{ reiniciou = $true; segundos = $r.segundos; forcado = $r.forcado }
-      }
-      'backup_agora' { Start-Process $ps -ArgumentList ($base + ' -ForcarBackup') -WindowStyle Hidden; $saida = 'backup iniciado - o resultado aparece em "Último backup" (pode levar alguns minutos)' }
-      'reenviar_mes' {
-        if ([string]$c.args -notmatch '^\d{4}-(0[1-9]|1[0-2])$') { throw 'mês inválido (use AAAA-MM)' }
-        Start-Process $ps -ArgumentList ($base + ' -Meses ' + $c.args) -WindowStyle Hidden; $saida = 'reenvio de ' + $c.args + ' iniciado'
-      }
-      'atualizar_agente' { Start-Process $ps -ArgumentList $base -WindowStyle Hidden; $saida = 'rodada iniciada - o agente se atualiza no começo dela' }
-      'enviar_log' { $saida = (@(Get-Content $ARQ_LOG -Tail 120 -Encoding UTF8 -ErrorAction SilentlyContinue) -join "`n") }
-      'info' { $saida = ((Coletar-Sistema) | ConvertTo-Json -Depth 4) }
-      default { $ok = $false; $saida = 'comando desconhecido: ' + $c.cmd }
-    }
-  } catch { $ok = $false; $saida = $_.Exception.Message }
-  if ($saida.Length -gt 20000) { $saida = $saida.Substring($saida.Length - 20000) }
-  try { [void](Chamar-Receptor @{ acao = 'comandoResultado'; id = [string]$c.id; ok = $ok; saida = $saida; contabilidade = $EMP0.contabilidade; cliente = $EMP0.cliente; maquina = $env:COMPUTERNAME }) } catch { Log ('comando: resultado não enviado: ' + $_.Exception.Message) }
-}
-
-# a cada 10 min: manda o estado do servidor (online, discos, temperatura) e recebe os comandos do portal
-function Rodar-Monitor {
-  if (-not $EMP0 -or $CFG.monitor -eq $false) { return }
-  $tv = $null
-  try { $tv = [System.IO.File]::Open((Join-Path $BASE 'monitor.lock'), 'OpenOrCreate', 'ReadWrite', 'None') } catch { return }
-  try {
-    $st = Ler-Json $ARQ_MONITOR
-    if ($st.ultimo -and ((Get-Date) - [datetime]::Parse($st.ultimo)).TotalMinutes -lt 9) { return }
-    $remoto = $null; $exe = Exe-RustDesk
-    if ($exe) {
-      $remoto = @{ instalado = $true; id = (Id-RustDesk $exe) }
-      $marca = Sha256-Hex ($UTF8.GetBytes([string]$st.rdSenha + '|' + $remoto.id))
-      if ($st.rdSenha -and $st.rdEnviado -ne $marca) { $remoto.senha = [string]$st.rdSenha; $remoto.marca = $marca }
-    }
-    $r = Chamar-Receptor @{ acao = 'monitor'; contabilidade = $EMP0.contabilidade; cliente = $EMP0.cliente; maquina = $env:COMPUTERNAME; versao = $VERSAO; sistema = (Coletar-Sistema); remoto = $remoto }
-    $st.ultimo = (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
-    if ($remoto -and $remoto.marca) { $st.rdEnviado = $remoto.marca }
-    if ($r.remoto) { try { Garantir-RustDesk $st $r.remoto } catch { Log ('acesso remoto: ' + $_.Exception.Message) } }
-    foreach ($c in @($r.comandos)) { if ($c -and $c.cmd) { Executar-Comando $st $c } }
-    # se o RustDesk acabou de ser instalado/configurado, manda o ID na próxima volta (sem esperar 10 min)
-    if ((Exe-RustDesk) -and $st.rdSenha -and $st.rdEnviado -ne (Sha256-Hex ($UTF8.GetBytes([string]$st.rdSenha + '|' + (Id-RustDesk (Exe-RustDesk)))))) { $st.ultimo = (Get-Date).AddMinutes(-20).ToString('yyyy-MM-dd HH:mm:ss') }
-    Enviar-Eventos $st
-    Gravar-Json $ARQ_MONITOR $st
-  } finally { $tv.Dispose() }
-}
-
 # Cria/atualiza a tarefa do vigia (a cada 5 min, como SYSTEM) e arruma a tarefa principal das instalações antigas.
 function Garantir-Tarefas {
-  # a tarefa existe sempre: além do vigia do MySQL (que respeita "vigia": false no config.json),
-  # ela manda o monitor do servidor e executa os comandos pedidos pelo portal
-  if ($CFG.vigia -eq $false -and $CFG.monitor -eq $false) {
+  if ($CFG.vigia -eq $false) {   # vigia desligado no config.json: remove a tarefa se existir
     try { $p = Start-Process -FilePath 'schtasks.exe' -ArgumentList ('/Delete /F /TN "' + $TAREFA_VIGIA + '"') -WindowStyle Hidden -Wait -PassThru } catch { }
     return
   }
+  if (-not $DB -or -not $DB.exe) { return }
   try {
     $tr = 'powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $PSCommandPath + '" -Vigia'
     $a = '/Create /F /TN "' + $TAREFA_VIGIA + '" /SC MINUTE /MO 5 /RU SYSTEM /RL HIGHEST /TR "' + $tr.Replace('"', '\"') + '"'
@@ -1236,7 +1089,6 @@ function Rotina-Servidor {
     $fazer = $true
     if ($ultimo -and $ultimo.Date -eq $agora.Date) { $fazer = $false; Log 'backup: já feito hoje' }
     elseif (-not $janelaBackup) { $fazer = $false; Log 'backup: fora da janela da noite (21:30 às 04:30) - fica para esta noite' }   # nunca pesa no banco durante o expediente
-    if ($ForcarBackup -and -not $fazer) { $fazer = $true; Log 'backup: pedido pelo portal - fazendo agora' }
     if ($fazer) {
       $nome = (Nome-Seguro $EMP0.cliente) + '_' + $agora.ToString('yyyy-MM-dd_HHmm') + '.lcbk'
       $arq = Join-Path $PASTA_TMP $nome
@@ -1292,11 +1144,7 @@ function Rotina-Servidor {
 }
 
 # ================================================================= EXECUÇÃO
-if ($Vigia) {
-  try { Rodar-Vigia } catch { Log ("VIGIA: ERRO: " + $_.Exception.Message) }
-  try { Rodar-Monitor } catch { Log ("MONITOR: ERRO: " + $_.Exception.Message) }
-  exit 0
-}
+if ($Vigia) { try { Rodar-Vigia } catch { Log ("VIGIA: ERRO: " + $_.Exception.Message) }; exit 0 }
 if ($Restaurar) {
   if (-not $SenhaBackup) { $SenhaBackup = Read-Host 'Senha dos backups' }
   $sql = [IO.Path]::ChangeExtension($Restaurar, '.sql')
