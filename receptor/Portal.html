@@ -218,6 +218,9 @@ td.b{font-weight:700;white-space:normal}
 .evl{list-style:none;margin:0;padding:0}.evl li{display:grid;grid-template-columns:120px minmax(0,1fr);gap:10px;padding:9px 0;border-bottom:1px solid var(--line);font-size:13px}.evl li:last-child{border:0}
 .evl .q{color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums}.evl .x{color:var(--muted);font-size:12px;overflow-wrap:anywhere}
 @media (max-width:700px){.evl li{grid-template-columns:1fr}}
+.tot td{border-top:1px solid var(--line)}
+#fCorpo,#fcAba{display:grid;gap:14px;min-width:0}#fcAba{margin-top:14px}#fcAba>*{min-width:0}
+#dlgFin label{display:grid;gap:4px;font-size:13px}
 </style>
 </head>
 <body>
@@ -237,7 +240,7 @@ td.b{font-weight:700;white-space:normal}
 <section id="app" class="hidden">
   <header><div class="topo">
     <div class="marca"><div class="selo">CP</div><div><b>Portal Contábil</b><span>CPUSIS</span></div></div>
-    <nav class="nav" aria-label="Seções"><button type="button" data-t="central" class="hidden" id="navCentral">Central</button><button type="button" data-t="painel">Painel</button><button type="button" data-t="clientes">Clientes</button><button type="button" data-t="servidores" class="hidden" id="navSrv">Servidores</button><button type="button" data-t="config" class="hidden" id="navCfg">Configurações</button></nav>
+    <nav class="nav" aria-label="Seções"><button type="button" data-t="central" class="hidden" id="navCentral">Central</button><button type="button" data-t="painel">Painel</button><button type="button" data-t="clientes">Clientes</button><button type="button" data-t="servidores" class="hidden" id="navSrv">Servidores</button><button type="button" data-t="financeiro" class="hidden" id="navFin">Financeiro</button><button type="button" data-t="config" class="hidden" id="navCfg">Configurações</button></nav>
     <span class="quem" id="quem"></span>
     <button class="btn sec" id="bSair" type="button">Sair</button>
   </div></header>
@@ -336,6 +339,8 @@ function limparSessao() {
   if ($('navCfg')) $('navCfg').classList.add('hidden');
   if ($('navCentral')) $('navCentral').classList.add('hidden');
   if ($('navSrv')) $('navSrv').classList.add('hidden');
+  if ($('navFin')) $('navFin').classList.add('hidden');
+  FIN = null; FINC = null;
   SRV = null;
 }
 function sair(expirou) {
@@ -348,7 +353,12 @@ function sair(expirou) {
 
 function iniciar() {
   $('login').classList.add('hidden'); $('app').classList.remove('hidden');
-  var mostrar = function (d) { DADOS = d; $('quem').textContent = d.nome; $('navCfg').classList.toggle('hidden', !d.admin); $('navCentral').classList.toggle('hidden', !d.admin); $('navSrv').classList.toggle('hidden', !d.admin); if (d.admin) telaCentral(); else telaPainel(); };
+  var mostrar = function (d) {
+    DADOS = d; $('quem').textContent = d.nome; $('navCfg').classList.toggle('hidden', !d.admin); $('navCentral').classList.toggle('hidden', !d.admin); $('navSrv').classList.toggle('hidden', !d.admin);
+    $('navFin').classList.remove('hidden');
+    document.querySelectorAll('.nav button[data-t="painel"],.nav button[data-t="clientes"]').forEach(function (b) { b.classList.toggle('hidden', !!d.empresa); });
+    if (d.empresa) telaFinCliente(d.empresa.contabilidade, d.empresa.cliente, ''); else if (d.admin) telaCentral(); else telaPainel();
+  };
   // abre na hora com o que já foi carregado nesta sessão e atualiza por baixo
   var guardado = null; try { var g = JSON.parse(sessionStorage.getItem('portal_dados') || 'null'); if (g && g.token === TOKEN) guardado = g.d; } catch (e) {}
   if (guardado) mostrar(guardado); else $('tela').innerHTML = carregando('Carregando seus clientes…');
@@ -365,7 +375,7 @@ if (MODO_WEB) chamar('portalAparencia').then(function (ap) {
   try { localStorage.setItem('farol_aparencia', JSON.stringify(ap)); } catch (e) {}
   if (JSON.stringify(ap) !== JSON.stringify(APARENCIA_ATUAL)) aplicarAparencia(ap);
 }).catch(function () {});
-document.querySelector('.nav').addEventListener('click', function (ev) { var b = ev.target.closest('button'); if (!b || !DADOS) return; if (b.dataset.t === 'central') telaCentral(); else if (b.dataset.t === 'painel') telaPainel(); else if (b.dataset.t === 'config') telaConfig(); else if (b.dataset.t === 'servidores') telaServidores(); else telaLista(); });
+document.querySelector('.nav').addEventListener('click', function (ev) { var b = ev.target.closest('button'); if (!b || !DADOS) return; if (b.dataset.t === 'central') telaCentral(); else if (b.dataset.t === 'painel') telaPainel(); else if (b.dataset.t === 'config') telaConfig(); else if (b.dataset.t === 'servidores') telaServidores(); else if (b.dataset.t === 'financeiro') { if (DADOS.empresa) telaFinCliente(DADOS.empresa.contabilidade, DADOS.empresa.cliente, ''); else telaFinanceiro(); } else telaLista(); });
 function marcarNav(t) { document.querySelectorAll('.nav button').forEach(function (b) { if (b.dataset.t === t) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); }); }
 
 /* ---------------- tela 1: clientes ---------------- */
@@ -1321,9 +1331,9 @@ function cfgLogins() {
   $('cfgCorpo').innerHTML = '<div class="ferr"><button class="btn" type="button" id="bNovoUsu">+ Novo login</button><span class="sub">Cada contador só enxerga as contabilidades marcadas no login dele.</span></div>' +
     '<div class="tbl"><table><thead><tr><th>Login</th><th>Nome</th><th>Contabilidades</th><th>Situação</th><th>Último acesso</th><th></th></tr></thead><tbody>' +
     CFG.usuarios.map(function (u, i) {
-      return '<tr><td class="m">' + esc(u.login) + '</td><td>' + esc(u.nome) + '</td><td class="w">' + (u.contabs.indexOf('*') >= 0 ? '<span class="pill">todas (administrador)</span>' : esc(u.contabs.join(', '))) + '</td>' +
+      return '<tr><td class="m">' + esc(u.login) + '</td><td>' + esc(u.nome) + '</td><td class="w">' + (u.empresa ? '<span class="pill info">login de empresa (BPO): ' + esc(u.empresa) + '</span>' : u.contabs.indexOf('*') >= 0 ? '<span class="pill">todas (administrador)</span>' : esc(u.contabs.join(', '))) + '</td>' +
         '<td>' + (u.ativo ? '<span class="pill">ativo</span>' : '<span class="pill bad">bloqueado</span>') + (u.temSenha ? '' : ' <span class="pill warn">sem senha</span>') + '</td>' +
-        '<td>' + (u.ultimo ? new Date(u.ultimo).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '—') + '</td><td><button class="lnk" type="button" data-u="' + i + '">editar</button></td></tr>';
+        '<td>' + (u.ultimo ? new Date(u.ultimo).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '—') + '</td><td>' + (u.empresa ? '<span class="sub">no Financeiro</span>' : '<button class="lnk" type="button" data-u="' + i + '">editar</button>') + '</td></tr>';
     }).join('') + '</tbody></table></div>';
   $('bNovoUsu').addEventListener('click', function () { dlgUsuario(null); });
   $('cfgCorpo').querySelectorAll('[data-u]').forEach(function (b) { b.addEventListener('click', function () { dlgUsuario(CFG.usuarios[+b.dataset.u]); }); });
@@ -1689,6 +1699,324 @@ function baixarZip() {
     return proxima();
   }).catch(function (e) { info.textContent = e.message; barra.classList.add('hidden'); b.disabled = false; });
 }
+</script>
+<script>
+/* =====================================================================
+   FINANCEIRO (BPO): carteira do operador, extrato OFX, pendências, DRE
+   ===================================================================== */
+var FIN = null, FINC = null, FIN_ABA = 'resumo', FIN_CONTA = '';
+function moeda(v) { return 'R$ ' + brl(v); }
+function catNome(id) { var c = (FINC && FINC.plano || []).filter(function (x) { return x.id === id; })[0]; return c ? c.nome : (id ? id : 'Sem categoria'); }
+function rotuloEmpresa(c, k) { return k + ' · ' + c; }
+
+/* ---------- carteira ---------- */
+function telaFinanceiro() {
+  marcarNav('financeiro'); ATUAL = null; RESUMO = null;
+  $('tela').innerHTML = '<div class="cab"><div><h1>Financeiro · BPO</h1><p class="sub">Clientes com o serviço de BPO financeiro. Os dados de 2027 começam a chegar em até 24 h depois de ligar o cliente.</p></div><button class="btn sec" type="button" id="fAtual">Atualizar</button></div><p id="fAviso" class="aviso" role="status"></p><div id="fCorpo">' + carregando('Lendo a carteira…') + '</div><dialog id="dlgFin" aria-labelledby="dlgFinTit"></dialog>';
+  $('fAtual').addEventListener('click', function () { FIN = null; telaFinanceiro(); });
+  (FIN ? Promise.resolve(FIN) : chamar('portalFinCarteira', TOKEN)).then(function (r) { FIN = r; desenharCarteira(); })
+    .catch(function (e) { $('fCorpo').innerHTML = '<div class="card erro">' + esc(e.message) + '</div>'; });
+}
+function avisoFin(t, erro) { var a = $('fAviso'); if (!a) return; a.className = 'aviso' + (erro ? ' bad' : ''); a.textContent = t || ''; if (t) setTimeout(function () { if (a.textContent === t) a.textContent = ''; }, 6000); }
+function desenharCarteira() {
+  var L = FIN.carteira.slice().sort(function (a, b) { return (a.contabilidade + a.cliente).localeCompare(b.contabilidade + b.cliente); });
+  var ativos = L.filter(function (b) { return b.ativo; });
+  var atras = ativos.filter(function (b) { return !b.ultimoOfx || Date.now() - new Date(b.ultimoOfx).getTime() > 8 * 864e5; });
+  var pend = ativos.reduce(function (a, b) { return a + (b.pendencias || 0); }, 0);
+  var kpi = function (r, v, d, cor) { return '<div class="kpi kpi2"><span class="r">' + r + '</span><span class="v"' + (cor ? ' style="color:var(--' + cor + ')"' : '') + '>' + v + '</span><span class="d">' + d + '</span></div>'; };
+  var html = '<div class="kpis kpis4">' + kpi('Clientes no BPO', ativos.length, L.length > ativos.length ? (L.length - ativos.length) + ' desligado(s)' : 'com o serviço ligado', '') +
+    kpi('OFX atrasado', atras.length, 'sem extrato há mais de 8 dias', atras.length ? 'warn' : 'ok') +
+    kpi('Pendências abertas', pend, 'lançamentos sem explicação', pend ? 'warn' : 'ok') +
+    kpi('Saldo nos bancos', moeda(ativos.reduce(function (a, b) { return a + (b.saldo || 0); }, 0)), 'somando todos os clientes', '') + '</div>';
+  html += '<section class="card"><div class="ch"><h2>Carteira</h2>' + (FIN.operador ? '<button class="btn" type="button" id="fNovo">+ Colocar cliente no BPO</button>' : '') + '</div>' +
+    (L.length ? '<div class="tbl sem srvt"><table><thead><tr><th>Cliente</th><th>Serviço</th><th>Último OFX</th><th class="n">Pendências</th><th class="n">Saldo nos bancos</th>' + (FIN.operador ? '<th>Login da empresa</th><th></th>' : '') + '<th></th></tr></thead><tbody>' +
+    L.map(function (b, i) {
+      var velho = !b.ultimoOfx || Date.now() - new Date(b.ultimoOfx).getTime() > 8 * 864e5;
+      return '<tr><td class="b">' + esc(b.cliente) + '<span class="sub">' + esc(b.contabilidade) + (b.operador ? ' · operador: ' + esc(b.operador) : '') + '</span></td>' +
+        '<td>' + (b.ativo ? '<span class="pill">ligado</span>' : '<span class="pill info">desligado</span>') + '<span class="sub">desde ' + esc(dataBR(b.inicio) || '—') + '</span></td>' +
+        '<td>' + (b.ultimoOfx ? '<span class="pill ' + (velho && b.ativo ? 'warn' : '') + '">' + esc(haTempo(b.ultimoOfx)) + '</span>' : '<span class="sub">nenhum ainda</span>') + '</td>' +
+        '<td class="n">' + (b.pendencias ? '<span class="pill warn">' + b.pendencias + '</span>' : '0') + '</td><td class="n">' + (b.ultimoOfx ? moeda(b.saldo) : '—') + '</td>' +
+        (FIN.operador ? '<td>' + (b.login ? '<span class="m">' + esc(b.login) + '</span>' : '<span class="sub">sem login</span>') + ' <button class="lnk" type="button" data-l="' + i + '">' + (b.login ? 'trocar senha' : 'criar') + '</button></td>' +
+          '<td><button class="lnk" type="button" data-e="' + i + '">editar</button></td>' : '') +
+        '<td><button class="btn sec" type="button" data-a="' + i + '">Abrir</button></td></tr>';
+    }).join('') + '</tbody></table></div>' : '<p class="nota">Nenhum cliente no BPO ainda.' + (FIN.operador ? ' Clique em "Colocar cliente no BPO" para começar.' : '') + '</p>') + '</section>';
+  $('fCorpo').innerHTML = html;
+  if ($('fNovo')) $('fNovo').addEventListener('click', function () { dlgBpo(null); });
+  $('fCorpo').querySelectorAll('[data-a]').forEach(function (b) { b.addEventListener('click', function () { var x = L[+b.dataset.a]; telaFinCliente(x.contabilidade, x.cliente, ''); }); });
+  $('fCorpo').querySelectorAll('[data-e]').forEach(function (b) { b.addEventListener('click', function () { dlgBpo(L[+b.dataset.e]); }); });
+  $('fCorpo').querySelectorAll('[data-l]').forEach(function (b) { b.addEventListener('click', function () { dlgLoginEmpresa(L[+b.dataset.l]); }); });
+}
+function opcoesEmpresas() {
+  var vistos = {}, o = [];
+  (DADOS.unidades || []).forEach(function (u) { var k = u.cliente + (u.subpasta ? ' / ' + u.subpasta : ''), ch = u.contabilidade + '|' + k; if (!vistos[ch]) { vistos[ch] = 1; o.push({ contabilidade: u.contabilidade, cliente: k }); } });
+  return o.sort(function (a, b) { return (a.contabilidade + a.cliente).localeCompare(b.contabilidade + b.cliente); });
+}
+function dlgBpo(b) {
+  var d = $('dlgFin'), emp = opcoesEmpresas();
+  d.innerHTML = '<h2 id="dlgFinTit">' + (b ? 'Editar ' + esc(b.cliente) : 'Colocar cliente no BPO') + '</h2>' +
+    (b ? '' : '<label>Empresa<select id="bEmp">' + emp.map(function (x, i) { return '<option value="' + i + '">' + esc(x.cliente + ' — ' + x.contabilidade) + '</option>'; }).join('') + '</select></label>') +
+    '<label class="chave"><input type="checkbox" id="bAtivo"' + (!b || b.ativo ? ' checked' : '') + '>BPO ligado (o agente começa a mandar o financeiro)</label>' +
+    '<label>Início dos dados<input type="date" id="bIni" value="' + esc(b ? b.inicio : '2027-01-01') + '"></label>' +
+    '<label>Operador responsável<input id="bOp" value="' + esc(b ? b.operador : '') + '" placeholder="nome de quem acompanha"></label>' +
+    '<label>Observação<input id="bObs" value="' + esc(b ? b.obs : '') + '"></label>' +
+    '<p class="nota">Use 01/01/2027 para os clientes do serviço. Para o piloto, 01/12/2026.</p>' +
+    '<div class="ferr"><button class="btn" type="button" id="bSalvar">Salvar</button><button class="btn sec" type="button" id="bFechar">Cancelar</button></div>';
+  d.showModal();
+  $('bFechar').addEventListener('click', function () { d.close(); });
+  $('bSalvar').addEventListener('click', function () {
+    var x = b || emp[+$('bEmp').value]; if (!x) return;
+    $('bSalvar').disabled = true;
+    chamar('portalFinSalvarBpo', TOKEN, { contabilidade: x.contabilidade, cliente: x.cliente, ativo: $('bAtivo').checked, inicio: $('bIni').value, operador: $('bOp').value, obs: $('bObs').value })
+      .then(function (r) { FIN = r; d.close(); desenharCarteira(); avisoFin('Salvo.', false); })
+      .catch(function (e) { $('bSalvar').disabled = false; avisoFin(e.message, true); d.close(); });
+  });
+}
+function dlgLoginEmpresa(b) {
+  var d = $('dlgFin');
+  d.innerHTML = '<h2 id="dlgFinTit">Login da empresa · ' + esc(b.cliente) + '</h2><p class="nota">Este login vê só o financeiro desta empresa e responde as pendências. Não vê os XML nem outras empresas.</p>' +
+    '<label>Login<input id="eLog" value="' + esc(b.login || '') + '"' + (b.login ? ' readonly' : '') + ' autocomplete="off"></label>' +
+    '<label>Nome<input id="eNome" value="' + esc(b.cliente) + '"></label>' +
+    '<label>' + (b.login ? 'Senha nova (em branco = mantém)' : 'Senha') + '<input id="eSen" type="text" autocomplete="off"></label>' +
+    '<div class="ferr"><button class="btn" type="button" id="eSalvar">Salvar</button><button class="btn sec" type="button" id="eFechar">Cancelar</button></div>';
+  d.showModal();
+  $('eFechar').addEventListener('click', function () { d.close(); });
+  $('eSalvar').addEventListener('click', function () {
+    $('eSalvar').disabled = true;
+    chamar('portalFinLoginEmpresa', TOKEN, { login: $('eLog').value, nome: $('eNome').value, senha: $('eSen').value, contabilidade: b.contabilidade, cliente: b.cliente })
+      .then(function (r) { FIN = r; d.close(); desenharCarteira(); avisoFin('Login salvo.', false); })
+      .catch(function (e) { $('eSalvar').disabled = false; avisoFin(e.message, true); d.close(); });
+  });
+}
+
+/* ---------- um cliente ---------- */
+function telaFinCliente(contab, cliente, mes, msg) {
+  marcarNav('financeiro'); ATUAL = null; RESUMO = null;
+  var volta = DADOS && DADOS.empresa ? '' : '<button class="lnk" type="button" id="fcVolta">← carteira</button>';
+  $('tela').innerHTML = '<div class="cab"><div>' + volta + '<h1>' + esc(cliente) + '</h1><p class="sub">' + esc(contab) + ' · financeiro</p></div><div class="filtros" id="fcFiltro"></div></div>' +
+    '<p id="fAviso" class="aviso" role="status"></p><div id="fcCorpo">' + carregando('Lendo o financeiro…') + '</div><dialog id="dlgFin" aria-labelledby="dlgFinTit"></dialog>';
+  if ($('fcVolta')) $('fcVolta').addEventListener('click', telaFinanceiro);
+  chamar('portalFinCliente', TOKEN, contab, cliente, mes || '').then(function (r) {
+    FINC = r; FINC.contabilidade = contab; FINC.cliente = cliente;
+    if (!FIN_CONTA || !r.indice.contas[FIN_CONTA]) FIN_CONTA = Object.keys(r.indice.contas)[0] || '';
+    if (r.papel !== 'operador' && (FIN_ABA === 'importar' || FIN_ABA === 'regras')) FIN_ABA = 'resumo';
+    desenharFinCliente(); if (msg) avisoFin(msg, false);
+  }).catch(function (e) { $('fcCorpo').innerHTML = '<div class="card erro">' + esc(e.message) + '</div>'; });
+}
+function recarregarFin(msg) { telaFinCliente(FINC.contabilidade, FINC.cliente, FINC.mes, typeof msg === 'string' ? msg : ''); }
+function transMes() { var o = []; Object.keys(FINC.contas).forEach(function (id) { var d = FINC.contas[id]; (d && d.trans || []).forEach(function (t) { o.push({ conta: id, t: t }); }); }); return o; }
+function desenharFinCliente() {
+  var meses = FINC.meses.indexOf(FINC.mes) < 0 ? [FINC.mes].concat(FINC.meses) : FINC.meses;
+  $('fcFiltro').innerHTML = '<label for="fcMes">Mês<select id="fcMes">' + meses.map(function (m) { return '<option value="' + m + '"' + (m === FINC.mes ? ' selected' : '') + '>' + nomeMes(m) + '</option>'; }).join('') + '</select></label>';
+  $('fcMes').addEventListener('change', function () { telaFinCliente(FINC.contabilidade, FINC.cliente, this.value); });
+  var abas = [['resumo', 'Resumo'], ['extrato', 'Extrato'], ['pendencias', 'Pendências' + (FINC.pendencias.length ? ' (' + FINC.pendencias.length + ')' : '')], ['dre', 'DRE e fluxo de caixa']];
+  if (FINC.papel === 'operador') abas.push(['importar', 'Importar OFX'], ['regras', 'Regras']);
+  var aviso = FINC.bpo ? (FINC.bpo.ativo ? '' : '<div class="card aviso">O BPO desta empresa está desligado.</div>') : '<div class="card aviso">Empresa ainda não está na carteira do BPO.</div>';
+  $('fcCorpo').innerHTML = aviso + '<div class="abas" role="tablist">' + abas.map(function (a) { return '<button class="tab" role="tab" type="button" data-f="' + a[0] + '" aria-selected="' + (a[0] === FIN_ABA) + '">' + a[1] + '</button>'; }).join('') + '</div><div id="fcAba"></div>';
+  $('fcCorpo').querySelector('.abas').addEventListener('click', function (ev) { var b = ev.target.closest('.tab'); if (b) { FIN_ABA = b.dataset.f; desenharFinCliente(); } });
+  ({ resumo: finResumo, extrato: finExtrato, pendencias: finPendencias, dre: finDre, importar: finImportar, regras: finRegras })[FIN_ABA]();
+}
+var AGUARDA_LC = '<p class="nota">Caixa físico, contas a pagar e a receber, vendas em dinheiro e compras pelo XML entram aqui quando a leitura do sistema (LC) estiver ligada para esta empresa.</p>';
+
+function finResumo() {
+  var T = transMes(), ent = 0, sai = 0, porCat = {}, contas = FINC.indice.contas, ids = Object.keys(contas);
+  T.forEach(function (x) { var v = x.t.valor; if (v > 0) ent += v; else sai += v; var k = x.t.cat || ''; porCat[k] = (porCat[k] || 0) + v; });
+  var saldo = ids.reduce(function (a, id) { return a + Number(contas[id].saldo || 0); }, 0);
+  var taxas = ['fin_tarifas', 'fin_taxas_cartao', 'fin_juros', 'fin_iof'].reduce(function (a, k) { return a + (porCat[k] || 0); }, 0);
+  var kpi = function (r, v, d, cor) { return '<div class="kpi kpi2"><span class="r">' + r + '</span><span class="v"' + (cor ? ' style="color:var(--' + cor + ')"' : '') + '>' + v + '</span><span class="d">' + d + '</span></div>'; };
+  if (!ids.length) { $('fcAba').innerHTML = '<div class="card vazio">Nenhum extrato importado ainda.' + (FINC.papel === 'operador' ? ' Use a aba "Importar OFX".' : '') + '</div>' + AGUARDA_LC; return; }
+  var html = '<div class="kpis kpis4">' + kpi('Saldo nos bancos', moeda(saldo), 'último saldo de cada extrato', saldo < 0 ? 'bad' : '') +
+    kpi('Entradas em ' + MES[Number(FINC.mes.slice(5)) - 1], moeda(ent), T.filter(function (x) { return x.t.valor > 0; }).length + ' lançamentos', 'ok') +
+    kpi('Saídas em ' + MES[Number(FINC.mes.slice(5)) - 1], moeda(-sai), T.filter(function (x) { return x.t.valor < 0; }).length + ' lançamentos', 'bad') +
+    kpi('Pago em taxas e tarifas', moeda(-taxas), 'tarifas, IOF, juros e cartão', taxas ? 'warn' : '') + '</div>';
+  html += '<section class="card"><div class="ch"><h2>Onde está o dinheiro</h2><span>saldo de cada conta no último extrato</span></div><div class="tbl sem"><table><thead><tr><th>Banco</th><th>Agência / conta</th><th class="n">Saldo</th><th>Saldo em</th><th class="n">Entradas no mês</th><th class="n">Saídas no mês</th></tr></thead><tbody>' +
+    ids.map(function (id) {
+      var c = contas[id], e = 0, s2 = 0; T.forEach(function (x) { if (x.conta === id) { if (x.t.valor > 0) e += x.t.valor; else s2 += x.t.valor; } });
+      return '<tr><td class="b">' + esc(c.nome) + '</td><td class="m">' + esc(c.agencia + ' / ' + c.conta) + '</td><td class="n">' + (c.saldo != null ? moeda(c.saldo) : '—') + '</td><td>' + esc(dataBR(c.dataSaldo || '')) + '</td><td class="n">' + moeda(e) + '</td><td class="n">' + moeda(-s2) + '</td></tr>';
+    }).join('') + '</tbody></table></div></section>';
+  var cats = Object.keys(porCat).map(function (k) { return { k: k, v: porCat[k] }; });
+  var lista = function (arr, titulo) {
+    var tot = arr.reduce(function (a, x) { return a + Math.abs(x.v); }, 0) || 1;
+    return '<section class="card"><div class="ch"><h2>' + titulo + '</h2></div>' + (arr.length ? '<div class="tbl sem"><table><tbody>' + arr.map(function (x) {
+      return '<tr><td>' + esc(x.k ? catNome(x.k) : 'Sem categoria (pendente)') + '</td><td class="n">' + moeda(Math.abs(x.v)) + '</td><td class="n sub">' + pct(Math.abs(x.v) / tot * 100) + '</td></tr>';
+    }).join('') + '</tbody></table></div>' : '<p class="nota">Nada no mês.</p>') + '</section>';
+  };
+  html += '<div class="g2">' + lista(cats.filter(function (x) { return x.v > 0; }).sort(function (a, b) { return b.v - a.v; }), 'Entradas por categoria') +
+    lista(cats.filter(function (x) { return x.v < 0; }).sort(function (a, b) { return a.v - b.v; }), 'Saídas por categoria') + '</div>' + AGUARDA_LC;
+  $('fcAba').innerHTML = html;
+}
+
+function opcoesCat(sel) {
+  var g = {}, ord = []; FINC.plano.forEach(function (c) { if (!g[c.g]) { g[c.g] = []; ord.push(c.g); } g[c.g].push(c); });
+  return '<option value="">— escolha —</option>' + ord.map(function (k) { return '<optgroup label="' + esc(k) + '">' + g[k].map(function (c) { return '<option value="' + c.id + '"' + (c.id === sel ? ' selected' : '') + '>' + esc(c.nome) + '</option>'; }).join('') + '</optgroup>'; }).join('');
+}
+function pillSt(t) {
+  if (t.st === 'ok') return t.orig === 'manual' ? '<span class="pill">conferido</span>' : '<span class="pill info">automático</span>';
+  if (t.st === 'cliente') return '<span class="pill warn">aguardando a empresa</span>';
+  if (t.st === 'just') return '<span class="pill warn">justificado</span>';
+  return '<span class="pill bad">pendente</span>';
+}
+function finExtrato() {
+  var ids = Object.keys(FINC.indice.contas);
+  if (!ids.length) { $('fcAba').innerHTML = '<div class="card vazio">Nenhum extrato importado ainda.</div>'; return; }
+  var d = FINC.contas[FIN_CONTA], T = (d && d.trans) || [], op = FINC.papel === 'operador';
+  var html = '<div class="ferr"><label>Conta<select id="fxConta">' + ids.map(function (id) { var c = FINC.indice.contas[id]; return '<option value="' + id + '"' + (id === FIN_CONTA ? ' selected' : '') + '>' + esc(c.nome + ' · ' + c.conta) + '</option>'; }).join('') + '</select></label>' +
+    (op ? '<label>Categoria para os marcados<select id="fxCat">' + opcoesCat('') + '</select></label><label class="chave"><input type="checkbox" id="fxRegra" checked>lembrar para os próximos</label><button class="btn" type="button" id="fxAplicar">Aplicar</button><button class="btn sec" type="button" id="fxPedir">Pedir justificativa à empresa</button>' : '') + '</div>';
+  html += T.length ? '<div class="tbl"><table><thead><tr>' + (op ? '<th><input type="checkbox" id="fxTodos" aria-label="marcar todos"></th>' : '') + '<th>Data</th><th>Descrição</th><th class="n">Valor</th><th>Categoria</th><th>Situação</th></tr></thead><tbody>' +
+    T.map(function (t, i) {
+      return '<tr>' + (op ? '<td><input type="checkbox" data-i="' + i + '"></td>' : '') + '<td>' + esc(dataBR(t.data)) + '</td><td class="w">' + esc(t.desc) + (t.just ? '<span class="sub">empresa: ' + esc(t.just.texto) + '</span>' : '') + '</td>' +
+        '<td class="n" style="color:var(--' + (t.valor < 0 ? 'bad' : 'brand') + ')">' + moeda(t.valor) + '</td><td>' + esc(t.cat ? catNome(t.cat) : '—') + '</td><td>' + pillSt(t) + '</td></tr>';
+    }).join('') + '</tbody></table></div>' : '<div class="card vazio">Nenhum lançamento desta conta em ' + nomeMes(FINC.mes) + '.</div>';
+  $('fcAba').innerHTML = html;
+  $('fxConta').addEventListener('change', function () { FIN_CONTA = this.value; finExtrato(); });
+  if (!op || !T.length) return;
+  $('fxTodos').addEventListener('change', function () { var v = this.checked; $('fcAba').querySelectorAll('input[data-i]').forEach(function (c) { c.checked = v; }); });
+  var marcados = function () { var o = []; $('fcAba').querySelectorAll('input[data-i]:checked').forEach(function (c) { o.push(T[+c.dataset.i].id); }); return o; };
+  $('fxAplicar').addEventListener('click', function () {
+    var m = marcados(), cat = $('fxCat').value; if (!m.length || !cat) { avisoFin('Marque lançamentos e escolha a categoria.', true); return; }
+    this.disabled = true;
+    chamar('portalFinCategorizar', TOKEN, FINC.contabilidade, FINC.cliente, FIN_CONTA, FINC.mes, m, cat, $('fxRegra').checked).then(function (r) { recarregarFin(r.alterados + ' lançamento(s) categorizado(s).'); })
+      .catch(function (e) { avisoFin(e.message, true); $('fxAplicar').disabled = false; });
+  });
+  $('fxPedir').addEventListener('click', function () {
+    var m = marcados(); if (!m.length) { avisoFin('Marque os lançamentos.', true); return; }
+    var q = prompt('Pergunta para a empresa (opcional):', 'O que foi este pagamento? Anexe o comprovante, por favor.'); if (q === null) return;
+    chamar('portalFinSolicitar', TOKEN, FINC.contabilidade, FINC.cliente, FIN_CONTA, FINC.mes, m, q).then(function () { recarregarFin('Pedido enviado para a empresa.'); })
+      .catch(function (e) { avisoFin(e.message, true); });
+  });
+}
+
+function finPendencias() {
+  var P = FINC.pendencias.slice(), op = FINC.papel === 'operador', emp = FINC.papel === 'empresa';
+  if (emp) P = P.filter(function (p) { return p.t.st === 'cliente' || p.t.st === 'just'; });
+  P.sort(function (a, b) { return (a.t.st === 'just' ? 0 : 1) - (b.t.st === 'just' ? 0 : 1) || a.t.data.localeCompare(b.t.data); });
+  if (!P.length) { $('fcAba').innerHTML = '<div class="card vazio">Nenhuma pendência. Tudo explicado.</div>'; return; }
+  var html = '<p class="nota">' + (emp ? 'Estes pagamentos e recebimentos não têm nota ou conta que os explique. Diga o que foi e, se tiver, anexe o comprovante.' : 'Lançamentos que o sistema não conseguiu explicar sozinho. Escolha a categoria, ou peça a justificativa à empresa na aba Extrato.') + '</p>';
+  html += P.map(function (p, i) {
+    var t = p.t, c = FINC.indice.contas[p.conta] || {};
+    return '<section class="card"><div class="ch"><h2 style="font-size:15px">' + esc(dataBR(t.data)) + ' · <span style="color:var(--' + (t.valor < 0 ? 'bad' : 'brand') + ')">' + moeda(t.valor) + '</span></h2>' + pillSt(t) + '</div>' +
+      '<p class="m">' + esc(t.desc) + '</p><p class="sub">' + esc(c.nome || '') + ' · ' + esc(nomeMes(p.mes)) + '</p>' +
+      (t.pergunta ? '<p><b>Pergunta:</b> ' + esc(t.pergunta) + '</p>' : '') +
+      (t.just ? '<p><b>Resposta da empresa:</b> ' + esc(t.just.texto) + ' <span class="sub">' + esc(t.just.quem + ' · ' + dataHora(t.just.quando)) + '</span>' + (t.just.anexo ? ' <button class="lnk" type="button" data-anx="' + i + '">ver comprovante</button>' : '') + '</p>' : '') +
+      (op ? '<div class="ferr"><select data-c="' + i + '">' + opcoesCat(t.cat) + '</select><label class="chave"><input type="checkbox" data-r="' + i + '" checked>lembrar</label><button class="btn" type="button" data-ok="' + i + '">Confirmar categoria</button></div>' : '') +
+      (emp && t.st !== 'ok' ? '<div class="ferr"><input data-tx="' + i + '" placeholder="O que foi? Ex.: compra de material de limpeza" style="flex:1;min-width:220px"><input type="file" data-fl="' + i + '" accept="image/*,application/pdf"><button class="btn sec" type="button" data-j="' + i + '">Enviar justificativa</button></div>' : '') +
+      '</section>';
+  }).join('');
+  $('fcAba').innerHTML = html;
+  var Q = function (sel) { return $('fcAba').querySelectorAll(sel); };
+  Q('[data-ok]').forEach(function (b) { b.addEventListener('click', function () {
+    var i = +b.dataset.ok, p = P[i], cat = $('fcAba').querySelector('[data-c="' + i + '"]').value; if (!cat) { avisoFin('Escolha a categoria.', true); return; }
+    b.disabled = true;
+    chamar('portalFinCategorizar', TOKEN, FINC.contabilidade, FINC.cliente, p.conta, p.mes, [p.t.id], cat, $('fcAba').querySelector('[data-r="' + i + '"]').checked)
+      .then(function (r) { recarregarFin(r.alterados > 1 ? r.alterados + ' lançamentos resolvidos (a regra resolveu os parecidos).' : 'Resolvido.'); }).catch(function (e) { b.disabled = false; avisoFin(e.message, true); });
+  }); });
+  Q('[data-j]').forEach(function (b) { b.addEventListener('click', function () {
+    var i = +b.dataset.j, p = P[i], txt = $('fcAba').querySelector('[data-tx="' + i + '"]').value, f = $('fcAba').querySelector('[data-fl="' + i + '"]').files[0];
+    var enviar = function (anexo) {
+      b.disabled = true; b.textContent = 'Enviando…';
+      chamar('portalFinJustificar', TOKEN, FINC.contabilidade, FINC.cliente, p.conta, p.mes, p.t.id, txt, anexo).then(function () { recarregarFin('Justificativa enviada. Obrigado!'); })
+        .catch(function (e) { b.disabled = false; b.textContent = 'Enviar justificativa'; avisoFin(e.message, true); });
+    };
+    if (!f) { enviar(null); return; }
+    if (f.size > 5 * 1024 * 1024) { avisoFin('O comprovante pode ter no máximo 5 MB.', true); return; }
+    var rd = new FileReader(); rd.onload = function () { enviar({ nome: f.name, tipo: f.type, base64: String(rd.result).split(',')[1] }); }; rd.readAsDataURL(f);
+  }); });
+  Q('[data-anx]').forEach(function (b) { b.addEventListener('click', function () {
+    var t = P[+b.dataset.anx].t; b.textContent = 'abrindo…';
+    chamar('portalFinAnexo', TOKEN, FINC.contabilidade, FINC.cliente, t.just.anexo).then(function (a) {
+      var bin = atob(a.base64), u8 = new Uint8Array(bin.length); for (var k = 0; k < bin.length; k++) u8[k] = bin.charCodeAt(k);
+      var url = URL.createObjectURL(new Blob([u8], { type: a.tipo })); window.open(url, '_blank'); b.textContent = 'ver comprovante';
+    }).catch(function (e) { b.textContent = 'ver comprovante'; avisoFin(e.message, true); });
+  }); });
+}
+
+function finDre() {
+  var T = transMes(), P = {}, por = {}; FINC.plano.forEach(function (c) { P[c.id] = c; });
+  T.forEach(function (x) { var c = P[x.t.cat]; var g = c ? c.g : 'Sem categoria (pendente)'; por[g] = (por[g] || 0) + x.t.valor; });
+  var v = function (g) { return por[g] || 0; };
+  var rec = v('Receitas'), imp = v('Impostos'), liq = rec + imp, cmv = v('Custo das mercadorias'), bruto = liq + cmv;
+  var pess = v('Despesas com pessoal'), oper = v('Despesas operacionais'), resOp = bruto + pess + oper;
+  var fin = v('Despesas financeiras') + v('Receitas financeiras'), res = resOp + fin, sem = v('Sem categoria (pendente)');
+  var linha = function (n, val, forte, base) { return '<tr' + (forte ? ' class="tot"' : '') + '><td>' + (forte ? '<b>' + n + '</b>' : n) + '</td><td class="n"' + (val < 0 ? ' style="color:var(--bad)"' : '') + '>' + (forte ? '<b>' + moeda(val) + '</b>' : moeda(val)) + '</td><td class="n sub">' + (rec ? pct(val / rec * 100) : '') + '</td></tr>'; };
+  var html = '<section class="card"><div class="ch"><h2>DRE gerencial · ' + esc(nomeMes(FINC.mes)) + '</h2><span>pelo extrato bancário (regime de caixa)</span></div><div class="tbl sem"><table><tbody>' +
+    linha('Receitas recebidas', rec, true) + linha('(−) Impostos', imp) + linha('Receita líquida', liq, true) + linha('(−) Compras de mercadorias', cmv) + linha('Lucro bruto', bruto, true) +
+    linha('(−) Despesas com pessoal', pess) + linha('(−) Despesas operacionais', oper) + linha('Resultado operacional', resOp, true) + linha('(+/−) Resultado financeiro', fin) + linha('Resultado do mês', res, true) +
+    '</tbody></table></div>' + (sem ? '<p class="nota" style="color:var(--warn)">Há ' + moeda(sem) + ' em lançamentos sem categoria. Resolva as pendências para a DRE ficar certa.</p>' : '') +
+    '<p class="nota">Transferências entre contas, aplicações, empréstimos e retiradas de sócios ficam fora da DRE. Com a leitura do LC, as vendas e compras passam a vir das notas (regime de competência) e o custo das mercadorias do XML.</p></section>';
+  // fluxo de caixa por semana do mês
+  var sem7 = [0, 0, 0, 0, 0].map(function () { return { e: 0, s: 0 }; });
+  T.forEach(function (x) { var w = Math.min(4, Math.floor((Number(x.t.data.slice(8, 10)) - 1) / 7)); if (x.t.valor > 0) sem7[w].e += x.t.valor; else sem7[w].s += x.t.valor; });
+  var rot = ['1 a 7', '8 a 14', '15 a 21', '22 a 28', '29 em diante'], acum = 0;
+  html += '<section class="card"><div class="ch"><h2>Fluxo de caixa · ' + esc(nomeMes(FINC.mes)) + '</h2><span>todas as contas</span></div><div class="tbl sem"><table><thead><tr><th>Dias</th><th class="n">Entradas</th><th class="n">Saídas</th><th class="n">Saldo da semana</th><th class="n">Acumulado no mês</th></tr></thead><tbody>' +
+    sem7.map(function (w, i) { acum += w.e + w.s; return '<tr><td>' + rot[i] + '</td><td class="n">' + moeda(w.e) + '</td><td class="n">' + moeda(-w.s) + '</td><td class="n"' + (w.e + w.s < 0 ? ' style="color:var(--bad)"' : '') + '>' + moeda(w.e + w.s) + '</td><td class="n">' + moeda(acum) + '</td></tr>'; }).join('') +
+    '</tbody></table></div></section>' + AGUARDA_LC;
+  $('fcAba').innerHTML = html;
+}
+
+/* ---------- importar OFX (lido aqui no navegador) ---------- */
+function lerOfx(txt) {
+  var tag = function (b, n) { var m = b.match(new RegExp('<' + n + '>\\s*([^<\\r\\n]*)', 'i')); return m ? m[1].trim() : ''; };
+  var dt = function (s) { var m = String(s).match(/^(\d{4})(\d{2})(\d{2})/); return m ? m[1] + '-' + m[2] + '-' + m[3] : ''; };
+  var num = function (s) { s = String(s).trim(); if (/,\d{1,2}$/.test(s)) s = s.replace(/\./g, '').replace(',', '.'); return Number(s); };
+  var blocos = txt.split(/<STMTRS>|<CCSTMTRS>/i).slice(1);
+  if (!blocos.length) throw new Error('Não parece um arquivo OFX (sem extrato dentro).');
+  return blocos.map(function (b) {
+    var trans = b.split(/<STMTTRN>/i).slice(1).map(function (x) {
+      x = x.split(/<\/STMTTRN>|<\/BANKTRANLIST>/i)[0];
+      var nome = tag(x, 'NAME'), memo = tag(x, 'MEMO');
+      return { fitid: tag(x, 'FITID'), data: dt(tag(x, 'DTPOSTED')), valor: num(tag(x, 'TRNAMT')), desc: (nome && memo && memo.toUpperCase().indexOf(nome.toUpperCase()) < 0 ? nome + ' ' + memo : (memo || nome)).replace(/\s+/g, ' '), doc: tag(x, 'CHECKNUM') || tag(x, 'REFNUM') };
+    }).filter(function (t) { return t.data && t.valor; });
+    var lb = (b.split(/<LEDGERBAL>/i)[1] || '');
+    return { banco: tag(b, 'BANKID') || tag(txt, 'FID') || '', bancoNome: tag(txt, 'ORG'), agencia: tag(b, 'BRANCHID'), conta: tag(b, 'ACCTID'),
+      saldo: lb ? num(tag(lb, 'BALAMT')) : null, dataSaldo: lb ? dt(tag(lb, 'DTASOF')) : '', inicio: dt(tag(b, 'DTSTART')), fim: dt(tag(b, 'DTEND')), trans: trans };
+  });
+}
+function decodificarOfx(buf) {
+  var cab = new TextDecoder('ascii').decode(buf.slice(0, 400));
+  var cp = /CHARSET:\s*1252|ENCODING:\s*USASCII|ISO-?8859/i.test(cab) && !/UTF-?8/i.test(cab) ? 'windows-1252' : 'utf-8';
+  var t = new TextDecoder(cp).decode(buf); if (cp === 'utf-8' && t.indexOf('�') >= 0) t = new TextDecoder('windows-1252').decode(buf);
+  return t;
+}
+function finImportar() {
+  $('fcAba').innerHTML = '<section class="card"><div class="ch"><h2>Importar extrato (OFX)</h2></div><p class="nota">No internet banking da empresa, exporte o extrato no formato OFX (às vezes chamado de "Money" ou "Quicken"). Pode escolher vários arquivos de uma vez, de bancos e meses diferentes. Lançamentos que já foram importados são ignorados.</p>' +
+    '<div class="ferr"><input type="file" id="ofxArq" accept=".ofx,.OFX,.ofc" multiple><button class="btn" type="button" id="ofxEnviar" disabled>Importar</button></div><div id="ofxPrev"></div></section>';
+  var lidos = [];
+  $('ofxArq').addEventListener('change', function () {
+    lidos = []; var fs = Array.prototype.slice.call(this.files), prev = $('ofxPrev'); prev.innerHTML = carregando('Lendo os arquivos…');
+    Promise.all(fs.map(function (f) { return f.arrayBuffer().then(function (buf) {
+      var txt = decodificarOfx(buf); try { lerOfx(txt).forEach(function (x) { x.arquivo = f.name; x.texto = txt.length < 2e6 ? txt : ''; lidos.push(x); }); } catch (e) { lidos.push({ erro: f.name + ': ' + e.message }); }
+    }); })).then(function () {
+      prev.innerHTML = '<div class="tbl sem"><table><thead><tr><th>Arquivo</th><th>Banco</th><th>Agência / conta</th><th>Período</th><th class="n">Lançamentos</th><th class="n">Saldo final</th></tr></thead><tbody>' + lidos.map(function (x) {
+        if (x.erro) return '<tr><td colspan="6" style="color:var(--bad)">' + esc(x.erro) + '</td></tr>';
+        return '<tr><td>' + esc(x.arquivo) + '</td><td>' + esc(x.bancoNome || x.banco) + '</td><td class="m">' + esc(x.agencia + ' / ' + x.conta) + '</td><td>' + esc(dataBR(x.inicio) + ' a ' + dataBR(x.fim)) + '</td><td class="n">' + x.trans.length + '</td><td class="n">' + (x.saldo != null ? moeda(x.saldo) : '—') + '</td></tr>';
+      }).join('') + '</tbody></table></div>';
+      $('ofxEnviar').disabled = !lidos.some(function (x) { return !x.erro && x.trans.length; });
+    });
+  });
+  $('ofxEnviar').addEventListener('click', function () {
+    var b = this, ok = lidos.filter(function (x) { return !x.erro && x.trans.length; }), res = [];
+    b.disabled = true;
+    var prox = function (i) {
+      if (i >= ok.length) { FIN = null; recarregarFin(res.join(' · ')); return; }
+      b.textContent = 'Importando ' + (i + 1) + ' de ' + ok.length + '…';
+      chamar('portalFinImportar', TOKEN, FINC.contabilidade, FINC.cliente, ok[i]).then(function (r) {
+        res.push(r.conta + ': ' + r.novos + ' novo(s)' + (r.repetidos ? ', ' + r.repetidos + ' já existiam' : '') + (r.pendentes ? ', ' + r.pendentes + ' pendente(s)' : '')); prox(i + 1);
+      }).catch(function (e) { avisoFin(ok[i].arquivo + ': ' + e.message, true); b.disabled = false; b.textContent = 'Importar'; });
+    };
+    prox(0);
+  });
+}
+
+function finRegras() {
+  var R = FINC.regras || [];
+  $('fcAba').innerHTML = '<section class="card"><div class="ch"><h2>Regras aprendidas desta empresa</h2><span>' + R.length + ' regra(s)</span></div><p class="nota">Toda vez que você confirma uma categoria com "lembrar" marcado, o texto do extrato vira regra e os próximos lançamentos iguais já entram categorizados. As regras gerais (tarifas, IOF, maquininhas, impostos, energia…) valem para todas as empresas.</p>' +
+    (R.length ? '<div class="tbl sem"><table><thead><tr><th>Texto do extrato</th><th>Entrada/saída</th><th>Categoria</th><th></th></tr></thead><tbody>' + R.map(function (r, i) {
+      return '<tr><td class="m">' + esc(r.chave) + '</td><td>' + (r.sinal === 'D' ? 'saída' : 'entrada') + '</td><td>' + esc(catNome(r.cat)) + '</td><td><button class="lnk" type="button" data-x="' + i + '">remover</button></td></tr>';
+    }).join('') + '</tbody></table></div>' : '<p class="nota">Nenhuma regra ainda.</p>') + '</section>';
+  $('fcAba').querySelectorAll('[data-x]').forEach(function (b) { b.addEventListener('click', function () {
+    var r = R[+b.dataset.x]; chamar('portalFinRemoverRegra', TOKEN, FINC.contabilidade, FINC.cliente, r.chave, r.sinal).then(recarregarFin).catch(function (e) { avisoFin(e.message, true); });
+  }); });
+}
+
 </script>
 </body>
 </html>

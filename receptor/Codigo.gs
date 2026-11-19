@@ -40,7 +40,7 @@ var CONFIG = {
   GUARDAR_DIAS: 7, GUARDAR_SEMANAS: 4, GUARDAR_MESES: 6
 };
 
-var VERSAO = '1.10';
+var VERSAO = '1.11';
 var PASTA_PORTAL = '_PORTAL_DADOS';   // resumos fiscais (JSON) e versão do agente
 var MESES = ['JANEIRO','FEVEREIRO','MARCO','ABRIL','MAIO','JUNHO','JULHO','AGOSTO','SETEMBRO','OUTUBRO','NOVEMBRO','DEZEMBRO'];
 var MESES_TXT = ['JANEIRO','FEVEREIRO','MARÇO','ABRIL','MAIO','JUNHO','JULHO','AGOSTO','SETEMBRO','OUTUBRO','NOVEMBRO','DEZEMBRO'];
@@ -204,7 +204,8 @@ function segredo_(nome) {
 /* ---------- Portal pelo GitHub (Farol Contábil): as telas chamam as mesmas funções via POST ---------- */
 var PORTAL_API = ['portalAparencia', 'portalLogin', 'portalSair', 'portalDados', 'portalResumo', 'portalArquivo', 'portalParte',
   'portalIndicadores', 'portalIndicadoresLote', 'portalAdmin', 'portalSalvarUsuario', 'portalExcluirUsuario', 'portalCriarContabilidade',
-  'portalCriarCliente', 'portalSalvarRegime', 'portalServidores', 'portalSalvarServidor', 'portalUnificar'];
+  'portalCriarCliente', 'portalSalvarRegime', 'portalServidores', 'portalSalvarServidor', 'portalUnificar', 'portalFinCarteira', 'portalFinSalvarBpo', 'portalFinLoginEmpresa', 'portalFinCliente', 'portalFinImportar',
+  'portalFinCategorizar', 'portalFinSolicitar', 'portalFinJustificar', 'portalFinAnexo', 'portalFinRemoverRegra', 'portalFinPlano'];
 function portalApi_(req) {
   var fn = String(req.fn || '');
   if (PORTAL_API.indexOf(fn) < 0) return { ok: false, erro: 'Função não permitida: ' + fn };
@@ -212,7 +213,10 @@ function portalApi_(req) {
     portalArquivo: portalArquivo, portalParte: portalParte, portalIndicadores: portalIndicadores, portalIndicadoresLote: portalIndicadoresLote,
     portalAdmin: portalAdmin, portalSalvarUsuario: portalSalvarUsuario, portalExcluirUsuario: portalExcluirUsuario,
     portalCriarContabilidade: portalCriarContabilidade, portalCriarCliente: portalCriarCliente, portalSalvarRegime: portalSalvarRegime,
-    portalServidores: portalServidores, portalSalvarServidor: portalSalvarServidor, portalUnificar: portalUnificar };
+    portalServidores: portalServidores, portalSalvarServidor: portalSalvarServidor, portalUnificar: portalUnificar,
+    portalFinCarteira: portalFinCarteira, portalFinSalvarBpo: portalFinSalvarBpo, portalFinLoginEmpresa: portalFinLoginEmpresa, portalFinCliente: portalFinCliente,
+    portalFinImportar: portalFinImportar, portalFinCategorizar: portalFinCategorizar, portalFinSolicitar: portalFinSolicitar, portalFinJustificar: portalFinJustificar,
+    portalFinAnexo: portalFinAnexo, portalFinRemoverRegra: portalFinRemoverRegra, portalFinPlano: portalFinPlano };
   var f = mapa[fn]; if (typeof f !== 'function') return { ok: false, erro: 'Função não encontrada: ' + fn };
   try { return { ok: true, r: f.apply(null, Array.isArray(req.args) ? req.args : []) }; }
   catch (e) { return { ok: false, erro: String(e && e.message ? e.message : e) }; }
@@ -452,7 +456,7 @@ function existente_(pai, nome) {
    - Contabilidades: nomes separados por vírgula, exatamente como as pastas (ou * para todas).
    - Para criar/trocar senha: digite em "Senha nova". No primeiro login ela é criptografada e apagada.
    ====================================================================== */
-var CAB_USU = ['Login', 'Nome', 'Contabilidades (separe por vírgula; * = todas)', 'Senha nova (digite aqui)', 'Senha criptografada (não mexer)', 'Ativo (S/N)', 'Último acesso'];
+var CAB_USU = ['Login', 'Nome', 'Contabilidades (separe por vírgula; * = todas)', 'Senha nova (digite aqui)', 'Senha criptografada (não mexer)', 'Ativo (S/N)', 'Último acesso', 'Empresa (login do BPO: CONTABILIDADE | CLIENTE)'];
 
 function abaUsuarios_(ss) {
   var a = ss.getSheetByName('Usuários');
@@ -499,10 +503,12 @@ function portalLogin(login, senha) {
       aba.getRange(lin, 7).setValue(new Date());
       cache.remove('f_' + login);
       var sessao = { login: login, nome: String(dados[i][1] || login), contabs: String(dados[i][2] || '').split(/[,;\n]/).map(function (s) { return s.trim(); }).filter(String) };
+      var emp = String(dados[i][7] || '').split('|');   // login de empresa (BPO): só vê o financeiro dela
+      if (emp.length === 2 && emp[0].trim() && emp[1].trim()) { sessao.empresa = { contabilidade: emp[0].trim(), cliente: emp[1].trim() }; sessao.contabs = []; }
       var token = Utilities.getUuid() + Utilities.getUuid();
       cache.put('s_' + token, JSON.stringify(sessao), 21600);
       logAcesso_(login, 'login', '');
-      return { ok: true, token: token, nome: sessao.nome, admin: sessao.contabs.indexOf('*') >= 0 };
+      return { ok: true, token: token, nome: sessao.nome, admin: sessao.contabs.indexOf('*') >= 0, empresa: sessao.empresa || null };
     }
   } finally { lock.releaseLock(); }
   cache.put('f_' + login, String(falhas + 1), 900);
@@ -567,6 +573,7 @@ function arvorePortal_() {
 // Lista: contabilidades > clientes (unidades) > meses com resumo, + situação do painel
 function portalDados(token) {
   var s = sessao_(token);
+  if (s.empresa) return { nome: s.nome, empresa: s.empresa, unidades: [], painel: {}, regimes: {}, versao: VERSAO, admin: false };
   var cache = CacheService.getScriptCache();
   var chave = 'lista16_' + versaoDados_() + '_' + versaoCfg_() + '_' + Utilities.base64EncodeWebSafe(s.contabs.join('|')).slice(0, 200);
   var guardado = getGrande_(cache, chave);
@@ -860,7 +867,7 @@ function portalAdmin(token) {
   for (var i = 1; i < d.length; i++) {
     if (!String(d[i][0]).trim()) continue;
     usuarios.push({ login: String(d[i][0]).trim(), nome: String(d[i][1] || ''), contabs: String(d[i][2] || '').split(/[,;\n]/).map(function (s) { return s.trim(); }).filter(String),
-      temSenha: !!(d[i][4] || d[i][3]), ativo: String(d[i][5]).trim().toUpperCase() !== 'N', ultimo: d[i][6] instanceof Date ? d[i][6].toISOString() : '' });
+      temSenha: !!(d[i][4] || d[i][3]), ativo: String(d[i][5]).trim().toUpperCase() !== 'N', ultimo: d[i][6] instanceof Date ? d[i][6].toISOString() : '', empresa: String(d[i][7] || '') });
   }
   var regimes = [], rg = abaRegimes_(planilha_()).getDataRange().getValues();
   for (var j = 1; j < rg.length; j++) if (rg[j][0] && rg[j][1]) regimes.push({ contabilidade: String(rg[j][0]), cliente: String(rg[j][1]), regime: regimeTexto_(rg[j][2]) });
@@ -1200,7 +1207,8 @@ function servidor_(req) {
   } finally { lock.releaseLock(); }
   var senha = String(segredo_('SENHA_BACKUP') || '');
   if (!senha || /^TROQUE/.test(senha)) { backup = false; senha = ''; }   // sem senha definida: não faz backup
-  return { ok: true, backup: backup, reiniciar: reiniciar, senhaBackup: senha };
+  var bpo = null; try { bpo = bpoDoAgente_(req.contabilidade, req.cliente); } catch (e) { }
+  return { ok: true, backup: backup, reiniciar: reiniciar, senhaBackup: senha, bpo: bpo };
 }
 
 function backupConcluir_(req) {
@@ -1567,4 +1575,362 @@ function renomearClientePlanilha_(contab, de, para) {
     for (var i = 0; i < col.length; i++) if (normal_(cs[i][0]) === normal_(contab) && normal_(col[i][0]) === normal_(de)) { col[i][0] = para; mudou = true; }
     if (mudou) aba.getRange(2, a[2] + 1, col.length, 1).setValues(col);
   });
+}
+
+/* ======================================================================
+   FINANCEIRO (BPO) — clientes com o serviço ligado na aba "BPO" da planilha
+   Dados no Drive: _PORTAL_DADOS/_financeiro/CONTABILIDADE/CLIENTE/
+       indice.json                       contas bancárias, meses, última importação
+       contas/<conta>/<AAAA-MM>.json      lançamentos do extrato (OFX), já categorizados
+       regras.json                       regras aprendidas deste cliente
+       ofx/  anexos/                     arquivos originais e comprovantes
+   Quem vê: administrador (operador CPUSIS) tudo; contabilidade só consulta os clientes dela;
+   login de empresa vê só a própria empresa e responde as pendências.
+   ====================================================================== */
+var CAB_BPO = ['Contabilidade', 'Cliente', 'BPO ativo (S/N)', 'Início (AAAA-MM-DD)', 'Operador', 'Observação', 'Último OFX', 'Pendências abertas', 'Saldo nos bancos (R$)', 'Atualizado em'];
+
+// Plano de contas padrão (comércio). g = grupo da DRE; fora = não entra na DRE (só no fluxo de caixa)
+var PLANO_FIN = [
+  { id: 'rec_vendas', nome: 'Vendas / recebimentos de clientes', g: 'Receitas' },
+  { id: 'rec_cartao', nome: 'Recebimentos de cartão', g: 'Receitas' },
+  { id: 'rec_pix', nome: 'PIX recebidos', g: 'Receitas' },
+  { id: 'rec_boleto', nome: 'Boletos recebidos', g: 'Receitas' },
+  { id: 'rec_deposito', nome: 'Depósitos em dinheiro', g: 'Receitas' },
+  { id: 'rec_outras', nome: 'Outras receitas', g: 'Receitas' },
+  { id: 'imp_impostos', nome: 'Impostos (DAS, ICMS, federais)', g: 'Impostos' },
+  { id: 'cus_mercadorias', nome: 'Compras de mercadorias (revenda)', g: 'Custo das mercadorias' },
+  { id: 'cus_frete', nome: 'Fretes sobre compras', g: 'Custo das mercadorias' },
+  { id: 'des_folha', nome: 'Salários e encargos (FGTS, INSS)', g: 'Despesas com pessoal' },
+  { id: 'des_prolabore', nome: 'Pró-labore', g: 'Despesas com pessoal' },
+  { id: 'des_aluguel', nome: 'Aluguel e condomínio', g: 'Despesas operacionais' },
+  { id: 'des_energia', nome: 'Energia elétrica', g: 'Despesas operacionais' },
+  { id: 'des_agua', nome: 'Água e esgoto', g: 'Despesas operacionais' },
+  { id: 'des_telefone', nome: 'Telefone e internet', g: 'Despesas operacionais' },
+  { id: 'des_combustivel', nome: 'Combustível', g: 'Despesas operacionais' },
+  { id: 'des_manutencao', nome: 'Manutenção e reparos', g: 'Despesas operacionais' },
+  { id: 'des_material', nome: 'Material de uso e consumo', g: 'Despesas operacionais' },
+  { id: 'des_sistemas', nome: 'Sistemas e software', g: 'Despesas operacionais' },
+  { id: 'des_contabilidade', nome: 'Contabilidade e honorários', g: 'Despesas operacionais' },
+  { id: 'des_marketing', nome: 'Marketing e propaganda', g: 'Despesas operacionais' },
+  { id: 'des_outras', nome: 'Outras despesas', g: 'Despesas operacionais' },
+  { id: 'fin_tarifas', nome: 'Tarifas bancárias', g: 'Despesas financeiras' },
+  { id: 'fin_taxas_cartao', nome: 'Taxas de cartão', g: 'Despesas financeiras' },
+  { id: 'fin_juros', nome: 'Juros e multas', g: 'Despesas financeiras' },
+  { id: 'fin_iof', nome: 'IOF', g: 'Despesas financeiras' },
+  { id: 'fin_rendimentos', nome: 'Rendimentos de aplicações', g: 'Receitas financeiras' },
+  { id: 'nop_transf', nome: 'Transferência entre contas da empresa', g: 'Fora da DRE', fora: true },
+  { id: 'nop_aplicacao', nome: 'Aplicação financeira', g: 'Fora da DRE', fora: true },
+  { id: 'nop_resgate', nome: 'Resgate de aplicação', g: 'Fora da DRE', fora: true },
+  { id: 'nop_emprestimo_in', nome: 'Empréstimo recebido', g: 'Fora da DRE', fora: true },
+  { id: 'nop_emprestimo_out', nome: 'Pagamento de empréstimo', g: 'Fora da DRE', fora: true },
+  { id: 'nop_retirada', nome: 'Retirada de sócios', g: 'Fora da DRE', fora: true },
+  { id: 'nop_aporte', nome: 'Aporte de sócios', g: 'Fora da DRE', fora: true },
+  { id: 'nop_ativo', nome: 'Compra de ativo imobilizado', g: 'Fora da DRE', fora: true }
+];
+// Regras padrão pelo texto do extrato (s: C = só entradas, D = só saídas, '' = as duas)
+var REGRAS_FIN = [
+  [/\bIOF\b/, 'fin_iof', 'D'],
+  [/TARIFA|\bTAR\b|CESTA DE SERV|PACOTE DE SERV|PACOTE SERV|MANUT(ENCAO)? (DE )?CONTA|ANUIDADE|TX\.? ?MANUT|\bTAXA DE SERV/, 'fin_tarifas', 'D'],
+  [/JUROS|MULTA|ENCARGO|\bMORA\b|ADIANT(AMENTO)? A DEPOSITANTE|\bCHEQUE ESPECIAL/, 'fin_juros', 'D'],
+  [/RENDIMENTO|REND\.? APLIC|REMUNERACAO (DE )?APLIC|JUROS S\/ ?CAPITAL/, 'fin_rendimentos', 'C'],
+  [/CIELO|REDE ?CARD|\bREDE\b|STONE|GETNET|PAGSEGURO|PAGBANK|SUMUP|SAFRAPAY|MERCADO ?PAGO|MERCADOPAGO|SIPAG|\bVERO\b|\bTON\b|BIN ?SERV|GLOBAL ?PAYMENTS|FISERV|CABAL|VISA ELECTRON|MASTERCARD|ELO SERV|ANTECIPACAO (DE )?RECEB/, 'rec_cartao', 'C'],
+  [/SIMPLES NAC|\bDAS\b|RECEITA FED|\bDARF\b|SEFAZ|\bICMS\b|\bGNRE\b|\bIPVA\b|\bIPTU\b|PREFEITURA|\bDAE\b|TRIBUT/, 'imp_impostos', 'D'],
+  [/\bFGTS\b|\bINSS\b|\bGPS\b|SALARIO|FOLHA (DE )?PAG|\bFERIAS\b|RESCISAO|13O SAL/, 'des_folha', 'D'],
+  [/PRO ?LABORE/, 'des_prolabore', 'D'],
+  [/ENERGISA|ELETROACRE|ELETROBRAS|ENERGIA|\bCEMIG\b|\bCOPEL\b|EQUATORIAL|NEOENERGIA|\bENEL\b|\bLIGHT\b|CELPA|COELBA/, 'des_energia', 'D'],
+  [/SANEAMENTO|DEPASA|\bSAAE\b|SANEAGO|SABESP|AGUAS? (DE|DO)|CAERD|COSANPA/, 'des_agua', 'D'],
+  [/\bVIVO\b|\bCLARO\b|\bTIM\b|TELEFONICA|\bOI\b|EMBRATEL|STARLINK|INTERNET|TELECOM|PROVEDOR/, 'des_telefone', 'D'],
+  [/ALUGUEL|CONDOMINIO|LOCACAO DE IMOVEL/, 'des_aluguel', 'D'],
+  [/\bPOSTO\b|COMBUST|SHELL|IPIRANGA|PETROBRAS|\bBR DISTRIB|AUTO POSTO/, 'des_combustivel', 'D'],
+  [/HONORARIO|CONTABIL/, 'des_contabilidade', 'D'],
+  [/APLICACAO|APLIC\.? ?(AUT|FINANC|CDB|RDB)|\bCDB\b|\bRDB\b|POUPANCA|INVEST(IMENTO)? AUT/, 'nop_aplicacao', 'D'],
+  [/RESGATE|RESG\.? ?(AUT|APLIC|CDB|RDB)/, 'nop_resgate', 'C'],
+  [/EMPRESTIMO|EMPREST|FINANCIAMENTO|CAPITAL DE GIRO|\bCCB\b/, 'nop_emprestimo_in', 'C'],
+  [/EMPRESTIMO|EMPREST|FINANCIAMENTO|PARC(ELA)? (DE )?EMPR|CAPITAL DE GIRO|\bCCB\b|CONSORCIO/, 'nop_emprestimo_out', 'D'],
+  [/MESMA TITULARIDADE|ENTRE CONTAS|TRANSF(ERENCIA)? (ENTRE|P\/ ?MESMA)|\bTEF\b/, 'nop_transf', ''],
+  [/DEP(OSITO)?\.? ?(EM )?(DINHEIRO|ESPECIE)|DEP\.? ?CX|DEPOSITO ?(ONLINE|CAIXA|BALCAO|TERMINAL)|DEP ATM|DEPOSITO$/, 'rec_deposito', 'C'],
+  [/COBRANCA|LIQ(UIDACAO)?\.? ?(DE )?(BOLETO|TITULO|COBR)|CRED(ITO)? ?COBR|BOLETO RECEB|TITULO RECEB/, 'rec_boleto', 'C'],
+  [/PIX ?(RECEBIDO|REC|CRED|-? ?CREDITO|ENTRADA)|RECEBIMENTO PIX|CRED(ITO)? PIX|TRANSF(ERENCIA)? RECEBIDA|TED RECEBIDA|DOC RECEBIDO/, 'rec_pix', 'C']
+];
+
+function planoFin_() { var o = {}; PLANO_FIN.forEach(function (c) { o[c.id] = c; }); return o; }
+function finTexto_(t) { return normal_(String(t || '')).replace(/[^A-Z0-9\/\.\- ]/g, ' ').replace(/\s+/g, ' ').trim(); }
+// "PIX ENVIADO 12/11 JOAO DA SILVA 123456" -> "PIX ENVIADO JOAO DA SILVA" (chave das regras aprendidas)
+function finChave_(t) { return finTexto_(t).replace(/\b\d+([\/\.\-]\d+)*\b/g, ' ').replace(/[\/\.\-]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60); }
+
+function finCategorizar_(tr, regras) {
+  var txt = finTexto_(tr.desc), ch = finChave_(tr.desc), sinal = tr.valor < 0 ? 'D' : 'C';
+  for (var i = 0; i < regras.length; i++) {   // regras deste cliente primeiro (aprendidas com o operador)
+    var r = regras[i];
+    if ((!r.sinal || r.sinal === sinal) && r.chave && (ch === r.chave || (r.chave.length >= 8 && ch.indexOf(r.chave) >= 0))) return { cat: r.cat, origem: 'regra' };
+  }
+  for (var j = 0; j < REGRAS_FIN.length; j++) {
+    var p = REGRAS_FIN[j];
+    if ((!p[2] || p[2] === sinal) && p[0].test(txt)) return { cat: p[1], origem: 'padrao' };
+  }
+  return { cat: '', origem: '' };
+}
+
+/* ---------- planilha "BPO" ---------- */
+function abaBpo_(ss) {
+  var a = ss.getSheetByName('BPO');
+  if (a) return a;
+  a = ss.insertSheet('BPO');
+  a.getRange(1, 1, 1, CAB_BPO.length).setValues([CAB_BPO]).setFontWeight('bold').setBackground('#0f6b55').setFontColor('#ffffff');
+  a.setFrozenRows(1); a.getRange('D:D').setNumberFormat('@');
+  return a;
+}
+function bpoLinhas_() {
+  var d = abaBpo_(planilha_()).getDataRange().getValues(), o = [];
+  for (var i = 1; i < d.length; i++) {
+    if (!String(d[i][0]).trim() || !String(d[i][1]).trim()) continue;
+    var ini = d[i][3] instanceof Date ? Utilities.formatDate(d[i][3], Session.getScriptTimeZone(), 'yyyy-MM-dd') : String(d[i][3] || '').trim();
+    o.push({ lin: i + 1, contabilidade: String(d[i][0]).trim(), cliente: String(d[i][1]).trim(), ativo: sn_(d[i][2], false), inicio: ini, operador: String(d[i][4] || ''),
+      obs: String(d[i][5] || ''), ultimoOfx: d[i][6] instanceof Date ? d[i][6].toISOString() : '', pendencias: Number(d[i][7] || 0), saldo: Number(d[i][8] || 0) });
+  }
+  return o;
+}
+function bpoDe_(contab, cliente) {
+  return bpoLinhas_().filter(function (b) { return normal_(b.contabilidade) === normal_(contab) && normal_(b.cliente) === normal_(cliente); })[0] || null;
+}
+// o agente pergunta toda noite; ele manda o nome do cliente sem a subpasta ("COMERCIAL 59" vale para "COMERCIAL 59 / MATRIZ")
+function bpoDoAgente_(contab, cliente) {
+  var b = bpoLinhas_().filter(function (x) { return x.ativo && normal_(x.contabilidade) === normal_(contab) && normal_(x.cliente.split(' / ')[0]) === normal_(cliente); });
+  if (!b.length) return { ativo: false };
+  return { ativo: true, inicio: b.map(function (x) { return x.inicio; }).sort()[0] || '', empresas: b.map(function (x) { return { cliente: x.cliente, inicio: x.inicio }; }) };
+}
+
+/* ---------- acesso ---------- */
+// nivel: 'ver' (contabilidade e empresa), 'responder' (empresa e operador), 'operar' (só operador)
+function finAcesso_(token, contab, cliente, nivel) {
+  var s = sessao_(token), adm = s.contabs.indexOf('*') >= 0;
+  if (adm) return { s: s, operador: true };
+  if (s.empresa) {
+    if (normal_(s.empresa.contabilidade) !== normal_(contab) || normal_(s.empresa.cliente) !== normal_(cliente)) throw new Error('Sem acesso a esta empresa.');
+    if (nivel === 'operar') throw new Error('Só o operador do BPO pode fazer isso.');
+    return { s: s, empresa: true };
+  }
+  if (nivel !== 'ver' || !podeVer_(s, contab)) throw new Error('Sem acesso a esta empresa.');
+  return { s: s, contabilidade: true };
+}
+
+/* ---------- Drive ---------- */
+function finRaiz_() {
+  var props = PropertiesService.getScriptProperties(), id = props.getProperty('FIN_ID');
+  if (id) { try { var f = DriveApp.getFolderById(id); if (!f.isTrashed()) return f; } catch (e) { } }
+  var p = filha_(filha_(pastaRaiz_(), PASTA_PORTAL), '_financeiro'); props.setProperty('FIN_ID', p.getId()); return p;
+}
+function finPasta_(contab, cliente) { return filha_(filha_(finRaiz_(), contab), cliente); }
+function arqJson_(pasta, nome) { var it = pasta.getFilesByName(nome); while (it.hasNext()) { var f = it.next(); if (!f.isTrashed()) return f; } return null; }
+function lerJson_(pasta, nome, padrao) { var f = arqJson_(pasta, nome); if (!f) return padrao; try { return JSON.parse(f.getBlob().getDataAsString('UTF-8')); } catch (e) { return padrao; } }
+function gravarJson_(pasta, nome, obj) { var f = arqJson_(pasta, nome), t = JSON.stringify(obj); if (f) f.setContent(t); else pasta.createFile(nome, t, 'application/json'); }
+function finIdConta_(c) { return [c.banco || 'banco', c.agencia || '0', c.conta || '0'].join('-').replace(/[^\w\-]/g, ''); }
+
+var BANCOS_BR = { '001': 'Banco do Brasil', '003': 'Banco da Amazônia', '004': 'Banco do Nordeste', '033': 'Santander', '041': 'Banrisul', '070': 'BRB', '077': 'Inter', '104': 'Caixa',
+  '136': 'Unicred', '197': 'Stone', '208': 'BTG Pactual', '212': 'Original', '237': 'Bradesco', '260': 'Nubank', '290': 'PagBank', '323': 'Mercado Pago', '336': 'C6 Bank',
+  '341': 'Itaú', '380': 'PicPay', '403': 'Cora', '422': 'Safra', '748': 'Sicredi', '756': 'Sicoob', '085': 'Ailos', '133': 'Cresol', '274': 'Grafeno', '332': 'Acesso', '637': 'Sofisa' };
+
+/* ---------- carteira (operador) ---------- */
+function portalFinPlano(token) { sessao_(token); return { plano: PLANO_FIN, bancos: BANCOS_BR }; }
+
+function portalFinCarteira(token) {
+  var s = sessao_(token), adm = s.contabs.indexOf('*') >= 0;
+  var L = bpoLinhas_().filter(function (b) { return adm || podeVer_(s, b.contabilidade); });
+  var usu = abaUsuarios_(planilha_()).getDataRange().getValues(), logins = {};
+  for (var i = 1; i < usu.length; i++) if (usu[i][7]) logins[normal_(String(usu[i][7]).replace(/\s*\|\s*/, '|'))] = String(usu[i][0]);
+  L.forEach(function (b) { b.login = logins[normal_(b.contabilidade + '|' + b.cliente)] || ''; delete b.lin; });
+  return { carteira: L, operador: adm, plano: PLANO_FIN };
+}
+function portalFinSalvarBpo(token, b) {
+  admin_(token);
+  var contab = String(b.contabilidade || '').trim(), cliente = String(b.cliente || '').trim();
+  if (!contab || !cliente) throw new Error('Escolha a contabilidade e o cliente.');
+  if (b.inicio && !/^\d{4}-\d{2}-\d{2}$/.test(b.inicio)) throw new Error('Data de início inválida.');
+  var lock = LockService.getScriptLock(); lock.waitLock(30000);
+  try {
+    var aba = abaBpo_(planilha_()), x = bpoDe_(contab, cliente), lin = x ? x.lin : Math.max(aba.getLastRow(), 1) + 1;
+    aba.getRange(lin, 4).setNumberFormat('@');
+    aba.getRange(lin, 1, 1, 6).setValues([[contab, cliente, b.ativo ? 'S' : 'N', b.inicio || '', String(b.operador || ''), String(b.obs || '')]]);
+  } finally { lock.releaseLock(); }
+  return portalFinCarteira(token);
+}
+// cria/atualiza o login da empresa (vê só o financeiro dela)
+function portalFinLoginEmpresa(token, u) {
+  admin_(token);
+  var login = String(u.login || '').trim().toLowerCase();
+  if (!/^[a-z0-9._@-]{3,40}$/.test(login)) throw new Error('Login: use de 3 a 40 letras, números, ponto, hífen ou @ (sem espaço).');
+  if (u.senha && String(u.senha).length < 6) throw new Error('A senha precisa ter pelo menos 6 caracteres.');
+  var emp = String(u.contabilidade || '').trim() + ' | ' + String(u.cliente || '').trim();
+  var lock = LockService.getScriptLock(); lock.waitLock(30000);
+  try {
+    var aba = abaUsuarios_(planilha_()), d = aba.getDataRange().getValues(), lin = -1;
+    if (!String(aba.getRange(1, 8).getValue())) aba.getRange(1, 8).setValue(CAB_USU[7]).setFontWeight('bold').setBackground('#0f6b55').setFontColor('#ffffff');
+    for (var i = 1; i < d.length; i++) {
+      var l = String(d[i][0]).trim().toLowerCase();
+      if (l === login) { if (normal_(String(d[i][7] || '').replace(/\s*\|\s*/, '|')) !== normal_(emp.replace(/\s*\|\s*/, '|'))) throw new Error('Já existe o login "' + login + '" para outro uso.'); lin = i + 1; }
+    }
+    if (lin < 0 && !u.senha) throw new Error('Informe a senha do login novo.');
+    if (lin < 0) lin = Math.max(aba.getLastRow(), 1) + 1;
+    var hash = lin <= d.length ? String(d[lin - 1][4] || '') : '';
+    if (u.senha) { var sal = Utilities.getUuid().replace(/-/g, '').slice(0, 16); hash = sal + '$' + hashSenha_(sal, String(u.senha)); }
+    aba.getRange(lin, 1, 1, 8).setValues([[login, String(u.nome || login), '', '', hash, u.ativo === false ? 'N' : 'S', lin <= d.length ? d[lin - 1][6] : '', emp]]);
+  } finally { lock.releaseLock(); }
+  return portalFinCarteira(token);
+}
+
+/* ---------- dados de um cliente ---------- */
+// mes = 'AAAA-MM' (vazio = o mais recente com extrato)
+function portalFinCliente(token, contab, cliente, mes) {
+  var ac = finAcesso_(token, contab, cliente, 'ver');
+  var bpo = bpoDe_(contab, cliente);
+  if (!bpo && !ac.operador) throw new Error('Esta empresa não está no BPO.');
+  var pasta = finPasta_(contab, cliente), ind = lerJson_(pasta, 'indice.json', { contas: {}, meses: [] });
+  var meses = (ind.meses || []).slice().sort().reverse();
+  var hoje = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM');
+  if (!mes || !/^\d{4}-\d{2}$/.test(mes)) mes = meses.indexOf(hoje) >= 0 ? hoje : (meses.filter(function (m) { return m <= hoje; })[0] || meses[0] || hoje);
+  var contas = {};
+  Object.keys(ind.contas || {}).forEach(function (id) {
+    var pc = existente_(existente_(pasta, 'contas'), id);
+    contas[id] = pc ? lerJson_(pc, mes + '.json', null) : null;
+  });
+  // pendências abertas de todos os meses (para a fila), sem carregar meses inteiros duas vezes
+  var pend = [];
+  meses.slice(0, 6).forEach(function (m) {
+    Object.keys(ind.contas || {}).forEach(function (id) {
+      var d = m === mes ? contas[id] : (function () { var pc = existente_(existente_(pasta, 'contas'), id); return pc ? lerJson_(pc, m + '.json', null) : null; })();
+      (d && d.trans || []).forEach(function (t) { if (t.st && t.st !== 'ok') pend.push({ conta: id, mes: m, t: t }); });
+    });
+  });
+  return { bpo: bpo ? { ativo: bpo.ativo, inicio: bpo.inicio, operador: bpo.operador } : null, indice: ind, meses: meses, mes: mes, contas: contas,
+    pendencias: pend, regras: ac.operador ? lerJson_(pasta, 'regras.json', []) : [], plano: PLANO_FIN, papel: ac.operador ? 'operador' : (ac.empresa ? 'empresa' : 'contabilidade') };
+}
+
+/* ---------- importação do OFX (lido no navegador, conferido aqui) ---------- */
+function portalFinImportar(token, contab, cliente, ofx) {
+  finAcesso_(token, contab, cliente, 'operar');
+  if (!ofx || !Array.isArray(ofx.trans)) throw new Error('Arquivo OFX sem lançamentos.');
+  var conta = { banco: String(ofx.banco || '').replace(/\D/g, '').slice(-3).padStart(3, '0'), agencia: String(ofx.agencia || '').trim(), conta: String(ofx.conta || '').trim() };
+  conta.nome = BANCOS_BR[conta.banco] || String(ofx.bancoNome || ('Banco ' + conta.banco));
+  var id = finIdConta_(conta), pasta = finPasta_(contab, cliente), regras = lerJson_(pasta, 'regras.json', []);
+  var lock = LockService.getScriptLock(); lock.waitLock(60000);
+  var res = { conta: conta.nome + ' ag ' + conta.agencia + ' cc ' + conta.conta, novos: 0, repetidos: 0, pendentes: 0, meses: [] };
+  try {
+    try { if (ofx.texto) filha_(pasta, 'ofx').createFile(Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd_HHmm') + '_' + String(ofx.arquivo || 'extrato.ofx').replace(/[\\\/:*?"<>|]/g, '-'), String(ofx.texto), 'text/plain'); } catch (e) { }
+    var porMes = {};
+    ofx.trans.forEach(function (t, i) {
+      var data = String(t.data || ''); if (!/^\d{4}-\d{2}-\d{2}$/.test(data)) return;
+      var valor = Math.round(Number(t.valor) * 100) / 100; if (!isFinite(valor) || !valor) return;
+      var tid = String(t.fitid || '').trim() || (data + '_' + valor + '_' + finChave_(t.desc).slice(0, 20) + '_' + i);
+      (porMes[data.slice(0, 7)] = porMes[data.slice(0, 7)] || []).push({ id: tid, data: data, valor: valor, desc: String(t.desc || '').slice(0, 200), doc: String(t.doc || '').slice(0, 40) });
+    });
+    var pc = filha_(filha_(pasta, 'contas'), id);
+    Object.keys(porMes).sort().forEach(function (m) {
+      var d = lerJson_(pc, m + '.json', { conta: id, mes: m, trans: [] }), ja = {};
+      d.trans.forEach(function (t) { ja[t.id] = 1; });
+      porMes[m].forEach(function (t) {
+        if (ja[t.id]) { res.repetidos++; return; }
+        var c = finCategorizar_(t, regras);
+        t.cat = c.cat; t.orig = c.origem; t.st = c.cat ? 'ok' : 'pend';
+        if (!c.cat) res.pendentes++;
+        d.trans.push(t); ja[t.id] = 1; res.novos++;
+      });
+      d.trans.sort(function (a, b) { return a.data < b.data ? -1 : a.data > b.data ? 1 : 0; });
+      gravarJson_(pc, m + '.json', d); res.meses.push(m);
+    });
+    var ind = lerJson_(pasta, 'indice.json', { contas: {}, meses: [] });
+    var ci = ind.contas[id] || {}; ci.banco = conta.banco; ci.nome = conta.nome; ci.agencia = conta.agencia; ci.conta = conta.conta;
+    if (ofx.saldo != null && ofx.dataSaldo && (!ci.dataSaldo || String(ofx.dataSaldo) >= ci.dataSaldo)) { ci.saldo = Number(ofx.saldo); ci.dataSaldo = String(ofx.dataSaldo); }
+    ci.ultimaImportacao = new Date().toISOString(); ind.contas[id] = ci;
+    res.meses.forEach(function (m) { if (ind.meses.indexOf(m) < 0) ind.meses.push(m); }); ind.meses.sort();
+    ind.ultimoOfx = ci.ultimaImportacao;
+    gravarJson_(pasta, 'indice.json', ind);
+  } finally { lock.releaseLock(); }
+  finAtualizarPlanilha_(contab, cliente);
+  return res;
+}
+
+// conta pendências e saldo e grava na aba BPO (visão da carteira)
+function finAtualizarPlanilha_(contab, cliente) {
+  try {
+    var pasta = finPasta_(contab, cliente), ind = lerJson_(pasta, 'indice.json', { contas: {}, meses: [] }), pend = 0, saldo = 0;
+    Object.keys(ind.contas).forEach(function (id) {
+      saldo += Number(ind.contas[id].saldo || 0);
+      var pc = existente_(existente_(pasta, 'contas'), id);
+      (ind.meses || []).slice(-6).forEach(function (m) { var d = pc ? lerJson_(pc, m + '.json', null) : null; (d && d.trans || []).forEach(function (t) { if (t.st && t.st !== 'ok') pend++; }); });
+    });
+    var x = bpoDe_(contab, cliente); if (!x) return;
+    abaBpo_(planilha_()).getRange(x.lin, 7, 1, 4).setValues([[ind.ultimoOfx ? new Date(ind.ultimoOfx) : '', pend, Math.round(saldo * 100) / 100, new Date()]]);
+  } catch (e) { }
+}
+
+function finAlterar_(contab, cliente, conta, mes, fn) {
+  var pasta = finPasta_(contab, cliente), pc = existente_(existente_(pasta, 'contas'), conta);
+  if (!pc) throw new Error('Conta não encontrada.');
+  var lock = LockService.getScriptLock(); lock.waitLock(30000);
+  try { var d = lerJson_(pc, mes + '.json', null); if (!d) throw new Error('Mês não encontrado.'); var r = fn(d, pasta); gravarJson_(pc, mes + '.json', d); return r; }
+  finally { lock.releaseLock(); }
+}
+
+// operador define a categoria; com "regra", vale para os próximos lançamentos parecidos (e os pendentes deste mês)
+function portalFinCategorizar(token, contab, cliente, conta, mes, ids, cat, criarRegra) {
+  finAcesso_(token, contab, cliente, 'operar');
+  if (!planoFin_()[cat]) throw new Error('Categoria inválida.');
+  ids = [].concat(ids || []);
+  var n = finAlterar_(contab, cliente, conta, mes, function (d, pasta) {
+    var alvo = d.trans.filter(function (t) { return ids.indexOf(t.id) >= 0; }), extra = 0;
+    alvo.forEach(function (t) { t.cat = cat; t.orig = 'manual'; t.st = 'ok'; });
+    if (criarRegra && alvo.length) {
+      var regras = lerJson_(pasta, 'regras.json', []), ch = finChave_(alvo[0].desc), sinal = alvo[0].valor < 0 ? 'D' : 'C';
+      if (ch.length >= 4) {
+        regras = regras.filter(function (r) { return !(r.chave === ch && r.sinal === sinal); });
+        regras.unshift({ chave: ch, sinal: sinal, cat: cat, criada: new Date().toISOString() });
+        gravarJson_(pasta, 'regras.json', regras.slice(0, 500));
+        d.trans.forEach(function (t) { if (t.st === 'pend' && finCategorizar_(t, regras).cat === cat && finCategorizar_(t, regras).origem === 'regra') { t.cat = cat; t.orig = 'regra'; t.st = 'ok'; extra++; } });
+      }
+    }
+    return alvo.length + extra;
+  });
+  finAtualizarPlanilha_(contab, cliente);
+  return { ok: true, alterados: n };
+}
+// operador pede para a empresa justificar
+function portalFinSolicitar(token, contab, cliente, conta, mes, ids, pergunta) {
+  finAcesso_(token, contab, cliente, 'operar');
+  ids = [].concat(ids || []);
+  finAlterar_(contab, cliente, conta, mes, function (d) {
+    d.trans.forEach(function (t) { if (ids.indexOf(t.id) >= 0 && t.st !== 'ok') { t.st = 'cliente'; t.pergunta = String(pergunta || '').slice(0, 300); } });
+  });
+  return { ok: true };
+}
+// empresa (ou operador) responde; anexo = { nome, tipo, base64 } até 5 MB
+function portalFinJustificar(token, contab, cliente, conta, mes, id, texto, anexo) {
+  var ac = finAcesso_(token, contab, cliente, 'responder');
+  if (!String(texto || '').trim() && !anexo) throw new Error('Escreva a justificativa ou anexe o comprovante.');
+  var anexoId = '';
+  if (anexo && anexo.base64) {
+    var bytes = Utilities.base64Decode(anexo.base64);
+    if (bytes.length > 5 * 1024 * 1024) throw new Error('O comprovante pode ter no máximo 5 MB.');
+    var nome = mes + '_' + String(id).replace(/[^\w\-]/g, '').slice(0, 30) + '_' + String(anexo.nome || 'comprovante').replace(/[\\\/:*?"<>|]/g, '-');
+    anexoId = filha_(finPasta_(contab, cliente), 'anexos').createFile(Utilities.newBlob(bytes, anexo.tipo || 'application/octet-stream', nome)).getId();
+  }
+  finAlterar_(contab, cliente, conta, mes, function (d) {
+    var t = d.trans.filter(function (x) { return x.id === id; })[0]; if (!t) throw new Error('Lançamento não encontrado.');
+    t.just = { texto: String(texto || '').slice(0, 1000), anexo: anexoId || (t.just && t.just.anexo) || '', anexoNome: anexo ? String(anexo.nome || '') : ((t.just && t.just.anexoNome) || ''), quem: ac.s.nome, quando: new Date().toISOString() };
+    if (t.st !== 'ok') t.st = 'just';
+  });
+  finAtualizarPlanilha_(contab, cliente);
+  return { ok: true };
+}
+function portalFinAnexo(token, contab, cliente, anexoId) {
+  finAcesso_(token, contab, cliente, 'ver');
+  var f = DriveApp.getFileById(anexoId), pai = f.getParents();
+  var ok = false; while (pai.hasNext()) { if (pai.next().getId() === filha_(finPasta_(contab, cliente), 'anexos').getId()) ok = true; }
+  if (!ok) throw new Error('Arquivo não pertence a esta empresa.');
+  var b = f.getBlob(); return { nome: f.getName(), tipo: b.getContentType(), base64: Utilities.base64Encode(b.getBytes()) };
+}
+function portalFinRemoverRegra(token, contab, cliente, chave, sinal) {
+  finAcesso_(token, contab, cliente, 'operar');
+  var pasta = finPasta_(contab, cliente), regras = lerJson_(pasta, 'regras.json', []);
+  gravarJson_(pasta, 'regras.json', regras.filter(function (r) { return !(r.chave === chave && r.sinal === sinal); }));
+  return { ok: true };
 }
