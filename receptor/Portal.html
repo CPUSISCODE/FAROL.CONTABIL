@@ -779,6 +779,36 @@ function nivelVigia(s) {
   return h <= 8 ? { n: 0, t: 'ativo' } : (h <= 26 ? { n: 1, t: 'sem sinal ' + haTempo(s.sinal) } : { n: 2, t: 'sem sinal ' + haTempo(s.sinal) });
 }
 var PILL_N = ['', 'warn', 'bad'];
+// online pelo monitor (agente 1.7+ manda a cada 10 min)
+function nivelOnline(s) {
+  if (!s.monitorEm) return { n: -1, t: 'agente sem monitor' };
+  var m = (Date.now() - new Date(s.monitorEm).getTime()) / 6e4;
+  return m <= 25 ? { n: 0, t: 'online' } : { n: m <= 120 ? 1 : 2, t: 'offline ' + haTempo(s.monitorEm) };
+}
+// discos, saúde e temperatura: devolve { html, n } (n = pior nível)
+function saudeServidor(s) {
+  var M = s.monitor; if (!M) return { html: '<span class="sub">aparece com o agente 1.7</span>', n: -1 };
+  var pior = 0, partes = [];
+  (M.discos || []).forEach(function (d) {
+    var p = d.totalGB ? d.livreGB / d.totalGB * 100 : 100, n = p < 5 ? 2 : (p < 15 ? 1 : 0); pior = Math.max(pior, n);
+    partes.push('<span class="pill ' + PILL_N[n] + '">' + esc(d.letra) + ' ' + Math.round(p) + '% livre</span><span class="sub">' + esc(String(d.livreGB).replace('.', ',')) + ' de ' + esc(String(d.totalGB).replace('.', ',')) + ' GB</span>');
+  });
+  (M.fisicos || []).forEach(function (f) {
+    var ruim = f.saude && !/healthy|íntegro|ok/i.test(f.saude), gasto = f.desgaste != null && f.desgaste >= 80, quente = f.temp != null && f.temp >= 55;
+    if (ruim || gasto || quente) {
+      var n = ruim ? 2 : 1; pior = Math.max(pior, n);
+      partes.push('<span class="pill ' + PILL_N[n] + '">' + (ruim ? 'disco com problema' : gasto ? 'SSD gasto ' + f.desgaste + '%' : 'disco quente ' + f.temp + '°C') + '</span><span class="sub">' + esc(f.nome) + '</span>');
+    }
+  });
+  var temps = (M.fisicos || []).filter(function (f) { return f.temp != null; }).map(function (f) { return f.temp; });
+  var t = [];
+  if (M.tempCpu != null) { var nc = M.tempCpu >= 85 ? 2 : (M.tempCpu >= 75 ? 1 : 0); pior = Math.max(pior, nc); t.push('<span' + (nc ? ' style="color:var(--' + (nc === 2 ? 'bad' : 'warn') + ')"' : '') + '>placa ' + M.tempCpu + '°C</span>'); }
+  if (temps.length) t.push('discos até ' + Math.max.apply(null, temps) + '°C');
+  partes.push('<span class="sub">' + (t.length ? t.join(' · ') : 'temperatura não informada') + (M.memTotalGB ? ' · memória ' + esc(String(M.memLivreGB).replace('.', ',')) + ' de ' + esc(String(M.memTotalGB).replace('.', ',')) + ' GB livre' : '') + '</span>');
+  if (M.mysql === false) { pior = 2; partes.unshift('<span class="pill bad">MySQL sem resposta</span>'); }
+  return { html: partes.join(''), n: pior };
+}
+function copiar(txt, b) { try { navigator.clipboard.writeText(txt); var o = b.textContent; b.textContent = 'copiado'; setTimeout(function () { b.textContent = o; }, 1500); } catch (e) { prompt('Copie:', txt); } }
 function telaServidores() {
   marcarNav('servidores'); ATUAL = null; RESUMO = null;
   $('tela').innerHTML = '<div class="cab"><div><h1>Servidores dos clientes</h1><p class="sub">Backup do banco do LC e vigia do MySQL · só a CPUSIS vê esta tela</p></div><button class="btn sec" type="button" id="sAtual">Atualizar</button></div><div id="sCorpo">' + carregando('Lendo os servidores…') + '</div>';
@@ -793,29 +823,46 @@ function desenharServidores() {
   var trav7 = SRV.eventos.filter(function (e) { return Date.now() - new Date(e.quando).getTime() < 7 * 864e5 && e.tipo !== 'Reinício programado'; });
   var vigOk = L.filter(function (s) { return nivelVigia(s).n === 0; });
   var esp = L.reduce(function (a, s) { return a + (s.espacoMB || 0); }, 0);
+  var comMon = L.filter(function (s) { return s.monitorEm; }), onl = comMon.filter(function (s) { return nivelOnline(s).n === 0; }), alerta = L.filter(function (s) { return saudeServidor(s).n === 2; });
   var kpi = function (r, v, d, cor, tag, tcls) { return '<div class="kpi kpi2"><span class="r">' + r + '</span><span class="v"' + (cor ? ' style="color:var(--' + cor + ')"' : '') + '>' + v + '</span><span class="d">' + d + '</span>' + (tag ? '<span class="tag ' + tcls + '">' + tag + '</span>' : '') + '</div>'; };
   var html = (SRV.senhaOk ? '' : '<div class="card aviso bad"><b>Backup desligado:</b> falta definir a SENHA_BACKUP no Codigo.gs (bloco CONFIG). Sem ela nenhum servidor faz backup.</div>') +
-    '<div class="kpis kpis4">' +
+    '<div class="kpis">' +
+    kpi('Online agora', onl.length + ' de ' + comMon.length, comMon.length < L.length ? (L.length - comMon.length) + ' ainda sem o monitor (agente antigo)' : 'sinal nos últimos 25 min', onl.length === comMon.length ? 'ok' : 'bad', alerta.length ? alerta.length + ' com alerta' : '', 'dn') +
     kpi('Backups em dia', emDia.length + ' de ' + comBk.length, 'último backup nas últimas 30 h', emDia.length === comBk.length ? 'ok' : 'bad', comBk.length && emDia.length < comBk.length ? (comBk.length - emDia.length) + ' atrasado(s)' : '', 'dn') +
     kpi('Vigia do MySQL ativo', vigOk.length + ' de ' + L.length, 'sinal de vida nas últimas 8 h', vigOk.length === L.length ? 'ok' : 'warn', '', '') +
     kpi('Travamentos (7 dias)', trav7.length, trav7.length ? 'o vigia reiniciou o MySQL sozinho' : 'nenhum travamento', trav7.length ? 'warn' : 'ok', '', '') +
     kpi('Espaço dos backups', esp >= 1024 ? (esp / 1024).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + ' GB' : Math.round(esp) + ' MB', 'somando todas as cópias guardadas', '', '', '') + '</div>';
   html += '<section class="card"><div class="ch"><h2>Servidores</h2><span>' + (SRV.pasta ? '<a href="' + esc(SRV.pasta) + '" target="_blank" rel="noopener">abrir a pasta dos backups no Drive</a>' : '') + '</span></div>' +
-    (L.length ? '<div class="tbl sem srvt"><table><thead><tr><th>Cliente</th><th>Vigia do MySQL</th><th>Último backup</th><th class="n">Banco</th><th>Travamentos 30 dias</th><th>Opções</th><th></th></tr></thead><tbody>' +
+    (L.length ? '<div class="tbl sem srvt"><table><thead><tr><th>Cliente</th><th>Online</th><th>Discos e temperatura</th><th>Vigia do MySQL</th><th>Último backup</th><th>Travamentos 30 dias</th><th>Opções e comandos</th></tr></thead><tbody>' +
     L.map(function (s, i) {
-      var b = nivelBackup(s), v = nivelVigia(s);
-      return '<tr><td class="b">' + esc(s.cliente) + '<span class="sub">' + esc(s.contabilidade) + (s.maquina ? ' · ' + esc(s.maquina) : '') + (s.versao ? ' · v' + esc(s.versao) : '') + '</span></td>' +
+      var b = nivelBackup(s), v = nivelVigia(s), on = nivelOnline(s), sa = saudeServidor(s);
+      return '<tr><td class="b">' + esc(s.cliente) + '<span class="sub">' + esc(s.contabilidade) + (s.maquina ? ' · ' + esc(s.maquina) : '') + (s.versao ? ' · v' + esc(s.versao) : '') + '</span>' +
+          (s.bancoMB ? '<span class="sub">banco ' + esc(String(Math.round(s.bancoMB))) + ' MB</span>' : '') + '</td>' +
+        '<td>' + (on.n < 0 ? '<span class="sub">' + esc(on.t) + '</span>' : '<span class="pill ' + PILL_N[on.n] + '">' + esc(on.t) + '</span>' + (s.monitor && s.monitor.ligadoDesde ? '<span class="sub">ligado desde ' + esc(dataHora(s.monitor.ligadoDesde.replace(' ', 'T'))) + '</span>' : '')) + '</td>' +
+        '<td>' + sa.html + '</td>' +
         '<td><span class="pill ' + PILL_N[v.n] + '">' + esc(v.t) + '</span>' + (s.sinal ? '<span class="sub">' + esc(dataHora(s.sinal)) + '</span>' : '') + '</td>' +
         '<td>' + (b.n < 0 ? '<span class="pill info">desligado</span>' : '<span class="pill ' + PILL_N[b.n] + '">' + esc(b.t) + '</span>') +
           (s.ultimoBackup ? '<span class="sub">' + esc(dataHora(s.ultimoBackup)) + ' · ' + esc(String(s.tamanhoMB).replace('.', ',')) + ' MB</span>' : '') +
           (s.situacao === 'ERRO' && s.mensagem ? '<span class="sub" style="color:var(--bad)">' + esc(s.mensagem) + '</span>' : '') + '</td>' +
-        '<td class="n">' + (s.bancoMB ? esc(String(Math.round(s.bancoMB))) + ' MB' : '') + '</td>' +
         '<td>' + (s.travamentos30 ? '<span class="pill ' + (s.travamentos30 >= 5 ? 'bad' : 'warn') + '">' + s.travamentos30 + '×</span><span class="sub">último ' + esc(haTempo(s.ultimoTravamento)) + '</span>' : '<span class="sub">nenhum</span>') + '</td>' +
         '<td><label class="chave"><input type="checkbox" data-s="' + i + '" data-k="backup"' + (s.backup ? ' checked' : '') + '>Backup diário</label><br>' +
-          '<label class="chave"><input type="checkbox" data-s="' + i + '" data-k="reiniciar"' + (s.reiniciar ? ' checked' : '') + '>Reiniciar MySQL de madrugada</label></td>' +
-        '<td>' + (s.arquivoId ? '<a class="btn sec" href="https://drive.google.com/file/d/' + encodeURIComponent(s.arquivoId) + '/view" target="_blank" rel="noopener">Baixar</a>' : '') + '</td></tr>';
+          '<label class="chave"><input type="checkbox" data-s="' + i + '" data-k="reiniciar"' + (s.reiniciar ? ' checked' : '') + '>Reiniciar MySQL de madrugada</label>' +
+          (s.arquivoId ? '<br><a class="lnk" href="https://drive.google.com/file/d/' + encodeURIComponent(s.arquivoId) + '/view" target="_blank" rel="noopener">baixar o último backup</a>' : '') + '<br>' +
+        '<label class="chave"><input type="checkbox" data-s="' + i + '" data-k="remoto"' + (s.remoto ? ' checked' : '') + '>Acesso remoto (RustDesk)</label>' +
+          (s.rdId ? '<span class="sub">ID <b class="m">' + esc(s.rdId.replace(/(\d{3})(?=\d)/g, '$1 ')) + '</b> <button class="lnk" type="button" data-cp="' + esc(s.rdId) + '">copiar</button>' +
+            (s.rdSenha ? ' · senha <button class="lnk" type="button" data-cp="' + esc(s.rdSenha) + '">copiar</button>' : '') + '</span>' : (s.remoto ? '<span class="sub">instalando… o ID aparece em até 20 min</span>' : '')) +
+          '<div class="ferr" style="margin-top:6px"><select data-cmd="' + i + '" aria-label="comando para ' + esc(s.cliente) + '"><option value="">comando…</option>' +
+          [['reiniciar_mysql', 'Reiniciar o MySQL'], ['backup_agora', 'Fazer backup agora'], ['reenviar_mes', 'Reenviar XML de um mês'], ['atualizar_agente', 'Rodar o agente agora'], ['enviar_log', 'Ver o log do agente'], ['info', 'Informações do sistema']]
+            .map(function (o) { return '<option value="' + o[0] + '">' + o[1] + '</option>'; }).join('') + '</select><button class="btn sec" type="button" data-run="' + i + '"' + (s.monitorEm ? '' : ' disabled title="precisa do agente 1.7"') + '>Enviar</button></div></td></tr>';
     }).join('') + '</tbody></table></div>' : '<p class="nota">Nenhum servidor ainda. Eles aparecem aqui sozinhos depois da primeira rodada da noite com a versão 1.6 do programa.</p>') +
     '<p class="nota">O vigia testa o MySQL a cada 5 minutos e reinicia sozinho se ele travar (no máximo 3 vezes por hora). O reinício de madrugada só acontece entre 00:00 e 05:59, nunca em horário de movimento. Os backups são criptografados: para abrir é preciso a senha de backup.</p></section>';
+  var CMDN = { reiniciar_mysql: 'Reiniciar o MySQL', backup_agora: 'Backup agora', reenviar_mes: 'Reenviar XML', atualizar_agente: 'Rodar o agente', enviar_log: 'Log do agente', info: 'Informações do sistema' };
+  html += '<section class="card"><div class="ch"><h2>Comandos enviados</h2><span>o servidor executa em até 10 minutos</span></div>' +
+    ((SRV.comandos || []).length ? '<ul class="evl">' + SRV.comandos.slice(0, 30).map(function (c) {
+      var cls = c.situacao === 'ok' ? '' : (c.situacao === 'erro' ? 'bad' : 'warn'), st = { pendente: 'aguardando o servidor', enviado: 'executando', ok: 'feito', erro: 'erro' }[c.situacao] || c.situacao;
+      return '<li><span class="q">' + esc(dataHora(c.quando)) + '</span><div><b>' + esc(c.cliente) + '</b> · ' + esc(CMDN[c.cmd] || c.cmd) + (c.args ? ' ' + esc(c.args) : '') + ' <span class="pill ' + cls + '">' + esc(st) + '</span> <span class="sub" style="display:inline">por ' + esc(c.quem) + '</span>' +
+        (c.resultado ? (c.resultado.length > 160 || /\n/.test(c.resultado) ? '<details><summary>ver resultado</summary><pre style="white-space:pre-wrap;font-size:12px;max-height:360px;overflow:auto">' + esc(c.resultado) + '</pre></details>' : '<div class="x">' + esc(c.resultado) + '</div>') : '') + '</div></li>';
+    }).join('') + '</ul>' : '<p class="nota">Nenhum comando ainda.</p>') + '</section>';
   html += '<section class="card"><div class="ch"><h2>Eventos do MySQL</h2><span>travamentos e reinícios mais recentes</span></div>' +
     (SRV.eventos.length ? '<ul class="evl">' + SRV.eventos.slice(0, 40).map(function (e) {
       var cls = /falhou|sem parar|recusado/i.test(e.tipo) ? 'bad' : (/programado/i.test(e.tipo) ? 'info' : 'warn');
@@ -826,12 +873,26 @@ function desenharServidores() {
   c.innerHTML = html;
   c.querySelectorAll('input[data-s]').forEach(function (ck) {
     ck.addEventListener('change', function () {
-      var s = L[+ck.dataset.s], novo = { contabilidade: s.contabilidade, cliente: s.cliente, backup: s.backup, reiniciar: s.reiniciar };
+      var s = L[+ck.dataset.s], novo = { contabilidade: s.contabilidade, cliente: s.cliente, backup: s.backup, reiniciar: s.reiniciar, remoto: s.remoto };
       novo[ck.dataset.k] = ck.checked;
+      if (ck.dataset.k === 'remoto' && ck.checked && !confirm('Ligar o acesso remoto em ' + s.cliente + '? O agente instala o RustDesk no servidor com uma senha só da CPUSIS. Confirme que o cliente autorizou.')) { ck.checked = false; return; }
+      if (ck.dataset.k === 'remoto' && !ck.checked && !confirm('Desligar o acesso remoto de ' + s.cliente + '? O RustDesk será removido do servidor.')) { ck.checked = true; return; }
       if (ck.dataset.k === 'reiniciar' && ck.checked && !confirm('Reiniciar o MySQL de ' + s.cliente + ' todas as madrugadas? (o sistema fica alguns segundos sem banco nesse momento)')) { ck.checked = false; return; }
       ck.disabled = true;
       chamar('portalSalvarServidor', TOKEN, novo).then(function (r) { SRV = r; desenharServidores(); })
         .catch(function (e) { ck.checked = !ck.checked; ck.disabled = false; alert(e.message); });
+    });
+  });
+  c.querySelectorAll('[data-cp]').forEach(function (b) { b.addEventListener('click', function () { copiar(b.dataset.cp, b); }); });
+  c.querySelectorAll('[data-run]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var s = L[+b.dataset.run], cmd = c.querySelector('[data-cmd="' + b.dataset.run + '"]').value, args = '';
+      if (!cmd) return;
+      if (cmd === 'reenviar_mes') { args = prompt('Qual mês reenviar? (AAAA-MM)', new Date().toISOString().slice(0, 7)); if (!args) return; }
+      if (cmd === 'reiniciar_mysql' && !confirm('Reiniciar o MySQL de ' + s.cliente + ' agora? O sistema do cliente fica alguns segundos sem banco.')) return;
+      b.disabled = true;
+      chamar('portalComando', TOKEN, s.contabilidade, s.cliente, cmd, args).then(function (r) { SRV = r; desenharServidores(); })
+        .catch(function (e) { b.disabled = false; alert(e.message); });
     });
   });
 }

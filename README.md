@@ -14,6 +14,7 @@ Portal dos escritórios de contabilidade e automação de envio dos XML fiscais 
 | `receptor/Codigo.gs` | Receptor de verdade (envios dos agentes + API do portal) |
 | `receptor/appsscript.json` | Manifesto do Apps Script (permissões e App da Web) |
 | `agente/lcxml.ps1` | Agente instalado nos servidores dos clientes (lê o MySQL do LC **só para leitura**) |
+| `agente/lcxml_piloto.ps1` | Versão do agente em teste: só as máquinas listadas em `agentePiloto.maquinas` do `versao.json` recebem |
 | `versao.json` | Versões publicadas. **Mudar este arquivo = liberar a atualização** |
 
 ## Atualização automática

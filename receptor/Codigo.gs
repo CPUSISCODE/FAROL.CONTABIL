@@ -40,7 +40,7 @@ var CONFIG = {
   GUARDAR_DIAS: 7, GUARDAR_SEMANAS: 4, GUARDAR_MESES: 6
 };
 
-var VERSAO = '1.11';
+var VERSAO = '1.12';
 var PASTA_PORTAL = '_PORTAL_DADOS';   // resumos fiscais (JSON) e versão do agente
 var MESES = ['JANEIRO','FEVEREIRO','MARCO','ABRIL','MAIO','JUNHO','JULHO','AGOSTO','SETEMBRO','OUTUBRO','NOVEMBRO','DEZEMBRO'];
 var MESES_TXT = ['JANEIRO','FEVEREIRO','MARÇO','ABRIL','MAIO','JUNHO','JULHO','AGOSTO','SETEMBRO','OUTUBRO','NOVEMBRO','DEZEMBRO'];
@@ -171,6 +171,10 @@ function doPost(e) {
       r = servidor_(req);
     } else if (req.acao === 'backupConcluir') {
       r = backupConcluir_(req);
+    } else if (req.acao === 'monitor') {
+      r = monitor_(req);
+    } else if (req.acao === 'comandoResultado') {
+      r = comandoResultado_(req);
     } else if (req.acao === 'evento') {
       r = eventos_(req);
     } else if (req.acao === 'estrutura') {
@@ -205,7 +209,7 @@ function segredo_(nome) {
 var PORTAL_API = ['portalAparencia', 'portalLogin', 'portalSair', 'portalDados', 'portalResumo', 'portalArquivo', 'portalParte',
   'portalIndicadores', 'portalIndicadoresLote', 'portalAdmin', 'portalSalvarUsuario', 'portalExcluirUsuario', 'portalCriarContabilidade',
   'portalCriarCliente', 'portalSalvarRegime', 'portalServidores', 'portalSalvarServidor', 'portalUnificar', 'portalFinCarteira', 'portalFinSalvarBpo', 'portalFinLoginEmpresa', 'portalFinCliente', 'portalFinImportar',
-  'portalFinCategorizar', 'portalFinSolicitar', 'portalFinJustificar', 'portalFinAnexo', 'portalFinRemoverRegra', 'portalFinPlano'];
+  'portalFinCategorizar', 'portalFinSolicitar', 'portalFinJustificar', 'portalFinAnexo', 'portalFinRemoverRegra', 'portalFinPlano', 'portalComando'];
 function portalApi_(req) {
   var fn = String(req.fn || '');
   if (PORTAL_API.indexOf(fn) < 0) return { ok: false, erro: 'Função não permitida: ' + fn };
@@ -216,7 +220,7 @@ function portalApi_(req) {
     portalServidores: portalServidores, portalSalvarServidor: portalSalvarServidor, portalUnificar: portalUnificar,
     portalFinCarteira: portalFinCarteira, portalFinSalvarBpo: portalFinSalvarBpo, portalFinLoginEmpresa: portalFinLoginEmpresa, portalFinCliente: portalFinCliente,
     portalFinImportar: portalFinImportar, portalFinCategorizar: portalFinCategorizar, portalFinSolicitar: portalFinSolicitar, portalFinJustificar: portalFinJustificar,
-    portalFinAnexo: portalFinAnexo, portalFinRemoverRegra: portalFinRemoverRegra, portalFinPlano: portalFinPlano };
+    portalFinAnexo: portalFinAnexo, portalFinRemoverRegra: portalFinRemoverRegra, portalFinPlano: portalFinPlano, portalComando: portalComando };
   var f = mapa[fn]; if (typeof f !== 'function') return { ok: false, erro: 'Função não encontrada: ' + fn };
   try { return { ok: true, r: f.apply(null, Array.isArray(req.args) ? req.args : []) }; }
   catch (e) { return { ok: false, erro: String(e && e.message ? e.message : e) }; }
@@ -424,7 +428,12 @@ function TESTAR_E_AUTORIZAR() {
 function versaoAgente_(req) {
   var pasta = existente_(existente_(pastaRaiz_(), PASTA_PORTAL), 'agente');
   if (!pasta) return { ok: true };
-  var it = pasta.getFilesByName('lcxml.ps1'), arq = null;
+  var nomeArq = 'lcxml.ps1';
+  try {   // máquinas do piloto recebem a versão em teste (versao.json > agentePiloto)
+    var pil = JSON.parse(PropertiesService.getScriptProperties().getProperty('AGENTE_PILOTO') || '[]');
+    if (req.maquina && pil.some(function (m) { return normal_(m) === normal_(req.maquina); })) nomeArq = 'lcxml_piloto.ps1';
+  } catch (e) { }
+  var it = pasta.getFilesByName(nomeArq), arq = null;
   while (it.hasNext()) { var f = it.next(); if (!f.isTrashed()) { arq = f; break; } }
   if (!arq) return { ok: true };
   var bytes = arq.getBlob().getBytes();
@@ -1158,7 +1167,8 @@ function CORRIGIR_PAINEL() {
    Abas "Servidores" (uma linha por cliente com LC) e "Eventos MySQL" (travamentos e reinícios)
    ====================================================================== */
 var CAB_SRV = ['Contabilidade', 'Cliente', 'Máquina', 'Versão', 'Banco', 'Serviço MySQL', 'Fazer backup (S/N)', 'Reiniciar MySQL de madrugada (S/N)',
-  'Último contato', 'Último backup OK', 'Tamanho backup (MB)', 'Tamanho banco (MB)', 'Situação backup', 'Mensagem backup', 'Arquivo backup (id)', 'Espaço usado (MB)', 'Último sinal do vigia'];
+  'Último contato', 'Último backup OK', 'Tamanho backup (MB)', 'Tamanho banco (MB)', 'Situação backup', 'Mensagem backup', 'Arquivo backup (id)', 'Espaço usado (MB)', 'Último sinal do vigia',
+  'Último monitor', 'Monitor (discos, temperatura...)', 'Acesso remoto (S/N)', 'RustDesk ID', 'RustDesk senha'];
 var CAB_EVT = ['Data/hora', 'Contabilidade', 'Cliente', 'Máquina', 'Tipo', 'Detalhe', 'Segundos', 'Forçado'];
 
 function pastaBackup_() {
@@ -1306,10 +1316,21 @@ function portalServidores(token) {
     srv.push({ contabilidade: String(d[i][0]), cliente: String(d[i][1]), maquina: String(d[i][2]), versao: verTxt_(d[i][3]), banco: String(d[i][4]), servico: String(d[i][5]),
       backup: sn_(d[i][6], true), reiniciar: sn_(d[i][7], false), contato: iso(d[i][8]), ultimoBackup: iso(d[i][9]), tamanhoMB: Number(d[i][10] || 0), bancoMB: Number(d[i][11] || 0),
       situacao: String(d[i][12] || ''), mensagem: String(d[i][13] || ''), arquivoId: String(d[i][14] || ''), espacoMB: Number(d[i][15] || 0), sinal: iso(d[i][16]),
+      monitorEm: iso(d[i][17]), monitor: (function () { try { return d[i][18] ? JSON.parse(String(d[i][18])) : null; } catch (e) { return null; } })(),
+      remoto: sn_(d[i][19], false), rdId: String(d[i][20] || ''), rdSenha: String(d[i][21] || ''),
       travamentos30: c.n, ultimoTravamento: c.ult ? c.ult.toISOString() : '' });
   }
   var senhaOk = !!segredo_('SENHA_BACKUP');
-  return { servidores: srv, eventos: eventos, senhaOk: senhaOk, pasta: (function () { try { return pastaBackup_().getUrl(); } catch (e) { return ''; } })() };
+  var cmds = [];
+  try {
+    var cm = abaComandos_(ss).getDataRange().getValues();
+    for (var q = cm.length - 1; q >= 1 && cmds.length < 60; q--) {
+      if (!cm[q][0]) continue;
+      cmds.push({ id: String(cm[q][0]), quando: iso(cm[q][1]), contabilidade: String(cm[q][2]), cliente: String(cm[q][3]), cmd: String(cm[q][4]), args: String(cm[q][5] || ''),
+        quem: String(cm[q][6] || ''), situacao: String(cm[q][7] || ''), resultado: String(cm[q][8] || ''), fim: iso(cm[q][9]) });
+    }
+  } catch (e) { }
+  return { servidores: srv, eventos: eventos, comandos: cmds, senhaOk: senhaOk, pasta: (function () { try { return pastaBackup_().getUrl(); } catch (e) { return ''; } })() };
 }
 function portalSalvarServidor(token, s) {
   admin_(token);
@@ -1317,6 +1338,7 @@ function portalSalvarServidor(token, s) {
   try {
     var x = linhaServidor_(String(s.contabilidade || ''), String(s.cliente || ''));
     x.aba.getRange(x.lin, 7, 1, 2).setValues([[s.backup ? 'S' : 'N', s.reiniciar ? 'S' : 'N']]);
+    if (s.remoto !== undefined) { cabSrv_(x.aba); x.aba.getRange(x.lin, 20).setValue(s.remoto ? 'S' : 'N'); }
   } finally { lock.releaseLock(); }
   return portalServidores(token);
 }
@@ -1382,6 +1404,20 @@ function ATUALIZAR_AGORA() {
         props.setProperty('INST_PORTAL', String(v.portal)); feito.portal = v.portal;
         logAtualizacao_('portal', '', v.portal, 'OK');
       } catch (e) { logAtualizacao_('portal', '', v.portal, 'ERRO: ' + e.message); }
+    }
+    // 3a) agente em teste só para as máquinas do piloto
+    var pil = v.agentePiloto || null, marcaPil = pil ? JSON.stringify(pil) : '';
+    if (props.getProperty('INST_PILOTO') !== marcaPil) {
+      try {
+        if (pil && pil.versao) {
+          var pp = baixarGit_('agente/lcxml_piloto.ps1'), mp = pp.getDataAsString('UTF-8').match(/\$VERSAO\s*=\s*'([\d.]+)'/);
+          if (!mp || mp[1] !== String(pil.versao)) throw new Error('lcxml_piloto.ps1 do GitHub não é a versão ' + pil.versao);
+          trocarArquivoDrive_(pastaPortal_('agente'), 'lcxml_piloto.ps1', pp, 'application/octet-stream');
+        }
+        props.setProperty('AGENTE_PILOTO', JSON.stringify(pil && pil.maquinas || []));
+        props.setProperty('INST_PILOTO', marcaPil);
+        logAtualizacao_('agente piloto', '', pil ? pil.versao + ' em ' + (pil.maquinas || []).join(', ') : '(sem piloto)', 'OK');
+      } catch (e) { logAtualizacao_('agente piloto', '', pil ? pil.versao : '', 'ERRO: ' + e.message); }
     }
     // 3) agente (só depois que o receptor já está na versão exigida)
     var publicada = props.getProperty('FAROL_RECEPTOR') ? VERSAO : String(props.getProperty('VERSAO_PUBLICADA') || '0');   // pelo carregador, o código que roda é o publicado
@@ -1933,4 +1969,79 @@ function portalFinRemoverRegra(token, contab, cliente, chave, sinal) {
   var pasta = finPasta_(contab, cliente), regras = lerJson_(pasta, 'regras.json', []);
   gravarJson_(pasta, 'regras.json', regras.filter(function (r) { return !(r.chave === chave && r.sinal === sinal); }));
   return { ok: true };
+}
+
+
+/* ======================================================================
+   MONITOR DOS SERVIDORES + COMANDOS DO PORTAL + ACESSO REMOTO (agente 1.7+)
+   A cada 10 min o agente manda: online, discos (espaço, saúde, temperatura), memória, MySQL, ID do RustDesk.
+   Na resposta recebe os comandos pendentes (aba "Comandos") e se o acesso remoto está ligado.
+   Comandos são uma lista fechada: nada de comando livre.
+   ====================================================================== */
+var CAB_CMD = ['ID', 'Pedido em', 'Contabilidade', 'Cliente', 'Comando', 'Detalhe', 'Quem pediu', 'Situação', 'Resultado', 'Concluído em'];
+var COMANDOS_OK = { reiniciar_mysql: 'Reiniciar o MySQL', backup_agora: 'Fazer backup agora', reenviar_mes: 'Reenviar os XML de um mês', atualizar_agente: 'Rodar o agente agora (atualiza)', enviar_log: 'Mandar o log do agente', info: 'Informações do sistema' };
+
+function abaComandos_(ss) {
+  var a = ss.getSheetByName('Comandos');
+  if (a) return a;
+  a = ss.insertSheet('Comandos');
+  a.getRange(1, 1, 1, CAB_CMD.length).setValues([CAB_CMD]).setFontWeight('bold').setBackground('#0f6b55').setFontColor('#ffffff');
+  a.setFrozenRows(1); a.getRange('F:F').setNumberFormat('@');
+  return a;
+}
+function cabSrv_(aba) {
+  if (String(aba.getRange(1, 18).getValue())) return;
+  aba.getRange(1, 18, 1, CAB_SRV.length - 17).setValues([CAB_SRV.slice(17)]).setFontWeight('bold').setBackground('#0f6b55').setFontColor('#ffffff');
+}
+
+function monitor_(req) {
+  obrigatorios_(req, ['contabilidade', 'cliente']);
+  var ss = planilha_(), comandos = [], ativo = false;
+  var lock = LockService.getScriptLock(); lock.waitLock(30000);
+  try {
+    var x = linhaServidor_(req.contabilidade, req.cliente);
+    cabSrv_(x.aba);
+    x.aba.getRange(x.lin, 3, 1, 2).setValues([[req.maquina || '', txt_(req.versao)]]);
+    var mon = JSON.stringify(req.sistema || {}); if (mon.length > 45000) mon = mon.slice(0, 45000);
+    x.aba.getRange(x.lin, 18, 1, 2).setValues([[new Date(), mon]]);
+    x.aba.getRange(x.lin, 18).setNumberFormat('dd/MM/yyyy HH:mm');
+    if (req.remoto && req.remoto.id) x.aba.getRange(x.lin, 21).setValue("'" + String(req.remoto.id));
+    if (req.remoto && req.remoto.senha) x.aba.getRange(x.lin, 22).setValue(String(req.remoto.senha));
+    ativo = sn_(x.linha[19], false);
+    // comandos pendentes deste cliente
+    var aba = abaComandos_(ss), d = aba.getDataRange().getValues();
+    for (var i = 1; i < d.length; i++) {
+      if (String(d[i][7]) !== 'pendente') continue;
+      if (normal_(d[i][2]) !== normal_(req.contabilidade) || normal_(d[i][3]) !== normal_(req.cliente)) continue;
+      comandos.push({ id: String(d[i][0]), cmd: String(d[i][4]), args: String(d[i][5] || '') });
+      aba.getRange(i + 1, 8).setValue('enviado');
+    }
+  } finally { lock.releaseLock(); }
+  return { ok: true, comandos: comandos, remoto: { ativo: ativo, servidor: String(PropertiesService.getScriptProperties().getProperty('RUSTDESK_CONFIG') || '') } };
+}
+function comandoResultado_(req) {
+  obrigatorios_(req, ['id']);
+  var lock = LockService.getScriptLock(); lock.waitLock(30000);
+  try {
+    var aba = abaComandos_(planilha_()), d = aba.getDataRange().getValues();
+    for (var i = 1; i < d.length; i++) {
+      if (String(d[i][0]) !== String(req.id)) continue;
+      aba.getRange(i + 1, 8, 1, 3).setValues([[req.ok ? 'ok' : 'erro', String(req.saida || '').slice(0, 45000), new Date()]]);
+      break;
+    }
+  } finally { lock.releaseLock(); }
+  return { ok: true };
+}
+function portalComando(token, contab, cliente, cmd, args) {
+  var s = admin_(token);
+  if (!COMANDOS_OK[cmd]) throw new Error('Comando não permitido.');
+  if (cmd === 'reenviar_mes' && !/^\d{4}-(0[1-9]|1[0-2])$/.test(String(args || ''))) throw new Error('Informe o mês no formato AAAA-MM.');
+  var lock = LockService.getScriptLock(); lock.waitLock(30000);
+  try {
+    var aba = abaComandos_(planilha_()), lin = Math.max(aba.getLastRow(), 1) + 1;
+    aba.getRange(lin, 6).setNumberFormat('@');
+    aba.getRange(lin, 1, 1, 8).setValues([['c' + Date.now().toString(36) + Math.floor(Math.random() * 1e4), new Date(), contab, cliente, cmd, String(args || ''), s.login, 'pendente']]);
+  } finally { lock.releaseLock(); }
+  logAcesso_(s.login, 'comando', contab + ' / ' + cliente + ': ' + cmd + (args ? ' ' + args : ''));
+  return portalServidores(token);
 }

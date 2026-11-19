@@ -1,6 +1,7 @@
 {
-  "receptor": "1.11",
-  "portal": "1.11.0",
+  "receptor": "1.12",
+  "portal": "1.12.0",
   "agente": "1.6.1",
-  "receptorMinimoAgente": "1.8.1"
+  "receptorMinimoAgente": "1.8.1",
+  "agentePiloto": { "versao": "1.7", "maquinas": [] }
 }
