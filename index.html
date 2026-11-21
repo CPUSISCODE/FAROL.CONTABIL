@@ -255,6 +255,13 @@ ul.lst{margin:6px 0 10px;padding-left:20px;display:grid;gap:4px}
 <script>
 /* ---------------- endereço do receptor (usado quando o portal abre pelo GitHub) ---------------- */
 var API_URL = 'https://script.google.com/macros/s/AKfycbwySsHymDOemTCxV-Oe-j4B0xHK1OIOtBDF-KjIdhHA0cf9YmLoUcP3AnRVpgW1AZLU/exec';
+// banco de dados novo (Supabase): por enquanto só com ?banco=1 no endereço (conferência lado a lado); ?banco=0 volta ao normal
+var API_BANCO = 'https://cidvuirvojpsmukfxpll.supabase.co/functions/v1/farol';
+var USA_BANCO = (function () {
+  var m = /[?&]banco=([01])/.exec(location.search);
+  try { if (m) sessionStorage.setItem('farol_banco', m[1]); return (m ? m[1] : sessionStorage.getItem('farol_banco')) === '1'; } catch (e) { return !!(m && m[1] === '1'); }
+})();
+if (USA_BANCO) API_URL = API_BANCO;
 var MODO_WEB = !(window.google && google.script && google.script.run);
 var APARENCIA_ATUAL = null;
 if (typeof APARENCIA === 'undefined') { try { APARENCIA = JSON.parse(localStorage.getItem('farol_aparencia') || 'null'); } catch (e) { APARENCIA = null; } }
@@ -2388,5 +2395,6 @@ function guiaAuto() {
   document.head.appendChild(st);
 })();
 </script>
+<script>if (typeof USA_BANCO !== 'undefined' && USA_BANCO) document.body.insertAdjacentHTML('beforeend', '<div style="position:fixed;left:12px;bottom:12px;z-index:50;background:var(--brand);color:#fff;font:600 12px/1 system-ui,sans-serif;padding:7px 10px;border-radius:8px;opacity:.9">Banco novo (teste)</div>');</script>
 </body>
 </html>
