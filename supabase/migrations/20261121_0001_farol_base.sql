@@ -215,3 +215,17 @@ language sql stable set search_path = '' as $$
   select distinct l.mes from public.fin_lancamentos l where l.bpo_id = p_bpo
 $$;
 revoke execute on function public.fin_meses(bigint) from anon, authenticated, public;
+
+-- histórico: a mesma linha nunca entra duas vezes, mesmo se o receptor reenviar
+create unique index if not exists historico_unica on public.historico (em, coalesce(contabilidade,''), coalesce(cliente,''), coalesce(mes,''), coalesce(situacao,''));
+create or replace function public.historico_ignorar_repetido() returns trigger language plpgsql set search_path = '' as $$
+begin
+  if exists (select 1 from public.historico h where h.em = new.em and coalesce(h.contabilidade,'') = coalesce(new.contabilidade,'')
+             and coalesce(h.cliente,'') = coalesce(new.cliente,'') and coalesce(h.mes,'') = coalesce(new.mes,'') and coalesce(h.situacao,'') = coalesce(new.situacao,'')) then
+    return null;
+  end if;
+  return new;
+end $$;
+drop trigger if exists historico_repetido on public.historico;
+create trigger historico_repetido before insert on public.historico for each row execute function public.historico_ignorar_repetido();
+revoke execute on function public.historico_ignorar_repetido() from anon, authenticated, public;

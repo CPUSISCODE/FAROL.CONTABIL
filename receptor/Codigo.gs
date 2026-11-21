@@ -2431,12 +2431,23 @@ function dbSincronizarResumos_(limiteMs) {
     if (tam > 1500000 || lote.length >= 20) manda();
   }
   manda();
-  // clientes que sumiram do Drive (unificados/excluídos) saem do banco
+  // conferência com o banco (só quando a fila acabou):
+  //  - mês que está no Drive e não está no banco volta para a fila (nada some do portal)
+  //  - cliente que sumiu do Drive (unificado/excluído) sai do banco, com trava: no máximo 3 por vez
+  //    e só se a leitura do Drive veio completa (evita apagar por uma falha momentânea do Google)
   if (erros === 0 && fila.length <= enviados + pulados) {
     try {
-      var est = dbEnviar_([{ t: 'estado' }]), rem = {}, itens = [];
+      var est = dbEnviar_([{ t: 'estado' }]), noBanco = {}, rem = {}, itens = [];
+      (est.resumos || []).forEach(function (r) { noBanco[r.k] = 1; });
+      arv.forEach(function (u) {
+        var ku = normal_(u.contabilidade) + '|' + normal_(u.cliente) + '|' + normal_(u.subpasta);
+        Object.keys(u.arqs).forEach(function (mes) { if (!noBanco[ku + '|' + mes]) delete feitos[u.arqs[mes].id]; });
+      });
       (est.resumos || []).forEach(function (r) { var p = r.k.split('|'); var ku = p[0] + '|' + p[1] + '|' + p[2]; if (!vivos[ku] && !rem[ku]) { rem[ku] = 1; itens.push({ t: 'remover_unidade', contabilidade: p[0], cliente: p[1], subpasta: p[2] }); } });
-      if (itens.length) dbEnviar_(itens);
+      var unidBanco = {}; (est.resumos || []).forEach(function (r) { var p = r.k.split('|'); unidBanco[p[0] + '|' + p[1] + '|' + p[2]] = 1; });
+      var totalBanco = Object.keys(unidBanco).length;
+      if (itens.length && itens.length <= 3 && arv.length > 0 && totalBanco - itens.length <= arv.length + 3) dbEnviar_(itens);
+      else if (itens.length) logAtualizacao_('banco', '', '', 'AVISO: ' + itens.length + ' cliente(s) sumiram do Drive e NÃO foram tirados do banco (trava de segurança): ' + itens.map(function (x) { return x.cliente; }).join(', ').slice(0, 200));
     } catch (e) { }
   }
   var txt2 = JSON.stringify(feitos);

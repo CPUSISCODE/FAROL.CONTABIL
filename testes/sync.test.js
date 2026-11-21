@@ -58,7 +58,11 @@ ok(it.some(i => i.t === 'remover_unidade' && i.cliente === 'SUMIU'), 'cliente qu
 // segunda rodada: nada de resumo novo, histórico não repete
 enviados.length = 0; vm.runInContext('SINCRONIZAR_BANCO()', ctx);
 const it2 = enviados.flatMap(e => e.itens);
-ok(!it2.some(i => i.t === 'resumo') && !it2.some(i => i.t === 'historico'), 'segunda rodada não repete');
+ok(!it2.some(i => i.t === 'historico'), 'segunda rodada não repete o histórico');
+// o banco não tem 2026-11 do CLIENTE A? (estado só traz SUMIU) -> volta para a fila e é reenviado
+ctx.UrlFetchApp.fetch = (url, o) => { const b = JSON.parse(o.payload); enviados.push(b); return { getResponseCode: () => 200, getContentText: () => JSON.stringify(b.itens.some(i => i.t === 'estado') ? { ok: true, resumos: [{ k: 'VELHA|SUMIU||2026-01' }] } : { ok: true }) }; };
+enviados.length = 0; vm.runInContext('SINCRONIZAR_BANCO()', ctx); vm.runInContext('SINCRONIZAR_BANCO()', ctx);
+ok(enviados.flatMap(e => e.itens).some(i => i.t === 'resumo' && i.mes === '2026-11'), 'mês que sumiu do banco é reenviado sozinho');
 // portalInterno: sessão vinda do banco
 ctx.portalServidores = (tok) => ({ quem: JSON.parse(cache['s_' + tok]).login });
 const pi = vm.runInContext("portalInterno_({ fn: 'portalServidores', sessao: { login: 'admin', contabs: ['*'] }, args: ['x'] })", ctx);

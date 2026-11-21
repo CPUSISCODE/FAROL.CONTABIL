@@ -298,8 +298,18 @@ function guardarToken(t) { TOKEN = t; try { if (t) sessionStorage.setItem('porta
 function chamar(fn) {
   var args = Array.prototype.slice.call(arguments, 1);
   if (MODO_WEB || USA_BANCO) {   // GitHub ou banco: conversa por POST (o banco atende também quem abre pelo link do Google)
-    return fetch(API_URL, { method: 'POST', redirect: 'follow', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ acao: 'portal', fn: fn, args: args }) })
-      .then(function (r) { if (!r.ok) throw new Error('Servidor respondeu ' + r.status + '. Tente de novo.'); return r.json(); })
+    // leituras: se a internet oscilar ou o servidor demorar, tenta de novo sozinho (gravações não repetem, para não duplicar)
+    var leitura = /^portal(Aparencia|Dados|Resumo|Indicadores|IndicadoresLote|Servidores|Admin|Arquivo|Parte|FinCliente|FinCarteira|FinComprovantes|FinPlano|FinAnexo)$/.test(fn);
+    var envio = function (vez) {
+      return fetch(API_URL, { method: 'POST', redirect: 'follow', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ acao: 'portal', fn: fn, args: args }) })
+        .then(function (r) { if (!r.ok) { var e = new Error('Servidor respondeu ' + r.status + '. Tente de novo.'); e.repetir = r.status >= 500; throw e; } return r.json(); })
+        .catch(function (e) {
+          var rede = /Failed to fetch|NetworkError|Load failed/i.test(e.message) || e.repetir;
+          if (leitura && rede && vez < 2) return new Promise(function (ok) { setTimeout(ok, 1200 * (vez + 1)); }).then(function () { return envio(vez + 1); });
+          throw e;
+        });
+    };
+    return envio(0)
       .catch(function (e) { throw new Error(/Failed to fetch|NetworkError|Load failed/i.test(e.message) ? 'Sem conexão com o servidor. Confira a internet e tente de novo.' : e.message); })
       .then(function (j) {
         if (j && j.ok) return j.r;
