@@ -255,11 +255,11 @@ ul.lst{margin:6px 0 10px;padding-left:20px;display:grid;gap:4px}
 <script>
 /* ---------------- endereço do receptor (usado quando o portal abre pelo GitHub) ---------------- */
 var API_URL = 'https://script.google.com/macros/s/AKfycbwySsHymDOemTCxV-Oe-j4B0xHK1OIOtBDF-KjIdhHA0cf9YmLoUcP3AnRVpgW1AZLU/exec';
-// banco de dados novo (Supabase): por enquanto só com ?banco=1 no endereço (conferência lado a lado); ?banco=0 volta ao normal
+// banco de dados (Supabase): é o padrão desde a virada (21/11/2026). ?banco=0 no endereço usa o caminho antigo (Apps Script) como reserva
 var API_BANCO = 'https://cidvuirvojpsmukfxpll.supabase.co/functions/v1/farol';
 var USA_BANCO = (function () {
   var m = /[?&]banco=([01])/.exec(location.search);
-  try { if (m) sessionStorage.setItem('farol_banco', m[1]); return (m ? m[1] : sessionStorage.getItem('farol_banco')) === '1'; } catch (e) { return !!(m && m[1] === '1'); }
+  try { if (m) sessionStorage.setItem('farol_banco', m[1]); return (m ? m[1] : sessionStorage.getItem('farol_banco')) !== '0'; } catch (e) { return !(m && m[1] === '0'); }
 })();
 if (USA_BANCO) API_URL = API_BANCO;
 var MODO_WEB = !(window.google && google.script && google.script.run);
@@ -297,7 +297,7 @@ function guardarToken(t) { TOKEN = t; try { if (t) sessionStorage.setItem('porta
 
 function chamar(fn) {
   var args = Array.prototype.slice.call(arguments, 1);
-  if (MODO_WEB) {   // aberto pelo GitHub: conversa com o receptor por POST
+  if (MODO_WEB || USA_BANCO) {   // GitHub ou banco: conversa por POST (o banco atende também quem abre pelo link do Google)
     return fetch(API_URL, { method: 'POST', redirect: 'follow', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ acao: 'portal', fn: fn, args: args }) })
       .then(function (r) { if (!r.ok) throw new Error('Servidor respondeu ' + r.status + '. Tente de novo.'); return r.json(); })
       .catch(function (e) { throw new Error(/Failed to fetch|NetworkError|Load failed/i.test(e.message) ? 'Sem conexão com o servidor. Confira a internet e tente de novo.' : e.message); })
@@ -2395,6 +2395,6 @@ function guiaAuto() {
   document.head.appendChild(st);
 })();
 </script>
-<script>if (typeof USA_BANCO !== 'undefined' && USA_BANCO) document.body.insertAdjacentHTML('beforeend', '<div style="position:fixed;left:12px;bottom:12px;z-index:50;background:var(--brand);color:#fff;font:600 12px/1 system-ui,sans-serif;padding:7px 10px;border-radius:8px;opacity:.9">Banco novo (teste)</div>');</script>
+<script>if (typeof USA_BANCO !== 'undefined' && !USA_BANCO) document.body.insertAdjacentHTML('beforeend', '<div style="position:fixed;left:12px;bottom:12px;z-index:50;background:#8a5a00;color:#fff;font:600 12px/1 system-ui,sans-serif;padding:7px 10px;border-radius:8px;opacity:.9">Caminho antigo (reserva)</div>');</script>
 </body>
 </html>

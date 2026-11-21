@@ -40,7 +40,7 @@ var CONFIG = {
   GUARDAR_DIAS: 10, GUARDAR_SEMANAS: 0, GUARDAR_MESES: 0   // no máximo 10 dias (um backup por dia; mais velhos que 10 dias são apagados)
 };
 
-var VERSAO = '1.17';
+var VERSAO = '1.18';
 var PASTA_PORTAL = '_PORTAL_DADOS';   // resumos fiscais (JSON) e versão do agente
 var MESES = ['JANEIRO','FEVEREIRO','MARCO','ABRIL','MAIO','JUNHO','JULHO','AGOSTO','SETEMBRO','OUTUBRO','NOVEMBRO','DEZEMBRO'];
 var MESES_TXT = ['JANEIRO','FEVEREIRO','MARÇO','ABRIL','MAIO','JUNHO','JULHO','AGOSTO','SETEMBRO','OUTUBRO','NOVEMBRO','DEZEMBRO'];
@@ -220,6 +220,8 @@ var PORTAL_API = ['portalAparencia', 'portalLogin', 'portalSair', 'portalDados',
 function portalApi_(req) {
   var fn = String(req.fn || '');
   if (PORTAL_API.indexOf(fn) < 0) return { ok: false, erro: 'Função não permitida: ' + fn };
+  // financeiro: os dados estão no banco desde a virada; pelo caminho antigo só o que o banco repassa
+  if (/^portalFin/.test(fn) && !INTERNO_ && !/^portalFin(SalvarBpo|LoginEmpresa|Plano)$/.test(fn)) return { ok: false, erro: 'O financeiro funciona pelo endereço normal do portal (sem ?banco=0).' };
   var mapa = { portalAparencia: portalAparencia, portalLogin: portalLogin, portalSair: portalSair, portalDados: portalDados, portalResumo: portalResumo,
     portalArquivo: portalArquivo, portalParte: portalParte, portalIndicadores: portalIndicadores, portalIndicadoresLote: portalIndicadoresLote,
     portalAdmin: portalAdmin, portalSalvarUsuario: portalSalvarUsuario, portalExcluirUsuario: portalExcluirUsuario,
@@ -2336,6 +2338,7 @@ function dbEnviar_(itens) {
 function dataIso_(v) { return v instanceof Date && !isNaN(v) ? v.toISOString() : null; }
 
 // pedido do portal repassado pelo banco: a sessão já foi conferida lá
+var INTERNO_ = false;
 function portalInterno_(req) {
   if (PORTAL_API.indexOf(String(req.fn)) < 0 || req.fn === 'portalLogin') return { ok: false, erro: 'Função não permitida: ' + req.fn };
   var args = Array.isArray(req.args) ? req.args.slice() : [];
@@ -2345,6 +2348,7 @@ function portalInterno_(req) {
     CacheService.getScriptCache().put('s_' + tok, JSON.stringify(s), 300);
     args[0] = tok;
   }
+  INTERNO_ = true;
   var r = portalApi_({ fn: req.fn, args: args });
   if (r.ok && /^portal(SalvarUsuario|ExcluirUsuario|SalvarRegime|Unificar|FinLoginEmpresa|CriarContabilidade|CriarCliente)$/.test(req.fn)) {
     try { dbSincronizarConfig_(); } catch (e) { }
