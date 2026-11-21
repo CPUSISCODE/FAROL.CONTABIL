@@ -931,9 +931,11 @@ function telaPainel() {
   var saud = h < 12 ? 'Bom dia' : (h < 18 ? 'Boa tarde' : 'Boa noite');
   $('tela').innerHTML = '<div class="cab"><div><h1>' + saud + ', ' + esc(DADOS.nome) + '</h1><p class="sub" id="pSub"></p></div><div class="filtros">' +
     '<label for="pMes">Mês<select id="pMes">' + meses.map(function (m) { return '<option value="' + m + '"' + (m === PST.mes ? ' selected' : '') + '>' + nomeMes(m) + '</option>'; }).join('') + '</select></label>' +
+    (DADOS.admin && USA_BANCO ? '<button class="btn sec" id="bCarteira" type="button" title="Visual novo em teste: só administrador vê" style="align-self:end">Visão da carteira (teste)</button>' : '') +
     (contabs.length > 1 ? '<label for="pContab">Contabilidade<select id="pContab"><option value="">Todas</option>' + contabs.map(function (c) { return '<option' + (c === PST.contab ? ' selected' : '') + '>' + esc(c) + '</option>'; }).join('') + '</select></label>' : '') + '</div></div>' +
     '<div id="pCorpo">' + carregando('Calculando os indicadores de ' + nomeMes(PST.mes) + '…') + '</div>';
   $('pMes').addEventListener('change', function () { PST.mes = this.value; carregarPainel(); });
+  if ($('bCarteira')) $('bCarteira').addEventListener('click', function () { abrirCarteira(PST.mes, PST.contab); });
   if ($('pContab')) $('pContab').addEventListener('change', function () { PST.contab = this.value; desenharPainel(); });
   carregarPainel();
 }
@@ -1754,6 +1756,7 @@ function telaCliente() {
   var html = '<div><button class="btn sec" id="bVoltar" type="button">← Clientes</button></div>' +
     '<div class="cab"><div><h1>' + esc(rotuloUnid(u)) + ' ' + regimeCliente(u) + '</h1><p class="sub">' + esc(u.contabilidade) + ' · CNPJ ' + esc(r.cnpj || '—') + ' · dados gerados em ' + new Date(r.geradoEm).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) + '</p></div>' +
     '<div class="acoes"><label class="sub" for="fMes">Mês&nbsp;<select id="fMes">' + u.meses.map(function (m) { return '<option value="' + m + '"' + (m === ATUAL.mes ? ' selected' : '') + '>' + nomeMes(m) + '</option>'; }).join('') + '</select></label>' +
+    (DADOS.admin && USA_BANCO ? '<button class="btn sec" id="bReuniao" type="button" title="Visual novo em teste: só administrador vê">Modo Reunião (teste)</button>' : '') +
     '<button class="btn" id="bZip" type="button">Baixar XML do mês (ZIP)</button><div class="barra hidden" id="barra"><i></i></div><span class="sub" id="zipInfo"></span></div></div>' +
     '<div class="kpis">' +
       kpi('NF-e emitidas', 'R$ ' + brl(nfe.valor), int(nfe.qtd) + ' notas · ' + int(nfe.canceladas) + ' canceladas') +
@@ -1767,6 +1770,7 @@ function telaCliente() {
     '<div id="conteudo"></div>';
   $('tela').innerHTML = html;
   $('bVoltar').addEventListener('click', telaLista);
+  if ($('bReuniao')) $('bReuniao').addEventListener('click', function () { abrirReuniao(ATUAL.u, ATUAL.mes); });
   $('fMes').addEventListener('change', function () { abrir(u, this.value); });
   $('bZip').addEventListener('click', baixarZip);
   document.querySelector('.abas').addEventListener('click', function (ev) { var b = ev.target.closest('.tab'); if (!b) return; ATUAL.aba = b.dataset.a; document.querySelectorAll('.tab').forEach(function (x) { x.setAttribute('aria-selected', x === b); }); desenharAba(); });
@@ -2403,6 +2407,269 @@ function guiaAuto() {
     '.guia-pes{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;border-top:1px solid var(--line);padding-top:12px}' +
     '@media (max-width:520px){.guia-pes .btn{flex:1}}';
   document.head.appendChild(st);
+})();
+</script>
+<!-- ================= MODO REUNIÃO e VISÃO DA CARTEIRA (visual novo, em teste: só administrador) ================= -->
+<style>
+#mr{position:fixed;inset:0;z-index:80;background:#0b1220;color:#e6edf5;font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;overflow:auto;-webkit-font-smoothing:antialiased}
+#mr *{box-sizing:border-box}
+#mr .mr-in{max-width:1680px;margin:0 auto;padding:clamp(14px,2.2vw,32px) clamp(14px,2.6vw,44px) 28px;display:flex;flex-direction:column;gap:clamp(12px,1.5vw,22px);min-height:100%}
+#mr header.mr-top{background:transparent;border:0;box-shadow:none;position:static;padding:0;margin:0;backdrop-filter:none}
+#mr .mr-top{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+#mr .mr-id{display:flex;align-items:center;gap:14px;min-width:0}
+#mr .mr-selo{width:44px;height:44px;border-radius:12px;background:#2dd4bf;color:#04201a;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:17px;flex:none}
+#mr h1{color:#e6edf5;margin:0;font-size:clamp(20px,2vw,28px);font-weight:600;letter-spacing:-.01em;line-height:1.15}
+#mr .mr-sub{font-size:14px;color:#93a4b8;margin-top:2px}
+#mr .mr-acoes{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+#mr select,#mr .mr-b{height:44px;padding:0 16px;border-radius:10px;border:1px solid #22324a;background:#0f182a;color:#dbe5ef;font:500 14px Inter,system-ui,sans-serif;cursor:pointer}
+#mr .mr-b:hover,#mr select:hover{border-color:#2dd4bf}
+#mr .mr-b:focus-visible,#mr select:focus-visible,#mr .mr-cli:focus-visible{outline:2px solid #2dd4bf;outline-offset:2px}
+#mr .mr-g{display:grid;gap:clamp(12px,1.3vw,18px)}
+#mr .mr-k4{grid-template-columns:repeat(4,minmax(0,1fr))}
+#mr .mr-main{grid-template-columns:minmax(0,1.7fr) minmax(0,1fr)}
+#mr .mr-3{grid-template-columns:repeat(3,minmax(0,1fr))}
+#mr .mr-c{background:#111b2e;border:1px solid #1c2a42;border-radius:18px;padding:clamp(14px,1.4vw,22px);display:flex;flex-direction:column;gap:10px;min-width:0}
+#mr .mr-rot{font-size:12.5px;letter-spacing:.08em;text-transform:uppercase;color:#93a4b8;font-weight:600}
+#mr .mr-v{font-size:clamp(26px,2.6vw,42px);font-weight:600;letter-spacing:-.02em;line-height:1.05;font-variant-numeric:tabular-nums}
+#mr .mr-d{font-size:14.5px;font-weight:600}
+#mr .up{color:#5eead4}#mr .dn{color:#fbbf24}#mr .bad{color:#f87171}#mr .mu{color:#93a4b8}
+#mr .mr-n{font-size:14px;color:#93a4b8;line-height:1.45}
+#mr .mr-leg{display:flex;gap:16px;font-size:13px;color:#b8c6d6;flex-wrap:wrap}
+#mr .mr-leg i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+#mr svg text{font-family:Inter,system-ui,sans-serif}
+#mr .mr-ter{position:relative;height:16px;border-radius:999px;background:linear-gradient(90deg,#7f1d1d 0 35%,#78350f 35% 50%,#134e4a 50% 100%);margin:6px 0 4px}
+#mr .mr-ter b{position:absolute;top:-6px;width:4px;height:28px;border-radius:2px;background:#fff;box-shadow:0 0 0 3px #0b1220}
+#mr .mr-ter-esc{position:relative;height:16px;font-size:12px;color:#7d8ea3}#mr .mr-ter-esc span{position:absolute;transform:translateX(-50%);white-space:nowrap}#mr .mr-ter-esc span:first-child{transform:none}#mr .mr-ter-esc span:last-child{transform:translateX(-100%)}
+#mr .mr-pill{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:999px;font-size:13px;font-weight:600;width:max-content;max-width:100%}
+#mr .p-ok{background:#0f2a26;color:#5eead4}#mr .p-at{background:#2d2310;color:#fbbf24}#mr .p-ri{background:#2e1418;color:#fca5a5}#mr .p-in{background:#17233a;color:#a5b4c8}
+#mr ul.mr-it{list-style:none;margin:0;padding:0;display:grid;gap:8px;font-size:14.5px}
+#mr ul.mr-it li{display:flex;gap:10px;align-items:flex-start}
+#mr ul.mr-it li:before{content:"";flex:none;width:8px;height:8px;border-radius:50%;margin-top:6px;background:#5eead4}
+#mr ul.mr-it li.x:before{background:#fbbf24}
+#mr .mr-bar{display:grid;grid-template-columns:minmax(0,8.5em) 1fr 3em;gap:10px;align-items:center;font-size:13.5px}
+#mr .mr-bar .t{height:10px;border-radius:999px;background:#1a2740;overflow:hidden}
+#mr .mr-bar .t i{display:block;height:100%;border-radius:999px;background:#2dd4bf}
+#mr .mr-rod{font-size:12.5px;color:#6b7c92;margin-top:auto;padding-top:6px}
+#mr .mr-st{grid-template-columns:repeat(4,minmax(0,1fr))}
+#mr .mr-cli{all:unset;box-sizing:border-box;cursor:pointer;background:#111b2e;border:1px solid #1c2a42;border-radius:14px;padding:14px 16px;display:flex;flex-direction:column;gap:8px;min-width:0}
+#mr .mr-cli:hover{border-color:#2dd4bf}
+#mr .mr-lista{grid-template-columns:repeat(auto-fill,minmax(250px,1fr))}
+#mr .mr-hoje{display:grid;gap:8px}
+#mr .mr-hoje .mr-cli{flex-direction:row;align-items:center;justify-content:space-between;gap:14px}
+#mr .mr-nota{font-size:22px;font-weight:600;font-variant-numeric:tabular-nums}
+#mr .mr-filtro{display:flex;gap:6px;flex-wrap:wrap}
+#mr .mr-filtro .mr-b[aria-pressed="true"]{border-color:#2dd4bf;background:#0f2a26;color:#e6fff8}
+#mr .mr-carr{display:flex;align-items:center;gap:12px;color:#93a4b8;padding:40px 0;justify-content:center}
+#mr .mr-carr i{width:18px;height:18px;border-radius:50%;border:2px solid #2dd4bf;border-right-color:transparent;animation:mrg 1s linear infinite}
+@keyframes mrg{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){#mr .mr-carr i{animation:none}}
+@media (max-width:1100px){#mr .mr-main{grid-template-columns:1fr}#mr .mr-k4,#mr .mr-st{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:760px){#mr .mr-3{grid-template-columns:1fr}}
+@media (max-width:520px){#mr .mr-k4,#mr .mr-st{grid-template-columns:1fr}}
+@media (min-width:1900px){#mr{font-size:18px}#mr .mr-n,#mr ul.mr-it{font-size:16px}}
+</style>
+<script>
+(function () {
+  var URL_MR = API_BANCO.replace(/\/farol$/, '/reuniao');
+  var MR = null;   // { u, mes, dados } ou { carteira:true, ... }
+  var DIAS = ['', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
+  var MESC = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+  function mc(m) { return MESC[+m.slice(5, 7) - 1]; }
+  function din(v) {   // R$ curto para telão
+    v = Number(v || 0); var a = Math.abs(v);
+    if (a >= 1e6) return 'R$ ' + (v / 1e6).toLocaleString('pt-BR', { maximumFractionDigits: 2 }) + ' mi';
+    if (a >= 1e4) return 'R$ ' + (v / 1e3).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + ' mil';
+    return 'R$ ' + brl(v);
+  }
+  function delta(a, b) {
+    if (!b) return '';
+    var p = 100 * (a - b) / Math.abs(b);
+    return '<span class="mr-d ' + (p >= 0 ? 'up' : 'dn') + '">' + (p >= 0 ? '▲ ' : '▼ ') + Math.abs(p).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + '%</span>';
+  }
+  function api(corpo) {
+    corpo.token = TOKEN;
+    return fetch(URL_MR, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(corpo) })
+      .then(function (r) { if (!r.ok) throw new Error('Servidor respondeu ' + r.status + '. Tente de novo.'); return r.json(); })
+      .catch(function (e) { throw new Error(/Failed to fetch|NetworkError|Load failed/i.test(e.message) ? 'Sem conexão com o servidor. Confira a internet e tente de novo.' : e.message); })
+      .then(function (j) { if (j.ok) return j.r; if (/SESSAO_EXPIRADA/.test(j.erro)) { fechar(); sair(true); } throw new Error(j.erro); });
+  }
+  function casca(html) {
+    var el = document.getElementById('mr');
+    if (!el) {
+      el = document.createElement('div'); el.id = 'mr'; el.setAttribute('role', 'dialog'); el.setAttribute('aria-modal', 'true'); el.setAttribute('aria-label', 'Modo Reunião');
+      document.body.appendChild(el); document.documentElement.style.overflow = 'hidden';
+      document.addEventListener('keydown', tecla);
+    }
+    el.innerHTML = '<div class="mr-in">' + html + '</div>';
+    return el;
+  }
+  function tecla(ev) { if (ev.key === 'Escape' && !document.fullscreenElement) fechar(); }
+  function fechar() {
+    var el = document.getElementById('mr'); if (el) el.remove();
+    document.documentElement.style.overflow = ''; document.removeEventListener('keydown', tecla);
+    if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(function () {});
+    MR = null;
+  }
+  function telaCheia() {
+    var el = document.getElementById('mr'); if (!el) return;
+    if (document.fullscreenElement) document.exitFullscreen(); else if (el.requestFullscreen) el.requestFullscreen().catch(function () {});
+  }
+  var ICO_CHEIA = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>';
+  function topo(titulo, sub, extra) {
+    return '<header class="mr-top"><div class="mr-id"><div class="mr-selo">FC</div><div style="min-width:0"><h1>' + titulo + '</h1><div class="mr-sub">' + sub + '</div></div></div>' +
+      '<div class="mr-acoes">' + (extra || '') + '<button type="button" class="mr-b" id="mrCheia" aria-label="Tela cheia" title="Tela cheia">' + ICO_CHEIA + '</button>' +
+      '<button type="button" class="mr-b" id="mrFechar">Fechar ✕</button></div></header>';
+  }
+  function ligarTopo() { document.getElementById('mrFechar').onclick = fechar; document.getElementById('mrCheia').onclick = telaCheia; }
+
+  /* ---------- termômetro ---------- */
+  var ST_PILL = { ok: 'p-ok', atencao: 'p-at', risco: 'p-ri', poucos: 'p-in', compras: 'p-in' };
+  function termoHtml(t, grande) {
+    var pill = '<span class="mr-pill ' + ST_PILL[t.st] + '">' + esc(t.txt) + '</span>';
+    var margem = Math.round(t.margem * 100);
+    if (t.st === 'poucos' || t.st === 'compras') {
+      return pill + '<div class="mr-n">' + (t.st === 'compras'
+        ? 'As vendas aparecem muito acima das compras porque parte das notas de entrada ainda não chegou ao portal. Importe os XML de compra no sistema para o termômetro ficar confiável.'
+        : 'O termômetro compara até 12 meses. Com menos de 6 meses de notas no portal, a conta ainda não é segura.') + '</div>' +
+        '<div class="mr-n">Saídas: <b style="color:#e6edf5">' + din(t.saidas) + '</b> · Entradas: <b style="color:#e6edf5">' + din(t.entradas) + '</b></div>';
+    }
+    var pos = Math.max(0, Math.min(100, (t.pct - 50)));   // escala 50% a 150%
+    return '<div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap"><div class="mr-v">' + t.pct + '%</div>' + pill + '</div>' +
+      '<div class="mr-ter" role="img" aria-label="Vendas em ' + t.pct + '% do mínimo esperado"><b style="left:calc(' + pos + '% - 2px)"></b></div>' +
+      '<div class="mr-ter-esc"><span style="left:0">50%</span><span style="left:35%">85%</span><span style="left:50%">100% = mínimo</span><span style="left:100%">150%</span></div>' +
+      '<div class="mr-n">Compras de revenda: <b style="color:#e6edf5">' + din(t.entradas) + '</b> · mínimo esperado (+' + margem + '%): <b style="color:#e6edf5">' + din(t.esperado) + '</b> · vendas: <b style="color:#e6edf5">' + din(t.saidas) + '</b>' +
+      (t.diferenca < 0 ? ' · <span class="bad">faltam ' + din(-t.diferenca) + '</span>' : '') + '</div>' +
+      (grande ? '<div class="mr-n" style="font-size:12.5px">Período: ' + t.meses + ' meses. Transferências entre matriz e filial entram nas duas pontas. Estimativa pelos XML do portal.</div>' : '');
+  }
+
+  /* ---------- gráfico 12 meses (barras vendas x compras) ---------- */
+  function grafico(serie) {
+    if (!serie.length) return '<div class="mr-n">Sem meses para mostrar.</div>';
+    var W = 900, H = 300, pe = 60, pb = 30, pt = 14, max = 0;
+    serie.forEach(function (s) { max = Math.max(max, s.vendas, s.compras); });
+    if (!max) max = 1;
+    var passo = Math.pow(10, Math.floor(Math.log10(max))), topoV = Math.ceil(max / passo) * passo;
+    var gw = (W - pe) / serie.length, bw = Math.min(26, gw * 0.32), y = function (v) { return pt + (H - pt - pb) * (1 - v / topoV); };
+    var o = '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" role="img" aria-label="Vendas e compras nos últimos ' + serie.length + ' meses">';
+    for (var i = 0; i <= 4; i++) { var v = topoV * i / 4, yy = y(v); o += '<line x1="' + pe + '" x2="' + W + '" y1="' + yy + '" y2="' + yy + '" stroke="#1c2a42"/><text x="' + (pe - 8) + '" y="' + (yy + 4) + '" text-anchor="end" font-size="12" fill="#7d8ea3">' + esc(din(v).replace('R$ ', '')) + '</text>'; }
+    serie.forEach(function (s, k) {
+      var x = pe + gw * k + gw / 2;
+      o += '<rect x="' + (x - bw - 2) + '" y="' + y(s.vendas) + '" width="' + bw + '" height="' + Math.max(0, H - pb - y(s.vendas)) + '" rx="4" fill="#2dd4bf"><title>' + mc(s.mes) + ': vendas ' + din(s.vendas) + '</title></rect>';
+      o += '<rect x="' + (x + 2) + '" y="' + y(s.compras) + '" width="' + bw + '" height="' + Math.max(0, H - pb - y(s.compras)) + '" rx="4" fill="#64748b"><title>' + mc(s.mes) + ': compras ' + din(s.compras) + '</title></rect>';
+      o += '<text x="' + x + '" y="' + (H - 9) + '" text-anchor="middle" font-size="12.5" fill="#93a4b8">' + mc(s.mes) + '</text>';
+    });
+    return o + '</svg>';
+  }
+  function anel(nota) {
+    var r = 46, c = 2 * Math.PI * r, cor = nota >= 75 ? '#2dd4bf' : nota >= 55 ? '#fbbf24' : '#f87171';
+    return '<svg viewBox="0 0 120 120" width="120" height="120" role="img" aria-label="Nota ' + nota + ' de 100" style="flex:none"><circle cx="60" cy="60" r="' + r + '" fill="none" stroke="#1a2740" stroke-width="12"/>' +
+      '<circle cx="60" cy="60" r="' + r + '" fill="none" stroke="' + cor + '" stroke-width="12" stroke-linecap="round" stroke-dasharray="' + (c * nota / 100) + ' ' + c + '" transform="rotate(-90 60 60)"/>' +
+      '<text x="60" y="68" text-anchor="middle" font-size="30" font-weight="600" fill="#e6edf5">' + nota + '</text></svg>';
+  }
+  function barras(obj, rotulos) {
+    var ks = Object.keys(obj || {}), tot = 0, max = 0;
+    ks.forEach(function (k) { tot += obj[k]; max = Math.max(max, obj[k]); });
+    if (!tot) return '<div class="mr-n">Sem dados neste mês.</div>';
+    if (rotulos) ks.sort(function (a, b) { return a - b; }); else ks.sort(function (a, b) { return obj[b] - obj[a]; });
+    return ks.slice(0, 7).map(function (k) {
+      return '<div class="mr-bar"><span>' + esc(rotulos ? rotulos[k] : k) + '</span><span class="t"><i style="width:' + (100 * obj[k] / max) + '%"></i></span><span class="mu" style="text-align:right">' + Math.round(100 * obj[k] / tot) + '%</span></div>';
+    }).join('');
+  }
+
+  /* ---------- Modo Reunião (um cliente) ---------- */
+  function abrirReuniao(u, mes) {
+    MR = { u: u, mes: mes || u.meses[0] };
+    casca(topo(esc(rotuloUnid(u)), esc(nomeMes(MR.mes)) + ' · ' + esc(u.contabilidade)) + '<div class="mr-carr"><i></i>Montando a apresentação…</div>'); ligarTopo();
+    api({ acao: 'reuniao', contabilidade: u.contabilidade, cliente: u.cliente, subpasta: u.subpasta, mes: MR.mes })
+      .then(function (d) { if (MR && MR.u === u) { MR.dados = d; desenharReuniao(); } })
+      .catch(function (e) { casca(topo(esc(rotuloUnid(u)), '') + '<div class="mr-c"><b>Não deu para abrir o Modo Reunião.</b><span class="mr-n">' + esc(e.message) + '</span></div>'); ligarTopo(); });
+  }
+  function desenharReuniao() {
+    var d = MR.dados, u = MR.u, a = d.atual || { vendas: 0, compras: 0, impostos: 0, qtd: 0, ticket: 0 }, an = d.anterior;
+    var reg = { SN: 'Simples Nacional', MEI: 'MEI', NORMAL: 'Regime normal', REAL: 'Lucro Real', PRESUMIDO: 'Lucro Presumido' }[d.regime] || d.regime || '';
+    var sel = '<label class="mr-sub" style="display:flex;align-items:center;gap:8px">Mês <select id="mrMes">' + u.meses.map(function (m) { return '<option value="' + m + '"' + (m === MR.mes ? ' selected' : '') + '>' + nomeMes(m) + '</option>'; }).join('') + '</select></label>';
+    var cargaImp = a.vendas ? 100 * a.impostos / a.vendas : 0, cargaAnt = an && an.vendas ? 100 * an.impostos / an.vendas : null;
+    var s = d.saude, t = d.termometro;
+    var html = topo(esc(rotuloUnid(u)), esc(nomeMes(MR.mes)) + ' · ' + esc(u.contabilidade) + (reg ? ' · ' + esc(reg) : ''), sel) +
+      '<section class="mr-g mr-k4" aria-label="Números do mês">' +
+        '<div class="mr-c"><div class="mr-rot">Faturamento</div><div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap"><div class="mr-v">' + din(a.vendas) + '</div>' + (an ? delta(a.vendas, an.vendas) : '') + '</div><div class="mr-n">Vendas menos devoluções' + (an ? ' · mês anterior ' + din(an.vendas) : '') + '</div></div>' +
+        '<div class="mr-c"><div class="mr-rot">Ticket médio</div><div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap"><div class="mr-v">' + din(a.ticket) + '</div></div><div class="mr-n">' + int(a.qtd) + ' notas e cupons no mês</div></div>' +
+        '<div class="mr-c"><div class="mr-rot">Imposto destacado nas vendas</div><div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap"><div class="mr-v">' + cargaImp.toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + '%</div>' +
+          (cargaAnt != null ? '<span class="mr-d ' + (cargaImp <= cargaAnt ? 'up' : 'dn') + '">' + (cargaImp <= cargaAnt ? '▼ ' : '▲ ') + Math.abs(cargaImp - cargaAnt).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + ' p.p.</span>' : '') + '</div><div class="mr-n">' + din(a.impostos) + ' de ICMS, ST, PIS, COFINS e IPI nas notas</div></div>' +
+        '<div class="mr-c"><div class="mr-rot">Compras de revenda</div><div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap"><div class="mr-v">' + din(a.compras) + '</div>' + (an ? delta(a.compras, an.compras).replace(/mr-d (up|dn)/, 'mr-d mu') : '') + '</div><div class="mr-n">Notas de entrada no portal</div></div>' +
+      '</section>' +
+      '<section class="mr-g mr-main">' +
+        '<div class="mr-c"><div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap"><div class="mr-rot">Vendas x compras · ' + d.serie.length + ' meses</div><div class="mr-leg"><span><i style="background:#2dd4bf"></i>Vendas</span><span><i style="background:#64748b"></i>Compras</span></div></div>' + grafico(d.serie) + '</div>' +
+        '<div class="mr-g" style="grid-template-rows:auto 1fr">' +
+          '<div class="mr-c"><div class="mr-rot">Saúde fiscal</div><div style="display:flex;gap:18px;align-items:center">' + anel(s.nota) + '<div style="display:grid;gap:8px;min-width:0"><b style="font-size:18px">' + esc(s.rotulo) + '</b><ul class="mr-it">' + s.itens.map(function (i) { return '<li' + (i.ok ? '' : ' class="x"') + '>' + esc(i.txt) + '</li>'; }).join('') + '</ul></div></div></div>' +
+          '<div class="mr-c"><div class="mr-rot">Termômetro fiscal · vendas x compras</div>' + termoHtml(t, true) + '</div>' +
+        '</div>' +
+      '</section>' +
+      '<section class="mr-g mr-3">' +
+        '<div class="mr-c"><div class="mr-rot">Como o cliente paga</div>' + barras(a.pagamentos) + '</div>' +
+        '<div class="mr-c"><div class="mr-rot">Vendas por dia da semana</div>' + barras(a.semana, DIAS) + '</div>' +
+        (d.simples ? '<div class="mr-c"><div class="mr-rot">Limite do ' + (d.regime === 'MEI' ? 'MEI' : 'Simples Nacional') + '</div><div class="mr-v">' + d.simples.pct + '%</div>' +
+          '<div class="mr-bar" style="grid-template-columns:1fr"><span class="t"><i style="width:' + Math.min(100, d.simples.pct) + '%;background:' + (d.simples.pct >= 80 ? '#fbbf24' : '#2dd4bf') + '"></i></span></div>' +
+          '<div class="mr-n">' + din(d.simples.receita) + ' em ' + d.simples.meses + ' meses de um limite de ' + din(d.simples.limite) + ' por ano.</div></div>'
+        : d.bpo ? '<div class="mr-c"><div class="mr-rot">Saldo em conta (BPO)</div><div class="mr-v">' + din(d.bpo.saldo) + '</div><div class="mr-n">Conforme o último extrato importado.</div></div>'
+        : '<div class="mr-c"><div class="mr-rot">Notas no mês</div><div class="mr-v">' + int(a.qtd) + '</div><div class="mr-n">NF-e e NFC-e autorizadas com XML no portal.</div></div>') +
+      '</section>' +
+      '<div class="mr-rod">Farol Contábil · números calculados a partir dos XML enviados ao portal. O termômetro é uma estimativa e não substitui a análise da contabilidade.</div>';
+    casca(html); ligarTopo();
+    document.getElementById('mrMes').onchange = function () { abrirReuniao(u, this.value); };
+  }
+
+  /* ---------- Visão da carteira ---------- */
+  var FILTROS = [['todos', 'Todos'], ['risco', 'Risco'], ['atencao', 'Atenção'], ['ok', 'Em dia'], ['sem', 'Dados insuficientes']];
+  function grupo(c) { var st = c.termometro.st; return st === 'risco' || c.saude.nota < 55 ? 'risco' : st === 'atencao' || c.saude.nota < 75 ? 'atencao' : (st === 'poucos' || st === 'compras') ? 'sem' : 'ok'; }
+  function abrirCarteira(mes, contab) {
+    MR = { carteira: true, mes: mes, contab: contab || '', filtro: 'todos' };
+    casca(topo('Carteira de clientes', esc(nomeMes(mes))) + '<div class="mr-carr"><i></i>Calculando a carteira…</div>'); ligarTopo();
+    api({ acao: 'carteira', mes: mes, contabilidade: contab || '' })
+      .then(function (d) { if (MR && MR.carteira && MR.mes === mes) { MR.dados = d; desenharCarteira(); } })
+      .catch(function (e) { casca(topo('Carteira de clientes', '') + '<div class="mr-c"><b>Não deu para abrir a carteira.</b><span class="mr-n">' + esc(e.message) + '</span></div>'); ligarTopo(); });
+  }
+  function rotC(c) { return c.cliente + (c.subpasta ? ' · ' + c.subpasta : ''); }
+  function desenharCarteira() {
+    var cs = MR.dados.clientes.slice(), cont = { risco: 0, atencao: 0, ok: 0, sem: 0 };
+    cs.forEach(function (c) { c.g = grupo(c); cont[c.g]++; });
+    var hoje = cs.filter(function (c) { return c.g === 'risco' || c.g === 'atencao'; }).sort(function (a, b) { return a.saude.nota - b.saude.nota; }).slice(0, 6);
+    var lista = cs.filter(function (c) { return MR.filtro === 'todos' || c.g === MR.filtro; }).sort(function (a, b) { return a.saude.nota - b.saude.nota || b.vendas - a.vendas; });
+    var meses = mesesTodos();
+    var sel = '<label class="mr-sub" style="display:flex;align-items:center;gap:8px">Mês <select id="mrMesC">' + meses.map(function (m) { return '<option value="' + m + '"' + (m === MR.mes ? ' selected' : '') + '>' + nomeMes(m) + '</option>'; }).join('') + '</select></label>';
+    var motivo = function (c) { var t = c.termometro; if (t.st === 'risco' || t.st === 'atencao') return 'Termômetro em ' + t.pct + '% do mínimo'; var x = c.saude.itens.filter(function (i) { return !i.ok; })[0]; return x ? x.txt : t.txt; };
+    var cartao = function (c, i) {
+      var cor = c.saude.nota >= 75 ? 'up' : c.saude.nota >= 55 ? 'dn' : 'bad';
+      return '<button type="button" class="mr-cli" data-i="' + i + '"><div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline"><b style="font-size:15.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(rotC(c)) + '</b><span class="mr-nota ' + cor + '">' + c.saude.nota + '</span></div>' +
+        '<span class="mr-n" style="font-size:13px">' + esc(c.contabilidade) + ' · ' + din(c.vendas) + '</span><span class="mr-pill ' + ST_PILL[c.termometro.st] + '" style="font-size:12px">' + esc(c.termometro.st === 'ok' || c.termometro.st === 'atencao' || c.termometro.st === 'risco' ? 'Termômetro ' + c.termometro.pct + '%' : c.termometro.st === 'compras' ? 'Compras incompletas' : 'Poucos meses') + '</span></button>';
+    };
+    var html = topo('Carteira de clientes', esc(nomeMes(MR.mes)) + ' · ' + cs.length + ' clientes com dados no mês', sel) +
+      '<section class="mr-g mr-st">' +
+        [['risco', 'Risco', 'bad', 'Termômetro abaixo de 85% ou nota crítica'], ['atencao', 'Atenção', 'dn', 'Perto do limite ou pendências'], ['ok', 'Em dia', 'up', 'Sem alertas'], ['sem', 'Dados insuficientes', 'mu', 'Poucos meses ou compras faltando']].map(function (x) {
+          return '<div class="mr-c"><div class="mr-rot">' + x[1] + '</div><div class="mr-v ' + x[2] + '">' + cont[x[0]] + '</div><div class="mr-n">' + x[3] + '</div></div>';
+        }).join('') +
+      '</section>' +
+      (hoje.length ? '<section class="mr-c"><div class="mr-rot">Precisa de você hoje</div><div class="mr-hoje">' + hoje.map(function (c) {
+        return '<button type="button" class="mr-cli" data-h="' + cs.indexOf(c) + '"><div style="min-width:0"><b>' + esc(rotC(c)) + '</b><div class="mr-n" style="font-size:13px">' + esc(c.contabilidade) + ' · ' + esc(motivo(c)) + '</div></div><span class="mr-nota ' + (c.g === 'risco' ? 'bad' : 'dn') + '">' + c.saude.nota + '</span></button>';
+      }).join('') + '</div></section>' : '') +
+      '<section class="mr-c"><div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:center"><div class="mr-rot">Todos os clientes</div><div class="mr-filtro" role="group" aria-label="Filtrar">' +
+        FILTROS.map(function (f) { return '<button type="button" class="mr-b" data-f="' + f[0] + '" aria-pressed="' + (MR.filtro === f[0]) + '">' + f[1] + '</button>'; }).join('') + '</div></div>' +
+        (lista.length ? '<div class="mr-g mr-lista">' + lista.map(function (c) { return cartao(c, cs.indexOf(c)); }).join('') + '</div>' : '<div class="mr-n">Nenhum cliente neste filtro.</div>') +
+      '</section>' +
+      '<div class="mr-rod">Nota de 0 a 100: XML faltando, pendências na SEFAZ, falhas de numeração, Reforma Tributária e termômetro fiscal. Clique num cliente para abrir o Modo Reunião.</div>';
+    var el = casca(html); ligarTopo();
+    document.getElementById('mrMesC').onchange = function () { abrirCarteira(this.value, MR.contab); };
+    el.querySelectorAll('[data-f]').forEach(function (b) { b.onclick = function () { MR.filtro = b.dataset.f; desenharCarteira(); }; });
+    el.querySelectorAll('[data-i],[data-h]').forEach(function (b) {
+      b.onclick = function () {
+        var c = cs[+(b.dataset.i != null ? b.dataset.i : b.dataset.h)], mes = MR.mes;
+        var u = DADOS.unidades.filter(function (x) { return x.contabilidade === c.contabilidade && x.cliente === c.cliente && (x.subpasta || '') === (c.subpasta || ''); })[0];
+        if (u) abrirReuniao(u, u.meses.indexOf(mes) >= 0 ? mes : null);
+      };
+    });
+  }
+  window.abrirReuniao = abrirReuniao;
+  window.abrirCarteira = abrirCarteira;
 })();
 </script>
 <script>if (typeof USA_BANCO !== 'undefined' && !USA_BANCO) document.body.insertAdjacentHTML('beforeend', '<div style="position:fixed;left:12px;bottom:12px;z-index:50;background:#8a5a00;color:#fff;font:600 12px/1 system-ui,sans-serif;padding:7px 10px;border-radius:8px;opacity:.9">Caminho antigo (reserva)</div>');</script>
