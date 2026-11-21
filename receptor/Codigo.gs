@@ -40,7 +40,7 @@ var CONFIG = {
   GUARDAR_DIAS: 10, GUARDAR_SEMANAS: 0, GUARDAR_MESES: 0   // no máximo 10 dias (um backup por dia; mais velhos que 10 dias são apagados)
 };
 
-var VERSAO = '1.16';
+var VERSAO = '1.17';
 var PASTA_PORTAL = '_PORTAL_DADOS';   // resumos fiscais (JSON) e versão do agente
 var MESES = ['JANEIRO','FEVEREIRO','MARCO','ABRIL','MAIO','JUNHO','JULHO','AGOSTO','SETEMBRO','OUTUBRO','NOVEMBRO','DEZEMBRO'];
 var MESES_TXT = ['JANEIRO','FEVEREIRO','MARÇO','ABRIL','MAIO','JUNHO','JULHO','AGOSTO','SETEMBRO','OUTUBRO','NOVEMBRO','DEZEMBRO'];
@@ -395,7 +395,15 @@ function registrar_(req) {
       req.arquivo || '', req.tamanho ? Math.round(req.tamanho / 1024) : '', req.maquina || '', String(req.mensagem || '').slice(0, 400)]);
   } finally { lock.releaseLock(); }
   PropertiesService.getScriptProperties().setProperty('DADOS_V', String(Date.now()));
-  try { dbEnviar_([{ t: 'envios', linhas: [dbLinhaEnvio_(linha.map(function (v, k) { return k === 3 ? mesTxt : v; }))] }]); } catch (e) { }
+  try {   // o painel do portal (banco) fica em dia na hora: linha do envio + resumo do mês que o agente acabou de mandar
+    var itensDb = [{ t: 'envios', linhas: [dbLinhaEnvio_(linha.map(function (v, k) { return k === 3 ? mesTxt : v; }))] }];
+    var pu = pastaUnidade_(req.contabilidade, req.cliente, req.subpasta || ''), fj = pu && arqJson_(pu, mesTxt + '.json');
+    if (fj && Date.now() - fj.getLastUpdated().getTime() < 3600e3) {
+      var dj = JSON.parse(fj.getBlob().getDataAsString('UTF-8')), ij = null; try { ij = indicadores_(dj); } catch (e) { }
+      itensDb.push({ t: 'resumo', contabilidade: req.contabilidade, cliente: req.cliente, subpasta: req.subpasta || '', pid: pu.getId(), mes: mesTxt, dados: dj, ind: ij });
+    }
+    dbEnviar_(itensDb);
+  } catch (e) { }
   return { ok: true, painel: planilha_().getUrl() };
 }
 
