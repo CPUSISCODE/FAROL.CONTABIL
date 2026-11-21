@@ -6,6 +6,7 @@
 // junto com a sessão já conferida.
 // O receptor alimenta o banco com POST { acao: 'sync', senha, itens: [...] }.
 import { createClient } from 'npm:@supabase/supabase-js@2.45.4';
+import { criarFin } from './fin.ts';
 
 const db = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, { auth: { persistSession: false } });
 const SENHA = Deno.env.get('RECEPTOR_SENHA') || '';
@@ -207,8 +208,16 @@ async function repassar(fn: string, args: unknown[]) {
   return await r.json();   // já vem no formato { ok, r | erro }
 }
 
+// pedido autenticado ao receptor (arquivos do financeiro no Drive)
+async function receptor(acao: string, dados: Record<string, unknown>) {
+  const r = await fetch(RECEPTOR, { method: 'POST', redirect: 'follow', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ ...dados, acao, senha: SENHA }) });
+  if (!r.ok) throw new Error('Receptor respondeu ' + r.status + '.');
+  return await r.json();
+}
+const FIN = criarFin({ db, sessao, normal, podeVer, receptor, repassar });
+
 const NATIVAS: Record<string, (...a: any[]) => Promise<unknown>> = {
-  portalAparencia, portalDados, portalResumo, portalIndicadores, portalIndicadoresLote, portalSair,
+  portalAparencia, portalDados, portalResumo, portalIndicadores, portalIndicadoresLote, portalSair, ...FIN.funcoes,
 };
 // funções que o portal pode chamar (as demais são recusadas)
 const REPASSE = new Set(['portalArquivo', 'portalParte', 'portalAdmin', 'portalSalvarUsuario', 'portalExcluirUsuario', 'portalCriarContabilidade',
@@ -290,6 +299,10 @@ async function sync(req: any) {
         for (let i = 0; i < linhas.length; i += 500) erroDb((await db.from('historico').insert(linhas.slice(i, i + 500))).error);
         conta('historico', linhas.length); break;
       }
+      case 'bpo': {   // configurações do BPO (aba BPO da planilha)
+        await FIN.espelharBpo(it.linhas || []);
+        conta('bpo', (it.linhas || []).length); break;
+      }
       case 'aparencia': {
         erroDb((await db.from('aparencia').upsert({ chave: 'portal', valor: JSON.stringify(it.dados || {}) })).error);
         conta('aparencia'); break;
@@ -317,6 +330,7 @@ Deno.serve(async (r) => {
   try {
     if (req.acao === 'portal') return json(await portal(req));
     if (req.acao === 'sync') return json(await sync(req));
+    if (req.acao === 'whatsapp') return json(await FIN.whatsapp(req));
     return json({ ok: false, erro: 'Ação desconhecida.' }, 400);
   } catch (e) {
     return json({ ok: false, erro: String((e as Error)?.message || e) });

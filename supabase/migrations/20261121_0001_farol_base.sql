@@ -208,3 +208,10 @@ create or replace function public.limpar_sessoes() returns void language sql set
   delete from public.tentativas_login where ate < now() - interval '1 day';
 $$;
 revoke execute on function public.limpar_sessoes() from anon, authenticated, public;
+
+-- meses com lançamentos de um cliente do BPO
+create or replace function public.fin_meses(p_bpo bigint) returns table (mes text)
+language sql stable set search_path = '' as $$
+  select distinct l.mes from public.fin_lancamentos l where l.bpo_id = p_bpo
+$$;
+revoke execute on function public.fin_meses(bigint) from anon, authenticated, public;

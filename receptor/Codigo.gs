@@ -40,7 +40,7 @@ var CONFIG = {
   GUARDAR_DIAS: 10, GUARDAR_SEMANAS: 0, GUARDAR_MESES: 0   // no máximo 10 dias (um backup por dia; mais velhos que 10 dias são apagados)
 };
 
-var VERSAO = '1.15';
+var VERSAO = '1.16';
 var PASTA_PORTAL = '_PORTAL_DADOS';   // resumos fiscais (JSON) e versão do agente
 var MESES = ['JANEIRO','FEVEREIRO','MARCO','ABRIL','MAIO','JUNHO','JULHO','AGOSTO','SETEMBRO','OUTUBRO','NOVEMBRO','DEZEMBRO'];
 var MESES_TXT = ['JANEIRO','FEVEREIRO','MARÇO','ABRIL','MAIO','JUNHO','JULHO','AGOSTO','SETEMBRO','OUTUBRO','NOVEMBRO','DEZEMBRO'];
@@ -157,6 +157,8 @@ function doPost(e) {
       r = { ok: false, erro: 'Senha inválida. Confira o arquivo conexao.txt do agente.' };
     } else if (req.acao === 'portalInterno') {
       r = portalInterno_(req);
+    } else if (req.acao === 'finArquivo') {
+      r = finArquivo_(req);
     } else if (!redirecionarUnificado_(req)) {   // cliente unificado: envio sem subpasta vai para a que ficou (sempre segue)
       r = { ok: false };
     } else if (req.acao === 'ping') {
@@ -2362,7 +2364,8 @@ function dbSincronizarConfig_() {
   var reg = [];
   try { abaRegimes_(ss).getDataRange().getValues().slice(1).forEach(function (l) { var r = regimeTexto_(l[2]); if (l[0] && l[1] && r) reg.push({ contabilidade: String(l[0]), cliente: String(l[1]), regime: r, obs: String(l[3] || '') }); }); } catch (e) { }
   CacheService.getScriptCache().remove('aparencia');
-  return dbEnviar_([{ t: 'usuarios', linhas: usu }, { t: 'regimes', linhas: reg }, { t: 'aparencia', dados: aparencia_() }]);
+  var bpo = []; try { bpo = bpoLinhas_().map(function (b) { return { contabilidade: b.contabilidade, cliente: b.cliente, ativo: b.ativo, inicio: b.inicio, operador: b.operador, obs: b.obs, telefones: b.telefones }; }); } catch (e) { }
+  return dbEnviar_([{ t: 'usuarios', linhas: usu }, { t: 'regimes', linhas: reg }, { t: 'aparencia', dados: aparencia_() }, { t: 'bpo', linhas: bpo }]);
 }
 
 // painel de envios (aba Painel) e histórico novo
@@ -2440,4 +2443,26 @@ function SINCRONIZAR_BANCO() {
   try { r.resumos = dbSincronizarResumos_(240000); } catch (e) { r.resumos = e.message; }
   PropertiesService.getScriptProperties().setProperty('DB_ULTIMA', new Date().toISOString() + ' ' + JSON.stringify(r).slice(0, 300));
   return r;
+}
+
+// arquivos do financeiro (o banco guarda os dados; os arquivos ficam no Drive): salvar e ler
+function finArquivo_(req) {
+  var contab = String(req.contabilidade || '').trim(), cliente = String(req.cliente || '').trim();
+  if (!contab || !cliente) return { ok: false, erro: 'empresa não informada' };
+  var base = finPasta_(contab, cliente);
+  if (req.op === 'salvar') {
+    var pasta = base; String(req.pasta || 'anexos').split('/').forEach(function (p) { if (/^(anexos|comprovantes|ofx)$/.test(p)) pasta = filha_(pasta, p); });
+    var bytes = Utilities.base64Decode(String(req.base64 || ''));
+    if (bytes.length > 10 * 1024 * 1024) return { ok: false, erro: 'arquivo grande demais' };
+    var nome = String(req.nome || 'arquivo').replace(/[\\\/:*?"<>|]/g, '-').slice(0, 150);
+    return { ok: true, id: pasta.createFile(Utilities.newBlob(bytes, String(req.tipo || 'application/octet-stream'), nome)).getId() };
+  }
+  if (req.op === 'ler') {
+    var f = DriveApp.getFileById(String(req.id)), pai = f.getParents(), anx = filha_(base, 'anexos');
+    var ok = false, ids = [anx.getId(), filha_(anx, 'comprovantes').getId(), filha_(base, 'ofx').getId()];
+    while (pai.hasNext()) { if (ids.indexOf(pai.next().getId()) >= 0) ok = true; }
+    if (!ok) return { ok: false, erro: 'Arquivo não pertence a esta empresa.' };
+    var b = f.getBlob(); return { ok: true, nome: f.getName(), tipo: b.getContentType(), base64: Utilities.base64Encode(b.getBytes()) };
+  }
+  return { ok: false, erro: 'operação inválida' };
 }
