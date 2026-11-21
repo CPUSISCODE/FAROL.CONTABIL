@@ -2579,15 +2579,27 @@ function guiaAuto() {
   }
 
   /* ---------- receita bruta acumulada dos últimos 12 meses ---------- */
-  function rbt12(serie) {
-    var tot = 0; serie.forEach(function (s) { tot += s.vendas; });
+  function linha(serie, campo, cor) {
+    var n = serie.length, max = 0; serie.forEach(function (s) { max = Math.max(max, s.vendas, s.compras); });
+    if (n < 2 || !max) return '';
+    return '<polyline points="' + serie.map(function (s, i) { return (200 * i / (n - 1)).toFixed(1) + ',' + (33 - 30 * s[campo] / max).toFixed(1); }).join(' ') + '" fill="none" stroke="' + cor + '" stroke-width="2.5" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>';
+  }
+  function rbt12(serie, t) {
     var n = serie.length, ini = n ? serie[0].mes : '', fim = n ? serie[n - 1].mes : '';
     var per = n ? mc(ini) + '/' + ini.slice(2, 4) + ' a ' + mc(fim) + '/' + fim.slice(2, 4) : '';
-    var max = 0; serie.forEach(function (s) { max = Math.max(max, s.vendas); });
-    var sp = n > 1 && max ? '<svg viewBox="0 0 200 36" width="100%" height="36" preserveAspectRatio="none" aria-hidden="true"><polyline points="' + serie.map(function (s, i) { return (200 * i / (n - 1)).toFixed(1) + ',' + (33 - 30 * s.vendas / max).toFixed(1); }).join(' ') + '" fill="none" stroke="#2dd4bf" stroke-width="2.5" stroke-linejoin="round" vector-effect="non-scaling-stroke"/></svg>' : '';
-    return '<div class="mr-c"><div class="mr-rot">Receita bruta · 12 meses</div><div class="mr-v">' + din(tot) + '</div>' + sp +
-      '<div class="mr-n">Média de ' + din(n ? tot / n : 0) + ' por mês' + (per ? ' · ' + per : '') + '</div>' +
-      (n && n < 12 ? '<div class="mr-n" style="font-size:12.5px;color:#fbbf24">Só ' + n + ' ' + (n === 1 ? 'mês' : 'meses') + ' no portal: o valor de 12 meses pode ser maior.</div>' : '') + '</div>';
+    var ven = t.saidas, com = t.entradas, sv = 0; serie.forEach(function (s) { sv += s.vendas; });
+    var sp = n > 1 ? '<svg viewBox="0 0 200 36" width="100%" height="26" preserveAspectRatio="none" aria-hidden="true">' + linha(serie, 'compras', '#64748b') + linha(serie, 'vendas', '#2dd4bf') + '</svg>' : '';
+    var vl = function (rot, v, cor) { return '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px"><span class="mr-n"><i style="display:inline-block;width:10px;height:10px;border-radius:3px;background:' + cor + ';margin-right:7px"></i>' + rot + '</span><b style="font-size:clamp(20px,1.8vw,28px);font-weight:600;line-height:1.1;font-variant-numeric:tabular-nums">' + din(v) + '</b></div>'; };
+    var margem = Math.round(t.margem * 100), rel = '';
+    if (com > 0) {
+      var acima = 100 * (ven - com) / com, cls = { ok: 'up', atencao: 'dn', risco: 'bad' }[t.st] || 'mu';
+      var ab = Math.floor(Math.abs(acima) * 10) / 10;
+      rel = '<div class="mr-d ' + cls + '">Vendas ' + ab.toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + '% ' + (acima >= 0 ? 'acima' : 'abaixo') + ' das compras <span class="mu" style="font-weight:500">(mínimo ' + margem + '%)</span></div>' +
+        (t.st === 'compras' ? '<div class="mr-n" style="font-size:12.5px">Notas de compra ainda incompletas no portal.</div>' : t.st === 'poucos' ? '<div class="mr-n" style="font-size:12.5px">Ainda há poucos meses para concluir.</div>' : '');
+    } else rel = '<div class="mr-n">Sem notas de compra no portal neste período.</div>';
+    return '<div class="mr-c"><div class="mr-rot">Vendas e compras · 12 meses</div>' + vl('Vendas', ven, '#2dd4bf') + vl('Compras', com, '#64748b') + sp + rel +
+      '<div class="mr-n" style="font-size:12.5px">' + (per ? per : '') + (Math.abs(ven - sv) > 1 ? ' · com transferências' : '') +
+      (n && n < 12 ? ' · <span style="color:#fbbf24">só ' + n + ' ' + (n === 1 ? 'mês' : 'meses') + ' no portal</span>' : '') + '</div></div>';
   }
 
   /* ---------- Modo Reunião (um cliente) ---------- */
@@ -2610,7 +2622,7 @@ function guiaAuto() {
         '<div class="mr-c"><div class="mr-rot">Ticket médio</div><div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap"><div class="mr-v">' + din(a.ticket) + '</div></div><div class="mr-n">' + int(a.qtd) + ' notas e cupons no mês</div></div>' +
         '<div class="mr-c"><div class="mr-rot">Imposto destacado nas vendas</div><div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap"><div class="mr-v">' + cargaImp.toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + '%</div>' +
           (cargaAnt != null ? '<span class="mr-d ' + (cargaImp <= cargaAnt ? 'up' : 'dn') + '">' + (cargaImp <= cargaAnt ? '▼ ' : '▲ ') + Math.abs(cargaImp - cargaAnt).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + ' p.p.</span>' : '') + '</div><div class="mr-n">' + din(a.impostos) + ' de ICMS, ST, PIS, COFINS e IPI nas notas</div></div>' +
-        rbt12(d.serie) +
+        rbt12(d.serie, d.termometro) +
       '</section>' +
       '<section class="mr-g mr-main">' +
         '<div class="mr-c"><div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap"><div class="mr-rot">Vendas x compras · ' + d.serie.length + ' meses</div><div class="mr-leg"><span><i style="background:#2dd4bf"></i>Vendas</span><span><i style="background:#64748b"></i>Compras</span></div></div>' + grafico(d.serie) + '</div>' +
