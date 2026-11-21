@@ -2428,6 +2428,7 @@ function guiaAuto() {
 #mr .mr-k4{grid-template-columns:repeat(4,minmax(0,1fr))}
 #mr .mr-main{grid-template-columns:minmax(0,1.7fr) minmax(0,1fr)}
 #mr .mr-3{grid-template-columns:repeat(3,minmax(0,1fr))}
+#mr .mr-4{grid-template-columns:repeat(4,minmax(0,1fr))}
 #mr .mr-c{background:#111b2e;border:1px solid #1c2a42;border-radius:18px;padding:clamp(14px,1.4vw,22px);display:flex;flex-direction:column;gap:10px;min-width:0}
 #mr .mr-rot{font-size:12.5px;letter-spacing:.08em;text-transform:uppercase;color:#93a4b8;font-weight:600}
 #mr .mr-v{font-size:clamp(26px,2.6vw,42px);font-weight:600;letter-spacing:-.02em;line-height:1.05;font-variant-numeric:tabular-nums}
@@ -2463,8 +2464,9 @@ function guiaAuto() {
 #mr .mr-carr i{width:18px;height:18px;border-radius:50%;border:2px solid #2dd4bf;border-right-color:transparent;animation:mrg 1s linear infinite}
 @keyframes mrg{to{transform:rotate(360deg)}}
 @media (prefers-reduced-motion:reduce){#mr .mr-carr i{animation:none}}
-@media (max-width:1100px){#mr .mr-main{grid-template-columns:1fr}#mr .mr-k4,#mr .mr-st{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:1100px){#mr .mr-main{grid-template-columns:1fr}#mr .mr-k4,#mr .mr-4,#mr .mr-st{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media (max-width:760px){#mr .mr-3{grid-template-columns:1fr}}
+@media (max-width:620px){#mr .mr-4{grid-template-columns:1fr}}
 @media (max-width:520px){#mr .mr-k4,#mr .mr-st{grid-template-columns:1fr}}
 @media (min-width:1900px){#mr{font-size:18px}#mr .mr-n,#mr ul.mr-it{font-size:16px}}
 </style>
@@ -2576,6 +2578,18 @@ function guiaAuto() {
     }).join('');
   }
 
+  /* ---------- receita bruta acumulada dos últimos 12 meses ---------- */
+  function rbt12(serie) {
+    var tot = 0; serie.forEach(function (s) { tot += s.vendas; });
+    var n = serie.length, ini = n ? serie[0].mes : '', fim = n ? serie[n - 1].mes : '';
+    var per = n ? mc(ini) + '/' + ini.slice(2, 4) + ' a ' + mc(fim) + '/' + fim.slice(2, 4) : '';
+    var max = 0; serie.forEach(function (s) { max = Math.max(max, s.vendas); });
+    var sp = n > 1 && max ? '<svg viewBox="0 0 200 36" width="100%" height="36" preserveAspectRatio="none" aria-hidden="true"><polyline points="' + serie.map(function (s, i) { return (200 * i / (n - 1)).toFixed(1) + ',' + (33 - 30 * s.vendas / max).toFixed(1); }).join(' ') + '" fill="none" stroke="#2dd4bf" stroke-width="2.5" stroke-linejoin="round" vector-effect="non-scaling-stroke"/></svg>' : '';
+    return '<div class="mr-c"><div class="mr-rot">Receita bruta · 12 meses</div><div class="mr-v">' + din(tot) + '</div>' + sp +
+      '<div class="mr-n">Média de ' + din(n ? tot / n : 0) + ' por mês' + (per ? ' · ' + per : '') + '</div>' +
+      (n && n < 12 ? '<div class="mr-n" style="font-size:12.5px;color:#fbbf24">Só ' + n + ' ' + (n === 1 ? 'mês' : 'meses') + ' no portal: o valor de 12 meses pode ser maior.</div>' : '') + '</div>';
+  }
+
   /* ---------- Modo Reunião (um cliente) ---------- */
   function abrirReuniao(u, mes) {
     MR = { u: u, mes: mes || u.meses[0] };
@@ -2596,7 +2610,7 @@ function guiaAuto() {
         '<div class="mr-c"><div class="mr-rot">Ticket médio</div><div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap"><div class="mr-v">' + din(a.ticket) + '</div></div><div class="mr-n">' + int(a.qtd) + ' notas e cupons no mês</div></div>' +
         '<div class="mr-c"><div class="mr-rot">Imposto destacado nas vendas</div><div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap"><div class="mr-v">' + cargaImp.toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + '%</div>' +
           (cargaAnt != null ? '<span class="mr-d ' + (cargaImp <= cargaAnt ? 'up' : 'dn') + '">' + (cargaImp <= cargaAnt ? '▼ ' : '▲ ') + Math.abs(cargaImp - cargaAnt).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + ' p.p.</span>' : '') + '</div><div class="mr-n">' + din(a.impostos) + ' de ICMS, ST, PIS, COFINS e IPI nas notas</div></div>' +
-        '<div class="mr-c"><div class="mr-rot">Compras de revenda</div><div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap"><div class="mr-v">' + din(a.compras) + '</div>' + (an ? delta(a.compras, an.compras).replace(/mr-d (up|dn)/, 'mr-d mu') : '') + '</div><div class="mr-n">Notas de entrada no portal</div></div>' +
+        rbt12(d.serie) +
       '</section>' +
       '<section class="mr-g mr-main">' +
         '<div class="mr-c"><div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap"><div class="mr-rot">Vendas x compras · ' + d.serie.length + ' meses</div><div class="mr-leg"><span><i style="background:#2dd4bf"></i>Vendas</span><span><i style="background:#64748b"></i>Compras</span></div></div>' + grafico(d.serie) + '</div>' +
@@ -2605,7 +2619,8 @@ function guiaAuto() {
           '<div class="mr-c"><div class="mr-rot">Termômetro fiscal · vendas x compras</div>' + termoHtml(t, true) + '</div>' +
         '</div>' +
       '</section>' +
-      '<section class="mr-g mr-3">' +
+      '<section class="mr-g mr-4">' +
+        '<div class="mr-c"><div class="mr-rot">Compras de revenda</div><div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap"><div class="mr-v">' + din(a.compras) + '</div>' + (an ? delta(a.compras, an.compras).replace(/mr-d (up|dn)/, 'mr-d mu') : '') + '</div><div class="mr-n">Notas de entrada no portal</div></div>' +
         '<div class="mr-c"><div class="mr-rot">Como o cliente paga</div>' + barras(a.pagamentos) + '</div>' +
         '<div class="mr-c"><div class="mr-rot">Vendas por dia da semana</div>' + barras(a.semana, DIAS) + '</div>' +
         (d.simples ? '<div class="mr-c"><div class="mr-rot">Limite do ' + (d.regime === 'MEI' ? 'MEI' : 'Simples Nacional') + '</div><div class="mr-v">' + d.simples.pct + '%</div>' +
