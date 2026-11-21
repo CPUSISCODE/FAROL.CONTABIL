@@ -1,6 +1,6 @@
 // Farol Contábil — Modo Reunião e visão da carteira (Edge Function "reuniao").
 // Só leitura. Usa as sessões do portal (tabela sessoes) e as funções do banco reuniao() e termometro().
-// Enquanto está em teste, só o login CPUSIS (contabs '*') usa.
+// Cada login só vê as contabilidades liberadas para ele (contabs); login de empresa (BPO) não tem acesso.
 import { createClient } from 'npm:@supabase/supabase-js@2.45.4';
 
 const db = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, { auth: { persistSession: false } });
@@ -54,8 +54,7 @@ function saude(ind: any, termo: any) {
 
 async function reuniao(req: any) {
   const s = await sessao(req.token);
-  if (!s.contabs.includes('*')) throw new Error('O Modo Reunião ainda está em teste.');
-  if (!podeVer(s, req.contabilidade)) throw new Error('Sem permissão para esta contabilidade.');
+  if (!s.contabs.length || !podeVer(s, req.contabilidade)) throw new Error('Sem permissão para esta contabilidade.');
   const mes = String(req.mes || ''); if (!/^\d{4}-\d{2}$/.test(mes)) throw new Error('Mês inválido.');
   const { data: u } = await db.from('unidades').select('id, contabilidade, cliente, subpasta').eq('contab_n', normal(req.contabilidade)).eq('cliente_n', normal(req.cliente)).eq('subpasta_n', normal(req.subpasta)).maybeSingle();
   if (!u) throw new Error('Cliente não encontrado.');
@@ -88,7 +87,6 @@ async function reuniao(req: any) {
 
 async function carteira(req: any) {
   const s = await sessao(req.token);
-  if (!s.contabs.includes('*')) throw new Error('A nova visão da carteira ainda está em teste.');
   const mes = String(req.mes || ''); if (!/^\d{4}-\d{2}$/.test(mes)) throw new Error('Mês inválido.');
   const { data: us } = await db.from('unidades').select('id, contabilidade, cliente, subpasta');
   const vis = (us || []).filter((u: any) => podeVer(s, u.contabilidade) && (!req.contabilidade || normal(u.contabilidade) === normal(req.contabilidade)));
