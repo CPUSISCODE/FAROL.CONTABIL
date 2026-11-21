@@ -40,7 +40,7 @@ var CONFIG = {
   GUARDAR_DIAS: 10, GUARDAR_SEMANAS: 0, GUARDAR_MESES: 0   // no máximo 10 dias (um backup por dia; mais velhos que 10 dias são apagados)
 };
 
-var VERSAO = '1.14';
+var VERSAO = '1.15';
 var PASTA_PORTAL = '_PORTAL_DADOS';   // resumos fiscais (JSON) e versão do agente
 var MESES = ['JANEIRO','FEVEREIRO','MARCO','ABRIL','MAIO','JUNHO','JULHO','AGOSTO','SETEMBRO','OUTUBRO','NOVEMBRO','DEZEMBRO'];
 var MESES_TXT = ['JANEIRO','FEVEREIRO','MARÇO','ABRIL','MAIO','JUNHO','JULHO','AGOSTO','SETEMBRO','OUTUBRO','NOVEMBRO','DEZEMBRO'];
@@ -155,6 +155,8 @@ function doPost(e) {
       r = whatsapp_(req);
     } else if (req.senha !== segredo_('SENHA')) {
       r = { ok: false, erro: 'Senha inválida. Confira o arquivo conexao.txt do agente.' };
+    } else if (req.acao === 'portalInterno') {
+      r = portalInterno_(req);
     } else if (!redirecionarUnificado_(req)) {   // cliente unificado: envio sem subpasta vai para a que ficou (sempre segue)
       r = { ok: false };
     } else if (req.acao === 'ping') {
@@ -391,6 +393,7 @@ function registrar_(req) {
       req.arquivo || '', req.tamanho ? Math.round(req.tamanho / 1024) : '', req.maquina || '', String(req.mensagem || '').slice(0, 400)]);
   } finally { lock.releaseLock(); }
   PropertiesService.getScriptProperties().setProperty('DADOS_V', String(Date.now()));
+  try { dbEnviar_([{ t: 'envios', linhas: [dbLinhaEnvio_(linha.map(function (v, k) { return k === 3 ? mesTxt : v; }))] }]); } catch (e) { }
   return { ok: true, painel: planilha_().getUrl() };
 }
 
@@ -1401,6 +1404,7 @@ function VERIFICAR_ATUALIZACAO() {
   // tarefas que rodam uma vez depois de uma atualização do receptor
   try { if (!props.getProperty('PAINEL_171')) { CORRIGIR_PAINEL(); props.setProperty('PAINEL_171', '1'); } } catch (e) { logAtualizacao_('painel', '', '', 'ERRO: ' + e.message); }
   try { ATUALIZAR_AGORA(); } catch (e) { logAtualizacao_('verificação', '', '', 'ERRO: ' + e.message); }
+  try { SINCRONIZAR_BANCO(); } catch (e) { logAtualizacao_('banco', '', '', 'ERRO: ' + e.message); }
 }
 
 // Pode rodar pelo editor para forçar a verificação na hora
@@ -2301,4 +2305,139 @@ function waEnviar_(para, texto) {
     method: 'post', contentType: 'application/json', muteHttpExceptions: true, headers: { Authorization: 'Bearer ' + tk },
     payload: JSON.stringify({ messaging_product: 'whatsapp', to: String(para).replace(/\D/g, ''), type: 'text', text: { body: String(texto).slice(0, 4000) } })
   });
+}
+
+/* ======================================================================
+   BANCO DE DADOS (Supabase) — o portal passa a ler daqui
+   O receptor continua dono dos arquivos (Drive) e da planilha; a cada 15 min (e logo depois
+   de cada mudança nas Configurações) ele espelha no banco: usuários, regimes, aparência,
+   painel de envios, histórico e os resumos de cada mês (com os indicadores já calculados).
+   Pedidos do portal que mexem no Drive chegam pelo banco com acao 'portalInterno'.
+   ====================================================================== */
+var DB_URL_PADRAO = 'https://cidvuirvojpsmukfxpll.supabase.co/functions/v1/farol';
+function dbUrl_() { return PropertiesService.getScriptProperties().getProperty('FAROL_DB_URL') || DB_URL_PADRAO; }
+function dbEnviar_(itens) {
+  var r = UrlFetchApp.fetch(dbUrl_(), { method: 'post', contentType: 'text/plain;charset=utf-8', muteHttpExceptions: true,
+    payload: JSON.stringify({ acao: 'sync', senha: segredo_('SENHA'), itens: itens }) });
+  var j = {}; try { j = JSON.parse(r.getContentText()); } catch (e) { }
+  if (r.getResponseCode() !== 200 || !j.ok) throw new Error('banco: ' + (j.erro || ('HTTP ' + r.getResponseCode())));
+  return j;
+}
+function dataIso_(v) { return v instanceof Date && !isNaN(v) ? v.toISOString() : null; }
+
+// pedido do portal repassado pelo banco: a sessão já foi conferida lá
+function portalInterno_(req) {
+  if (PORTAL_API.indexOf(String(req.fn)) < 0 || req.fn === 'portalLogin') return { ok: false, erro: 'Função não permitida: ' + req.fn };
+  var args = Array.isArray(req.args) ? req.args.slice() : [];
+  if (req.sessao) {
+    var s = req.sessao, tok = 'int' + Utilities.getUuid().replace(/-/g, '');
+    s.contabs = Array.isArray(s.contabs) ? s.contabs : [];
+    CacheService.getScriptCache().put('s_' + tok, JSON.stringify(s), 300);
+    args[0] = tok;
+  }
+  var r = portalApi_({ fn: req.fn, args: args });
+  if (r.ok && /^portal(SalvarUsuario|ExcluirUsuario|SalvarRegime|Unificar|FinLoginEmpresa|CriarContabilidade|CriarCliente)$/.test(req.fn)) {
+    try { dbSincronizarConfig_(); } catch (e) { }
+    if (req.fn === 'portalUnificar') { try { dbSincronizarResumos_(60000); } catch (e) { } }
+  }
+  return r;
+}
+
+// usuários (só senha criptografada), regimes e aparência
+function dbSincronizarConfig_() {
+  var ss = planilha_(), aba = abaUsuarios_(ss), d = aba.getDataRange().getValues(), usu = [];
+  for (var i = 1; i < d.length; i++) {
+    var login = String(d[i][0] || '').trim().toLowerCase(); if (!login) continue;
+    var guardado = String(d[i][4] || '');
+    if (String(d[i][3] || '') !== '') {   // senha nova digitada na planilha: criptografa antes de mandar
+      var sal = Utilities.getUuid().replace(/-/g, '').slice(0, 16);
+      guardado = sal + '$' + hashSenha_(sal, String(d[i][3]));
+      aba.getRange(i + 1, 4, 1, 2).setValues([['', guardado]]);
+    }
+    var emp = String(d[i][7] || '').split('|');
+    usu.push({ login: login, nome: String(d[i][1] || login), contabs: String(d[i][2] || '').split(/[,;\n]/).map(function (s) { return s.trim(); }).filter(String),
+      senha_hash: guardado, ativo: String(d[i][5]).trim().toUpperCase() !== 'N',
+      empresa_contab: emp.length === 2 && emp[0].trim() && emp[1].trim() ? emp[0].trim() : null, empresa_cliente: emp.length === 2 && emp[0].trim() && emp[1].trim() ? emp[1].trim() : null });
+  }
+  var reg = [];
+  try { abaRegimes_(ss).getDataRange().getValues().slice(1).forEach(function (l) { var r = regimeTexto_(l[2]); if (l[0] && l[1] && r) reg.push({ contabilidade: String(l[0]), cliente: String(l[1]), regime: r, obs: String(l[3] || '') }); }); } catch (e) { }
+  CacheService.getScriptCache().remove('aparencia');
+  return dbEnviar_([{ t: 'usuarios', linhas: usu }, { t: 'regimes', linhas: reg }, { t: 'aparencia', dados: aparencia_() }]);
+}
+
+// painel de envios (aba Painel) e histórico novo
+function dbLinhaEnvio_(l) {
+  var dados = {}; CHAVES.forEach(function (k, j) { dados[k] = Number(l[6 + j] || 0); });
+  dados.arquivo = String(l[18] || ''); dados.tamanhoKb = Number(l[19] || 0);
+  return { contabilidade: String(l[0]), cliente: String(l[1]), cnpj: String(l[2] || ''), mes: mesTxt_(l[3]), ultimo_contato: dataIso_(l[4]),
+    situacao: String(l[5] || ''), mensagem: String(l[22] || ''), maquina: String(l[20] || ''), versao: String(verTxt_(l[21])).replace(/^'/, ''), dados: dados };
+}
+function dbSincronizarEnvios_() {
+  var ss = planilha_(), props = PropertiesService.getScriptProperties();
+  var linhas = abaPainel_(ss).getDataRange().getValues().slice(1).filter(function (l) { return l[0] && l[1]; }).map(dbLinhaEnvio_);
+  var itens = [{ t: 'envios', linhas: linhas }];
+  var h = ss.getSheetByName('Histórico'), ult = Number(props.getProperty('DB_HIST_LIN') || 1), fim = h ? h.getLastRow() : 1;
+  if (h && fim > ult) {
+    var hs = h.getRange(ult + 1, 1, Math.min(fim - ult, 3000), 9).getValues().map(function (l) {
+      return { em: dataIso_(l[0]) || new Date().toISOString(), contabilidade: String(l[1]), cliente: String(l[2]), mes: mesTxt_(l[3]), situacao: String(l[4] || ''),
+        arquivo: String(l[5] || ''), tamanho_kb: Number(l[6] || 0) || null, maquina: String(l[7] || ''), mensagem: String(l[8] || '') };
+    });
+    itens.push({ t: 'historico', linhas: hs });
+    fim = ult + hs.length;
+  }
+  dbEnviar_(itens);
+  if (h && fim > ult) props.setProperty('DB_HIST_LIN', String(fim));
+}
+
+// resumos (AAAA-MM.json do Drive) que mudaram desde a última vez, com os indicadores do painel
+function dbSincronizarResumos_(limiteMs) {
+  var inicio = Date.now(), pasta = pastaCache_(), arq = null, feitos = {};
+  var it = pasta.getFilesByName('_banco_resumos.json'); if (it.hasNext()) { arq = it.next(); try { feitos = JSON.parse(arq.getBlob().getDataAsString('UTF-8')); } catch (e) { feitos = {}; } }
+  var arv = arvorePortal_(), fila = [], vivos = {};
+  arv.forEach(function (u) {
+    vivos[normal_(u.contabilidade) + '|' + normal_(u.cliente) + '|' + normal_(u.subpasta)] = 1;
+    Object.keys(u.arqs).forEach(function (mes) { var f = u.arqs[mes]; if (feitos[f.id] !== f.mod) fila.push({ u: u, mes: mes, f: f }); });
+  });
+  fila.sort(function (a, b) { return b.mes < a.mes ? -1 : b.mes > a.mes ? 1 : 0; });   // meses recentes primeiro
+  var lote = [], tam = 0, enviados = 0, erros = 0, pulados = 0;
+  var manda = function () {
+    if (!lote.length) return;
+    try { dbEnviar_(lote.map(function (x) { return x.item; })); lote.forEach(function (x) { feitos[x.id] = x.mod; }); enviados += lote.length; }
+    catch (e) { erros += lote.length; logAtualizacao_('banco', '', '', 'ERRO resumos: ' + e.message); }
+    lote = []; tam = 0;
+  };
+  for (var i = 0; i < fila.length && Date.now() - inicio < (limiteMs || 240000); i++) {
+    var x = fila[i], txt;
+    try { txt = DriveApp.getFileById(x.f.id).getBlob().getDataAsString('UTF-8'); } catch (e) { continue; }
+    var dados; try { dados = JSON.parse(txt); } catch (e) { feitos[x.f.id] = x.f.mod; pulados++; continue; }
+    var ind = null; try { ind = indicadores_(dados); } catch (e) { ind = { erro: String(e.message || e) }; }
+    lote.push({ id: x.f.id, mod: x.f.mod, item: { t: 'resumo', contabilidade: x.u.contabilidade, cliente: x.u.cliente, subpasta: x.u.subpasta, pid: x.u.pid, mes: x.mes, dados: dados, ind: ind } });
+    tam += txt.length;
+    if (tam > 1500000 || lote.length >= 20) manda();
+  }
+  manda();
+  // clientes que sumiram do Drive (unificados/excluídos) saem do banco
+  if (erros === 0 && fila.length <= enviados + pulados) {
+    try {
+      var est = dbEnviar_([{ t: 'estado' }]), rem = {}, itens = [];
+      (est.resumos || []).forEach(function (r) { var p = r.k.split('|'); var ku = p[0] + '|' + p[1] + '|' + p[2]; if (!vivos[ku] && !rem[ku]) { rem[ku] = 1; itens.push({ t: 'remover_unidade', contabilidade: p[0], cliente: p[1], subpasta: p[2] }); } });
+      if (itens.length) dbEnviar_(itens);
+    } catch (e) { }
+  }
+  var txt2 = JSON.stringify(feitos);
+  if (arq) arq.setContent(txt2); else pasta.createFile('_banco_resumos.json', txt2, 'application/json');
+  return { enviados: enviados, erros: erros, pulados: pulados, faltam: Math.max(0, fila.length - enviados - erros - pulados) };
+}
+
+function SINCRONIZAR_BANCO() {
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(1000)) return { ok: false, erro: 'sincronização em andamento' };
+  var r = {};
+  try {
+    try { dbSincronizarConfig_(); r.config = 'ok'; } catch (e) { r.config = e.message; }
+    try { dbSincronizarEnvios_(); r.envios = 'ok'; } catch (e) { r.envios = e.message; }
+  } finally { lock.releaseLock(); }
+  try { r.resumos = dbSincronizarResumos_(240000); } catch (e) { r.resumos = e.message; }
+  PropertiesService.getScriptProperties().setProperty('DB_ULTIMA', new Date().toISOString() + ' ' + JSON.stringify(r).slice(0, 300));
+  return r;
 }
