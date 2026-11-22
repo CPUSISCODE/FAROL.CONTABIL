@@ -1,16 +1,16 @@
 Unicode true
-!define VERSAO "2.0"
+!define VERSAO "2.1"
 Name "Farol Contábil - Atualizador do agente ${VERSAO}"
 Caption "Farol Contábil - Atualizador do agente (CPUSIS)"
 OutFile "FarolContabil_Atualizador_v${VERSAO}.exe"
 RequestExecutionLevel admin
 SilentInstall normal
 ShowInstDetails nevershow
-VIProductVersion "2.0.0.0"
+VIProductVersion "2.1.0.0"
 VIAddVersionKey "ProductName" "Farol Contábil - Atualizador do agente"
 VIAddVersionKey "CompanyName" "CPUSIS"
 VIAddVersionKey "FileDescription" "Atualiza o agente Farol Contábil (LC XML) para a versão ${VERSAO}"
-VIAddVersionKey "FileVersion" "2.0.0.0"
+VIAddVersionKey "FileVersion" "2.1.0.0"
 VIAddVersionKey "ProductVersion" "${VERSAO}"
 Page instfiles
 Section

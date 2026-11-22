@@ -30,7 +30,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$VERSAO = '2.0'
+$VERSAO = '2.1'
 $BASE = $PSScriptRoot
 if (-not $Config) { $Config = Join-Path $BASE 'config.json' }
 $PASTA_LOG = Join-Path $BASE 'logs'
@@ -1242,7 +1242,7 @@ try {
     $codigoSaida = Processar-Manuais
   } else {
   # meses a processar
-  $lista = @()
+  $lista = @(); $retroAno = $null
   if ($Meses) {
     foreach ($m in ($Meses -join ',').Split(',')) { if ($m.Trim()) { $lista += [datetime]::ParseExact($m.Trim() + '-01', 'yyyy-MM-dd', $null) } }
   } else {
@@ -1250,6 +1250,27 @@ try {
     $atual = Get-Date -Year $hoje.Year -Month $hoje.Month -Day 1 -Hour 0 -Minute 0 -Second 0
     if ($hoje.Day -le $DIAS_MES_ANTERIOR) { $lista += $atual.AddMonths(-1) }
     $lista += $atual
+    # Gestores, uma vez por ano: completa os meses anteriores do ano que têm XML no banco (retroativo automático).
+    # Meses já enviados e sem mudança são pulados (mesmo hash), então nada é enviado em duplicidade.
+    if ($SISTEMA -eq 'gestores' -and -not $SoGerar) {
+      $est0 = Ler-Estado
+      if ([string]$est0['_retroAno'] -ne [string]$hoje.Year) {
+        $ids = (@($CFG.empresas) | ForEach-Object { [int]$_.id }) -join ','
+        $iniAno = ('{0}-01-01' -f $hoje.Year); $fimRetro = $lista[0].ToString('yyyy-MM-dd')
+        $mesesXml = @{}; $retroOk = $true
+        foreach ($q in @(
+            "SELECT DISTINCT to_char(data,'YYYY-MM') FROM mv_venda WHERE cod_filial IN ($ids) AND modelo='65' AND xml IS NOT NULL AND data_ex IS NULL AND data>='$iniAno' AND data<'$fimRetro'",
+            "SELECT DISTINCT to_char(data_emissao,'YYYY-MM') FROM mv_nota_saida WHERE cod_filial IN ($ids) AND modelo='55' AND arquivo_xml IS NOT NULL AND data_ex IS NULL AND data_emissao>='$iniAno' AND data_emissao<'$fimRetro'",
+            "SELECT DISTINCT to_char(COALESCE(data_lancamento,data_emissao),'YYYY-MM') FROM mv_nota_entrada WHERE cod_filial IN ($ids) AND modelo='55' AND arquivo IS NOT NULL AND data_ex IS NULL AND COALESCE(data_lancamento,data_emissao)>='$iniAno' AND COALESCE(data_lancamento,data_emissao)<'$fimRetro'")) {
+          try { [void](Invoke-Pg $q { param($l) if ($l.Trim() -match '^\d{4}-\d{2}$') { $mesesXml[$l.Trim()] = 1 } }) }
+          catch { $retroOk = $false; Log ('retroativo do ano: não consegui ler os meses (' + $_.Exception.Message + ')') }
+        }
+        $extras = @($mesesXml.Keys | Sort-Object | ForEach-Object { [datetime]::ParseExact($_ + '-01', 'yyyy-MM-dd', $null) })
+        if ($extras.Count) { $lista = @($extras) + @($lista) }
+        if ($retroOk) { $retroAno = $hoje.Year }
+        Log ('Retroativo do ano ' + $hoje.Year + ': ' + $extras.Count + ' mês(es) anteriores com XML' + $(if ($extras.Count) { ' (' + (($extras | ForEach-Object { $_.ToString('MM/yyyy') }) -join ', ') + ')' } else { '' }))
+      }
+    }
   }
 
   $estado = Ler-Estado
@@ -1326,6 +1347,7 @@ try {
       }
     }
   }
+  if ($retroAno) { $estado['_retroAno'] = [string]$retroAno; Gravar-Estado $estado; Log ('Retroativo do ano ' + $retroAno + ' concluído.') }
   if (-not $SoGerar -and -not $Meses) {
     Garantir-Tarefas
     try { Rotina-Servidor } catch { Log ('servidor: ERRO: ' + $_.Exception.Message) }
