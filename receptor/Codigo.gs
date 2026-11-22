@@ -40,7 +40,7 @@ var CONFIG = {
   GUARDAR_DIAS: 10, GUARDAR_SEMANAS: 0, GUARDAR_MESES: 0   // no máximo 10 dias (um backup por dia; mais velhos que 10 dias são apagados)
 };
 
-var VERSAO = '1.18';
+var VERSAO = '1.19';
 var PASTA_PORTAL = '_PORTAL_DADOS';   // resumos fiscais (JSON) e versão do agente
 var MESES = ['JANEIRO','FEVEREIRO','MARCO','ABRIL','MAIO','JUNHO','JULHO','AGOSTO','SETEMBRO','OUTUBRO','NOVEMBRO','DEZEMBRO'];
 var MESES_TXT = ['JANEIRO','FEVEREIRO','MARÇO','ABRIL','MAIO','JUNHO','JULHO','AGOSTO','SETEMBRO','OUTUBRO','NOVEMBRO','DEZEMBRO'];
@@ -1417,6 +1417,7 @@ function VERIFICAR_ATUALIZACAO() {
   try { if (!props.getProperty('PAINEL_171')) { CORRIGIR_PAINEL(); props.setProperty('PAINEL_171', '1'); } } catch (e) { logAtualizacao_('painel', '', '', 'ERRO: ' + e.message); }
   try { ATUALIZAR_AGORA(); } catch (e) { logAtualizacao_('verificação', '', '', 'ERRO: ' + e.message); }
   try { SINCRONIZAR_BANCO(); } catch (e) { logAtualizacao_('banco', '', '', 'ERRO: ' + e.message); }
+  try { BACKUP_BANCO_NOITE_(); } catch (e) { logAtualizacao_('backup do banco', '', '', 'ERRO: ' + e.message); }
 }
 
 // Pode rodar pelo editor para forçar a verificação na hora
@@ -2327,6 +2328,50 @@ function waEnviar_(para, texto) {
    Pedidos do portal que mexem no Drive chegam pelo banco com acao 'portalInterno'.
    ====================================================================== */
 var DB_URL_PADRAO = 'https://cidvuirvojpsmukfxpll.supabase.co/functions/v1/farol';
+// ---------------------------------------------------------------- cópia de segurança do banco (todas as noites)
+// Guarda numa pasta PRIVADA do Meu Drive (fora da pasta dos XML) o financeiro do BPO e as configurações,
+// que só existem no banco. Mantém os últimos 30 dias. Roda uma vez por noite, entre 1h e 5h.
+var BACKUP_BANCO_PASTA = '_FAROL_BACKUP_BANCO (privado)', BACKUP_BANCO_DIAS = 30;
+function BACKUP_BANCO_NOITE_() {
+  var props = PropertiesService.getScriptProperties(), agora = new Date(), fuso = Session.getScriptTimeZone();
+  var hora = Number(Utilities.formatDate(agora, fuso, 'H')), dia = Utilities.formatDate(agora, fuso, 'yyyy-MM-dd');
+  if (hora < 1 || hora >= 5 || props.getProperty('BACKUP_BANCO_DIA') === dia) return;
+  BACKUP_BANCO();
+}
+// Pode rodar pelo editor para fazer a cópia na hora
+function BACKUP_BANCO() {
+  var props = PropertiesService.getScriptProperties(), fuso = Session.getScriptTimeZone(), agora = new Date();
+  var url = dbUrl_().replace(/\/farol$/, '/backup');
+  var r = UrlFetchApp.fetch(url, { method: 'post', contentType: 'application/json', muteHttpExceptions: true, payload: JSON.stringify({ senha: segredo_('SENHA') }) });
+  var txt = r.getContentText('UTF-8'), j = {};
+  try { j = JSON.parse(txt); } catch (e) { }
+  if (r.getResponseCode() !== 200 || !j.ok || !j.tabelas) throw new Error('backup: ' + (j.erro || ('HTTP ' + r.getResponseCode())));
+  var pasta = pastaBackupBanco_();
+  var nome = 'banco_' + Utilities.formatDate(agora, fuso, 'yyyy-MM-dd_HHmm') + '.json';
+  var gz = Utilities.gzip(Utilities.newBlob(txt, 'application/json', nome), nome + '.gz');
+  var arq = pasta.createFile(gz);
+  try { arq.setSharing(DriveApp.Access.PRIVATE, DriveApp.Permission.NONE); } catch (e) { }
+  // apaga as cópias mais antigas que 30 dias (só as deste tipo, nesta pasta)
+  var limite = agora.getTime() - BACKUP_BANCO_DIAS * 864e5, it = pasta.getFiles(), apagados = 0;
+  while (it.hasNext()) { var f = it.next(); if (/^banco_.*\.json\.gz$/.test(f.getName()) && f.getDateCreated().getTime() < limite) { f.setTrashed(true); apagados++; } }
+  var info = { em: agora.toISOString(), arquivo: nome + '.gz', bytes: gz.getBytes().length, contagem: j.contagem, apagados: apagados };
+  props.setProperty('BACKUP_BANCO_DIA', Utilities.formatDate(agora, fuso, 'yyyy-MM-dd'));
+  props.setProperty('BACKUP_BANCO_ULTIMO', JSON.stringify(info));
+  Logger.log('Backup do banco: ' + JSON.stringify(info) + '  pasta: ' + pasta.getUrl());
+  return info;
+}
+function pastaBackupBanco_() {
+  var props = PropertiesService.getScriptProperties(), id = props.getProperty('BACKUP_BANCO_PASTA_ID'), pasta = null;
+  if (id) { try { pasta = DriveApp.getFolderById(id); if (pasta.isTrashed()) pasta = null; } catch (e) { pasta = null; } }
+  if (!pasta) {
+    var it = DriveApp.getRootFolder().getFoldersByName(BACKUP_BANCO_PASTA);
+    pasta = it.hasNext() ? it.next() : DriveApp.getRootFolder().createFolder(BACKUP_BANCO_PASTA);
+    props.setProperty('BACKUP_BANCO_PASTA_ID', pasta.getId());
+  }
+  try { pasta.setSharing(DriveApp.Access.PRIVATE, DriveApp.Permission.NONE); } catch (e) { }
+  return pasta;
+}
+
 function dbUrl_() { return PropertiesService.getScriptProperties().getProperty('FAROL_DB_URL') || DB_URL_PADRAO; }
 function dbEnviar_(itens) {
   var r = UrlFetchApp.fetch(dbUrl_(), { method: 'post', contentType: 'text/plain;charset=utf-8', muteHttpExceptions: true,
