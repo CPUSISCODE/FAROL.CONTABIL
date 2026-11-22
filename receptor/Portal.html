@@ -1801,7 +1801,7 @@ var COL = {
   xml: [['tipoNome','Tipo'],['num','Número','m'],['serie','Série'],['data','Data','data'],['mes','Mês'],['emitNome','Emitente'],['emitDoc','CNPJ/CPF emitente','m'],['destNome','Destinatário'],['destDoc','CNPJ/CPF destinatário','m'],['valor','Valor','brl'],['sit','Situação'],['chave','Chave de acesso','m'],['nProt','Protocolo','m'],['arquivo','Arquivo']]
 };
 var ABAS = [
-  { id: 'dias', nome: 'Dia a dia' }, { id: 'trib', nome: 'Tributação' }, { id: 'ncm', nome: 'NCMs' }, { id: 'pis', nome: 'PIS/COFINS' }, { id: 'prod', nome: 'Produtos' },
+  { id: 'dias', nome: 'Dia a dia' }, { id: 'apur', nome: 'Apuração fiscal' }, { id: 'trib', nome: 'Tributação' }, { id: 'ncm', nome: 'NCMs' }, { id: 'pis', nome: 'PIS/COFINS' }, { id: 'prod', nome: 'Produtos' },
   { id: 'dev', nome: 'Devoluções' }, { id: 'canc', nome: 'Cancelamentos e numeração' }, { id: 'pag', nome: 'Pagamentos' }, { id: 'rf', nome: 'Reforma (IBS/CBS)' }, { id: 'xml', nome: 'Buscar XML' }
 ];
 var ORIGENS = ['Todas', 'NFe', 'NFCe', 'Compras'];
@@ -1812,6 +1812,7 @@ function desenharAba() {
   if (a === 'xml') { telaBusca(c); return; }
   if (a === 'dias') { telaDias(c); return; }
   if (a === 'rf') { telaReforma(c); return; }
+  if (a === 'apur') { telaApuracao(c); return; }
   var ferr = function (comOrigem, nota) {
     return '<div class="ferr">' + (comOrigem ? '<div class="seg" role="group" aria-label="Origem">' + ORIGENS.map(function (o) { return '<button type="button" data-o="' + o + '" aria-pressed="' + (o === ATUAL.origem) + '">' + (o === 'Todas' ? 'Todas' : NOME_ORIGEM[o]) + '</button>'; }).join('') + '</div>' : '') +
       '<input type="search" id="fTab" placeholder="Filtrar…" aria-label="Filtrar tabela"><button class="btn sec" type="button" id="bCsv">Exportar para Excel (CSV)</button></div>' + (nota ? '<p class="nota">' + nota + '</p>' : '');
@@ -2348,7 +2349,7 @@ function guiaPassos(d) {
     if (admin) P.push({ t: 'Central (só CPUSIS)', h: '<p>Visão de operação de <b>todos</b> os clientes de todas as contabilidades: quantos estão em dia, parados ou com erro, e quais precisam de atenção agora.</p>', ir: 'central' });
     P.push({ t: 'Painel: o fechamento do mês', h: '<p>Escolha o <b>mês</b> no topo. O painel mostra:</p><ul><li><b>Fechamento do mês</b>: quais clientes estão prontos para fechar e quais têm pendências.</li><li><b>Alertas inteligentes</b>: notas em contingência, rejeitadas, numeração pulada, notas sem XML, com o prazo para resolver.</li><li><b>Limite do Simples Nacional</b>: quanto cada cliente do Simples já faturou no ano.</li><li><b>Receitas a segregar no DAS</b>: vendas com PIS/COFINS monofásico e com ICMS por substituição tributária, para informar separado no PGDAS-D e o cliente não pagar imposto duas vezes.</li><li><b>Prazo para inutilizar</b>: numerações puladas que ainda precisam ser inutilizadas.</li><li><b>Reforma tributária (IBS e CBS)</b>: quais clientes já trazem o IBS e a CBS nas notas e quais ainda não preenchem.</li></ul><p>Quase toda tabela tem <b>Exportar para Excel (CSV)</b>.</p>', ir: 'painel' });
     P.push({ t: 'Clientes: a situação de cada um', h: '<p>Lista dos seus clientes com o último envio e os meses disponíveis. A coluna <b>Situação</b> diz se o agente do cliente está mandando os XML:</p><ul class="guia-leg"><li>' + pill('', 'Em dia') + ' enviou nas últimas 24 horas</li><li>' + pill('warn', 'Atenção') + ' 2 a 6 dias sem enviar</li><li>' + pill('bad', 'Parados') + ' 7 dias ou mais sem enviar</li><li>' + pill('bad', 'Com erro') + ' o último envio deu erro</li><li>' + pill('info', 'Envio manual') + ' os XML foram colocados à mão no Drive</li><li>' + pill('info', 'Sem registro') + ' o agente nunca se comunicou</li></ul><p>Clique no nome para abrir o cliente. Para baixar de vários de uma vez, <b>marque</b> os clientes e use <b>Baixar tudo em um ZIP</b>.</p>', ir: 'clientes' });
-    P.push({ t: 'A tela do cliente', h: '<p>No topo ficam os números do mês: NF-e emitidas, NFC-e, compras (XML importados), canceladas e ICMS. O botão <b>Baixar XML do mês (ZIP)</b> traz todos os arquivos organizados em pastas (emitidas, NFC-e, compras, eventos, inutilizações).</p><p>As abas detalham o mês:</p><ul><li><b>Dia a dia</b>: notas por dia, conferidas com o banco do sistema do cliente. Se faltar algum XML, aparece aqui.</li><li><b>Tributação</b>, <b>NCMs</b>, <b>PIS/COFINS</b>: valores por CST/CSOSN, CFOP, NCM e tributação monofásica.</li><li><b>Produtos</b>: o que foi vendido e comprado, com quantidade e valor.</li><li><b>Devoluções</b>, <b>Cancelamentos e numeração</b>: notas canceladas, inutilizações e falhas na numeração.</li><li><b>Pagamentos</b>: formas de pagamento das vendas (dinheiro, PIX, cartão…).</li><li><b>Reforma (IBS/CBS)</b>: quantas notas já trazem o IBS e a CBS, os CST e cClassTrib usados e a lista das notas sem esses campos.</li></ul>' });
+    P.push({ t: 'A tela do cliente', h: '<p>No topo ficam os números do mês: NF-e emitidas, NFC-e, compras (XML importados), canceladas e ICMS. O botão <b>Baixar XML do mês (ZIP)</b> traz todos os arquivos organizados em pastas (emitidas, NFC-e, compras, eventos, inutilizações).</p><p>As abas detalham o mês:</p><ul><li><b>Dia a dia</b>: notas por dia, conferidas com o banco do sistema do cliente. Se faltar algum XML, aparece aqui.</li><li><b>Apuração fiscal</b>: estimativa dos impostos do mês. No <b>Simples Nacional</b>: faixa, alíquota efetiva e DAS (já separando monofásicos e ICMS-ST). No <b>Lucro Presumido</b>: PIS e COFINS, ICMS a pagar (débitos menos créditos) e IRPJ e CSLL do trimestre com a parte do mês.</li><li><b>Tributação</b>, <b>NCMs</b>, <b>PIS/COFINS</b>: valores por CST/CSOSN, CFOP, NCM e tributação monofásica.</li><li><b>Produtos</b>: o que foi vendido e comprado, com quantidade e valor.</li><li><b>Devoluções</b>, <b>Cancelamentos e numeração</b>: notas canceladas, inutilizações e falhas na numeração.</li><li><b>Pagamentos</b>: formas de pagamento das vendas (dinheiro, PIX, cartão…).</li><li><b>Reforma (IBS/CBS)</b>: quantas notas já trazem o IBS e a CBS, os CST e cClassTrib usados e a lista das notas sem esses campos.</li></ul>' });
     P.push({ t: 'Buscar XML', h: '<p>Na aba <b>Buscar XML</b> da tela do cliente você acha qualquer nota do mês por <b>número, chave, nome ou CNPJ/CPF, valor e data</b>.</p><ul><li>Clique na nota para ver os dados principais (produtos, impostos, protocolo) ou <b>Ver o XML completo</b>.</li><li>Marque várias e use <b>Baixar marcados (ZIP)</b>, ou exporte a lista para o Excel.</li></ul>' });
     P.push({ t: 'Modo Reunião e Visão da carteira', h: '<p><b>Modo Reunião</b> (botão na tela do cliente): uma tela escura, feita para mostrar ao cliente na <b>TV, tablet ou notebook</b>. Use o botão de <b>tela cheia</b> e <b>Esc</b> para sair. Ela mostra:</p><ul><li>Faturamento, ticket médio e imposto destacado nas vendas do mês.</li><li><b>Vendas e compras dos últimos 12 meses</b> e quanto as vendas estão acima das compras.</li><li><b>Saúde fiscal</b>: nota de 0 a 100 (XML faltando, pendências na SEFAZ, falhas na numeração, Reforma Tributária).</li><li><b>Termômetro fiscal</b>: compara as vendas com as compras de revenda. O esperado é vender pelo menos 20% acima do que se compra; abaixo de 85% desse mínimo aparece <b>Risco de notificação</b>.</li></ul><p><b>Visão da carteira</b> (botão no Painel): todos os seus clientes com a nota e o termômetro, e a lista <b>Precisa de você hoje</b>.</p><p>O termômetro é uma <b>estimativa</b> feita com os XML do portal. Quando faltam notas de compra ou há menos de 6 meses de dados, ele avisa em vez de dar resultado.</p>', ir: 'painel' });
     P.push({ t: 'O que significam as pendências', h: '<p>As pendências vêm do próprio sistema do cliente e mostram o que ainda não está certo na SEFAZ:</p><ul class="guia-leg"><li>' + pill('warn', 'Contingência') + ' nota emitida sem internet: precisa ser transmitida hoje</li><li>' + pill('bad', 'Rejeitada') + ' a SEFAZ recusou: corrigir e reenviar</li><li>' + pill('bad', 'Numeração pulada') + ' faltam números na sequência: inutilizar</li><li>' + pill('info', 'Sem XML') + ' a nota existe no sistema, mas o XML autorizado não está lá: verificar</li><li>' + pill('info', 'Em digitação') + ' nota começada e não transmitida: transmitir ou excluir</li></ul><p>Quando a pendência é resolvida no sistema do cliente, ela some do portal no envio da noite seguinte.</p>' });
@@ -2698,6 +2699,159 @@ function guiaAuto() {
   }
   window.abrirReuniao = abrirReuniao;
   window.abrirCarteira = abrirCarteira;
+})();
+</script>
+<!-- ================= APURAÇÃO FISCAL (estimativa: Simples Nacional e Lucro Presumido, comércio) ================= -->
+<style>
+.apu{width:100%;min-width:0;border-collapse:collapse;font-size:14px;table-layout:fixed}
+.apu td{padding:9px 4px;border-bottom:1px solid var(--line);vertical-align:top;white-space:normal;overflow-wrap:anywhere}
+.apu td:last-child{width:9.5em}
+.apu td.n{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+.apu td .s{display:block;font-size:12.5px;color:var(--muted);margin-top:2px}
+.apu tr.tot td{border-bottom:0;border-top:2px solid var(--ink);font-weight:700;font-size:15px}
+.apu tr.sub td{color:var(--muted)}
+.apu-g{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,330px),1fr));gap:14px}
+.apu-g>.card{min-width:0}
+.apu-rbt{display:flex;gap:8px;flex-wrap:wrap;align-items:end;margin-top:10px}
+.apu-rbt label{display:grid;gap:4px;font-size:13px;font-weight:600}
+.apu-rbt input{height:40px;padding:0 10px;border:1px solid var(--line);border-radius:8px;font:inherit;width:190px;max-width:100%}
+.apu-chk{display:flex;gap:8px;align-items:center;font-size:13.5px;margin:6px 0 2px;cursor:pointer}
+</style>
+<script>
+(function () {
+  var URL_AP = API_BANCO.replace(/\/farol$/, '/reuniao');
+  var AP = null;   // cache { ck, mes, rbt, r }
+  var NOME_R = { SN: 'Simples Nacional', MEI: 'MEI', PRESUMIDO: 'Lucro Presumido', REAL: 'Lucro Real', NORMAL: 'Regime normal (Presumido ou Real)' };
+  function R$(v) { return 'R$ ' + brl(v); }
+  function pc(v, d) { return (100 * v).toLocaleString('pt-BR', { minimumFractionDigits: d == null ? 2 : d, maximumFractionDigits: d == null ? 2 : d }) + '%'; }
+  function linha(rot, v, sub, cls) { return '<tr' + (cls ? ' class="' + cls + '"' : '') + '><td>' + rot + (sub ? '<span class="s">' + sub + '</span>' : '') + '</td><td class="n">' + v + '</td></tr>'; }
+  function chave() { var u = ATUAL.u; return 'farol_rbt12_' + chaveUnid(u.contabilidade, rotuloPainel(u)) + '_' + ATUAL.mes; }
+  function rbtSalva() { try { var v = localStorage.getItem(chave()); return v ? Number(v) : null; } catch (e) { return null; } }
+  function chamar(rbt) {
+    var u = ATUAL.u;
+    return fetch(URL_AP, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ acao: 'apuracao', token: TOKEN, contabilidade: u.contabilidade, cliente: u.cliente, subpasta: u.subpasta, mes: ATUAL.mes, rbt12: rbt }) })
+      .then(function (r) { if (!r.ok) throw new Error('Servidor respondeu ' + r.status + '. Tente de novo.'); return r.json(); })
+      .catch(function (e) { throw new Error(/Failed to fetch|NetworkError|Load failed/i.test(e.message) ? 'Sem conexão com o servidor. Confira a internet e tente de novo.' : e.message); })
+      .then(function (j) { if (j.ok) return j.r; if (/SESSAO_EXPIRADA/.test(j.erro)) sair(true); throw new Error(j.erro); });
+  }
+  window.telaApuracao = function (c) {
+    if (!USA_BANCO) { c.innerHTML = '<div class="card"><p class="nota">A apuração fiscal usa o banco de dados do portal. Abra o portal pelo link oficial, sem o "?banco=0" no final.</p></div>'; return; }
+    var ck = chave(), rbt = rbtSalva();
+    if (AP && AP.ck === ck && AP.rbt === rbt) { desenhar(c, AP.r); return; }
+    c.innerHTML = '<div class="card"><p class="nota">Calculando a apuração de ' + esc(nomeMes(ATUAL.mes)) + '…</p></div>';
+    chamar(rbt).then(function (r) { AP = { ck: ck, rbt: rbt, r: r }; if (ATUAL && ATUAL.aba === 'apur' && chave() === ck) desenhar($('conteudo'), r); })
+      .catch(function (e) { if (ATUAL && ATUAL.aba === 'apur') c.innerHTML = '<div class="card"><p class="aviso bad">Não deu para calcular a apuração.</p><p class="nota">' + esc(e.message) + '</p><div class="ferr"><button class="btn sec" type="button" id="apTenta">Tentar de novo</button></div></div>'; if ($('apTenta')) $('apTenta').onclick = function () { telaApuracao(c); }; });
+  };
+  var AVISO = '<p class="nota" style="margin:0">Estimativa feita com os XML de venda e de compra que estão no portal, para empresa de <b>comércio</b>. Serve para conferir e conversar com o cliente; os valores oficiais saem da apuração da contabilidade (PGDAS-D, EFD, DCTFWeb).</p>';
+
+  function desenhar(c, r) {
+    var cab = '<div class="card"><p class="aviso' + (r.regime === 'NORMAL' ? ' warn' : '') + '" style="margin:0 0 6px"><b>' + esc(NOME_R[r.regime] || 'Regime não identificado') + '</b>' +
+      (r.regime === 'NORMAL' ? ': o portal não conseguiu confirmar se é Presumido ou Real. A apuração abaixo considera Lucro Presumido; se não for, ajuste em Configurações › Regimes.' : '') + '</p>' + AVISO + '</div>';
+    if (r.simples) c.innerHTML = cab + telaSimples(r, r.simples);
+    else if (r.presumido) c.innerHTML = cab + telaPresumido(r, r.presumido);
+    else if (r.real) c.innerHTML = cab + '<div class="apu-g">' + cartaoIcms(r.real.icms) + '<div class="card"><h2>PIS, COFINS, IRPJ e CSLL</h2><p class="nota">No Lucro Real o PIS e a COFINS são não cumulativos e o IRPJ e a CSLL dependem do lucro contábil, que não aparece nos XML. Por isso o portal mostra só o ICMS.</p></div></div>';
+    else if (r.regime === 'MEI') c.innerHTML = cab + '<div class="card"><h2>MEI</h2><p class="nota">O MEI paga um valor fixo por mês no DAS-MEI, que não depende do faturamento. O que importa acompanhar é o limite anual de faturamento, mostrado no Painel.</p></div>';
+    else c.innerHTML = cab + '<div class="card"><p class="nota">Não foi possível identificar o regime deste cliente. Informe o regime em Configurações › Regimes.</p></div>';
+    ligar(c);
+  }
+
+  /* ---------- Simples Nacional ---------- */
+  function telaSimples(r, s) {
+    var fonte = {
+      portal: 'Soma dos 12 meses anteriores com notas no portal.',
+      informada: 'Valor informado por você (RBT12 do PGDAS-D).',
+      estimada: 'O portal tem só ' + s.mesesPortal + ' dos 12 meses anteriores (soma de ' + R$(s.somaPortal) + '). Para não subestimar a faixa, a RBT12 foi estimada pela média desses meses × 12. Informe a RBT12 do PGDAS-D para o valor exato.',
+      inicio: 'Não há meses anteriores no portal: a RBT12 foi estimada como a receita deste mês × 12. Informe a RBT12 do PGDAS-D para o valor exato.'
+    }[s.rbtFonte];
+    var corFonte = s.rbtFonte === 'portal' || s.rbtFonte === 'informada' ? '' : 'warn';
+    var nomes = { irpj: 'IRPJ', csll: 'CSLL', cofins: 'COFINS', pis: 'PIS/Pasep', cpp: 'CPP (INSS patronal)', icms: 'ICMS' };
+    return '<div class="kpis kpis4">' +
+      kpi2('Faixa do Simples (Anexo I)', s.faixa + 'ª faixa', 'RBT12 de ' + R$(s.faixaDe) + ' até ' + R$(s.faixaAte)) +
+      kpi2('Alíquota efetiva do mês', pc(s.efetiva), 'nominal ' + pc(s.nominal, 1) + (s.deduzir ? ' · dedução de ' + R$(s.deduzir) : '')) +
+      kpi2('Receita bruta do mês', R$(s.receita), r.devolucoes ? 'já sem ' + R$(r.devolucoes) + ' de devoluções' : 'vendas com XML no portal') +
+      kpi2('DAS estimado do mês', R$(s.das), 'vence dia 20 do mês seguinte', null, 'brand') + '</div>' +
+      (s.excedeu ? '<div class="card"><p class="aviso bad">A receita dos últimos 12 meses passou de R$ 4,8 milhões, o limite do Simples Nacional. A empresa precisa ser desenquadrada: fale com o contador.</p></div>'
+        : s.sublimite ? '<div class="card"><p class="aviso warn">A receita dos últimos 12 meses passou do sublimite de R$ 3,6 milhões: o ICMS deixa de ser pago no DAS e passa a ser apurado como no regime normal.</p></div>' : '') +
+      '<div class="apu-g">' +
+        '<section class="card"><h2>Como chegamos no DAS</h2><table class="apu">' +
+          linha('Receita bruta do mês', R$(s.receita), 'vendas e exportações, menos devoluções; transferências não entram') +
+          linha('× alíquota efetiva', pc(s.efetiva), '(RBT12 × ' + pc(s.nominal, 1) + ' − ' + R$(s.deduzir) + ') ÷ RBT12') +
+          linha('= Valor antes das segregações', R$(s.receita * s.efetiva), '', 'sub') +
+          (s.mono ? linha('− PIS e COFINS dos monofásicos', '− ' + R$(s.descMono), R$(s.mono) + ' em vendas com CST de PIS 04 (já tributados na indústria)') : '') +
+          (s.st ? linha('− ICMS das vendas com substituição tributária', '− ' + R$(s.descSt), R$(s.st) + ' em vendas com CSOSN 500 ou CST 60 (ICMS já pago antes)') : '') +
+          linha('DAS estimado', R$(s.das), '', 'tot') + '</table>' +
+          (!s.mono && !s.st ? '<p class="nota">Nenhuma venda com monofásico (CST 04) ou com ICMS-ST neste mês: o DAS é a receita × a alíquota efetiva.</p>' : '<p class="nota">Essas receitas precisam ser informadas separadas no PGDAS-D, senão o cliente paga o imposto duas vezes.</p>') + '</section>' +
+        '<section class="card"><h2>Receita dos últimos 12 meses (RBT12)</h2><div class="kpi kpi2" style="border:0;padding:0;box-shadow:none"><span class="v">' + R$(s.rbt12) + '</span></div>' +
+          '<p class="aviso ' + corFonte + '" style="font-weight:500">' + esc(fonte) + '</p>' +
+          '<div class="apu-rbt"><label>RBT12 do PGDAS-D<input id="apRbt" inputmode="decimal" placeholder="ex.: 1.250.000,00" value="' + (s.rbtFonte === 'informada' ? brl(s.rbt12) : '') + '"></label>' +
+          '<button class="btn" type="button" id="apRbtOk">Recalcular</button>' + (s.rbtFonte === 'informada' ? '<button class="btn sec" type="button" id="apRbtLimpa">Usar o valor do portal</button>' : '') + '</div>' +
+          '<p class="nota">O valor informado fica guardado neste computador para este cliente e este mês. A partir de janeiro de 2027 o portal já terá os 12 meses e a conta fica automática.</p></section>' +
+        '<section class="card"><h2>Quanto vai para cada tributo</h2><table class="apu">' +
+          Object.keys(nomes).filter(function (k) { return s.partes[k] > 0; }).map(function (k) { return linha(nomes[k], R$(s.partes[k])); }).join('') +
+          linha('Total do DAS', R$(s.das), '', 'tot') + '</table><p class="nota">Repartição da ' + s.faixa + 'ª faixa do Anexo I da LC 123/2006.</p></section>' +
+      '</div>';
+  }
+
+  /* ---------- Lucro Presumido ---------- */
+  function cartaoIcms(i) {
+    var semCompras = RESUMO && RESUMO.totais && RESUMO.totais.Compras && !RESUMO.totais.Compras.qtd;
+    return '<section class="card"><h2>ICMS do mês</h2><table class="apu">' +
+      linha('Débitos: ICMS destacado nas saídas', R$(i.debitos), 'NF-e e NFC-e emitidas') +
+      linha('− Créditos: ICMS das entradas', '− ' + R$(i.creditos), 'notas de compra e devoluções recebidas') +
+      (i.credorAnterior ? linha('− Saldo credor dos meses anteriores', '− ' + R$(i.credorAnterior), 'acumulado pelo portal desde ' + nomeMes(i.desde)) : '') +
+      (i.aPagar ? linha('ICMS a pagar', R$(i.aPagar), '', 'tot') : linha('Sem ICMS a pagar', R$(0), 'saldo credor de ' + R$(i.credorProximo) + ' passa para o próximo mês', 'tot')) + '</table>' +
+      (semCompras ? '<p class="aviso warn">Não há notas de compra no portal neste mês: os créditos podem estar faltando e o ICMS a pagar ficar maior do que o real.</p>' : '') +
+      '<p class="nota">Os créditos somam todo o ICMS destacado nas compras: tire o que for de uso e consumo ou ativo, que não dá crédito. Não entram o ICMS-ST, a antecipação e o diferencial de alíquota pagos em guia própria. Confira o saldo credor com a EFD ICMS/IPI.</p></section>';
+  }
+  function telaPresumido(r, p) {
+    var x = p.pc, i = p.icms, ir = p.ir, excl = !(window.localStorage && localStorage.getItem('farol_apu_sem_tema69') === '1');
+    var base = excl ? x.base : x.baseSemExcl, pis = excl ? x.pis : x.pisSemExcl, cof = excl ? x.cofins : x.cofinsSemExcl;
+    var mesesQ = ir.mesesTrimestre.map(function (m) { return MES[Number(m.slice(5, 7)) - 1]; }).join(', ');
+    var vencTxt = MES[Number(ir.vencimento.slice(5, 7)) - 1] + ' de ' + ir.vencimento.slice(0, 4);
+    return '<div class="kpis kpis4">' +
+      kpi2('PIS (0,65%)', R$(pis), 'vence dia 25 do mês seguinte') +
+      kpi2('COFINS (3%)', R$(cof), 'vence dia 25 do mês seguinte') +
+      (i.aPagar ? kpi2('ICMS a pagar', R$(i.aPagar), 'débitos − créditos', null, 'bad') : kpi2('ICMS a pagar', R$(0), 'saldo credor de ' + R$(i.credorProximo), null, 'brand')) +
+      kpi2('IRPJ + CSLL deste mês', R$(ir.irpjMes + ir.csllMes), 'parte do ' + ir.trimestre + 'º trimestre') + '</div>' +
+      '<div class="apu-g">' +
+        '<section class="card"><h2>PIS e COFINS (cumulativo)</h2>' +
+          '<label class="apu-chk"><input type="checkbox" id="apT69"' + (excl ? ' checked' : '') + '> Excluir o ICMS da base (Tema 69 do STF)</label><table class="apu">' +
+          linha('Vendas com PIS/COFINS tributado', R$(x.receitaTributada), 'itens com CST de PIS 01, 02 ou 03') +
+          (x.devolucoes ? linha('− Devoluções de venda (parte tributada)', '− ' + R$(x.devolucoes)) : '') +
+          (excl && x.icmsExcluido ? linha('− ICMS destacado nessas vendas', '− ' + R$(x.icmsExcluido), 'estimado na mesma proporção') : '') +
+          linha('= Base de cálculo', R$(base), '', 'sub') +
+          linha('PIS 0,65%', R$(pis)) + linha('COFINS 3%', R$(cof)) +
+          linha('Total PIS + COFINS', R$(pis + cof), '', 'tot') + '</table>' +
+          '<p class="nota">Destacado nas notas pelo sistema do cliente: PIS ' + R$(x.pisDest) + ' e COFINS ' + R$(x.cofinsDest) + '.</p>' +
+          (x.parteNaoTrib > 0.6 ? '<p class="aviso warn" style="font-weight:500">' + pc(x.parteNaoTrib, 0) + ' das vendas (' + R$(x.receitaSemTributo) + ') saíram com CST de PIS de 04 a 09: monofásico, alíquota zero, isenta ou sem incidência. ' +
+            (x.monofasico ? R$(x.monofasico) + ' são monofásicos (CST 04). ' : '') + 'Se algum produto estiver com o CST errado no cadastro, o PIS e a COFINS ficam menores que o devido.</p>' : '') + '</section>' +
+        cartaoIcms(i) +
+        '<section class="card"><h2>IRPJ e CSLL · ' + ir.trimestre + 'º trimestre</h2><table class="apu">' +
+          linha('Receita do trimestre até agora', R$(ir.receitaTrimestre), mesesQ + (ir.mesesFaltando ? ' · faltam ' + ir.mesesFaltando + ' mês(es)' : ' · trimestre completo')) +
+          linha('Base do IRPJ (presunção de 8%)', R$(ir.baseIrpj), ir.excedente ? 'inclui +10% na presunção sobre ' + R$(ir.excedente) + ' acima de R$ 1,25 mi (LC 224/2025)' : '') +
+          linha('IRPJ 15%', R$(ir.irpjNormal)) +
+          (ir.adicional ? linha('Adicional de IRPJ 10%', R$(ir.adicional), 'sobre a base que passa de R$ 20 mil por mês') : '') +
+          linha('Base da CSLL (presunção de 12%)', R$(ir.baseCsll)) +
+          linha('CSLL 9%', R$(ir.csllTrimestre)) +
+          linha('IRPJ + CSLL do trimestre até agora', R$(ir.irpjTrimestre + ir.csllTrimestre), '', 'tot') +
+          linha('Parte deste mês (' + esc(MES[Number(r.mes.slice(5, 7)) - 1]) + ')', R$(ir.irpjMes + ir.csllMes), 'IRPJ ' + R$(ir.irpjMes) + ' · CSLL ' + R$(ir.csllMes) + ', proporcional à receita do mês', 'sub') + '</table>' +
+          '<p class="nota">Pagamento até o último dia útil de ' + vencTxt + ' (quota única) ou em 3 quotas.' + (ir.mesesFaltando ? ' O trimestre ainda não fechou: o valor cresce com os próximos meses.' : '') +
+          ' Só entram as vendas com XML; receitas financeiras, aluguéis e serviços somam à base e não aparecem aqui.</p></section>' +
+      '</div>';
+  }
+
+  function ligar(c) {
+    var ok = $('apRbtOk'), limpa = $('apRbtLimpa'), t69 = $('apT69');
+    if (ok) ok.onclick = function () {
+      var v = Number(String($('apRbt').value).replace(/[^\d,]/g, '').replace(',', '.'));
+      if (!(v > 0)) { $('apRbt').focus(); return; }
+      try { localStorage.setItem(chave(), String(v)); } catch (e) {}
+      AP = null; telaApuracao(c);
+    };
+    if ($('apRbt')) $('apRbt').onkeydown = function (ev) { if (ev.key === 'Enter') ok.click(); };
+    if (limpa) limpa.onclick = function () { try { localStorage.removeItem(chave()); } catch (e) {} AP = null; telaApuracao(c); };
+    if (t69) t69.onchange = function () { try { localStorage.setItem('farol_apu_sem_tema69', this.checked ? '0' : '1'); } catch (e) {} desenhar(c, AP.r); };
+  }
 })();
 </script>
 <script>if (typeof USA_BANCO !== 'undefined' && !USA_BANCO) document.body.insertAdjacentHTML('beforeend', '<div style="position:fixed;left:12px;bottom:12px;z-index:50;background:#8a5a00;color:#fff;font:600 12px/1 system-ui,sans-serif;padding:7px 10px;border-radius:8px;opacity:.9">Caminho antigo (reserva)</div>');</script>
