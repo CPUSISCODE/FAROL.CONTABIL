@@ -7,7 +7,7 @@ $ErrorActionPreference = 'Stop'
 $BASE = $PSScriptRoot
 $SO_FUNCOES_ROBO = [bool]$SoFuncoes
 . (Join-Path $BASE 'instalar.ps1') -SoFuncoes -Origem (Join-Path $BASE 'processador')
-$VERSAO_ROBO = '1.0'
+$VERSAO_ROBO = '1.0.1'
 $TAREFA_ROBO = 'Farol Robô Avante (CPUSIS)'
 $TAREFA_PROC = 'Farol Processador XML manuais (CPUSIS)'
 Add-Type -AssemblyName System.Security

@@ -1,5 +1,5 @@
 Unicode true
-!define VERSAO "1.0"
+!define VERSAO "1.0.1"
 Name "Farol Contábil - Robô do Avante ${VERSAO}"
 Caption "Farol Contábil - Robô do Avante Web (CPUSIS)"
 OutFile "FarolContabil_RoboAvante_v${VERSAO}.exe"
@@ -7,11 +7,11 @@ RequestExecutionLevel admin
 SilentInstall normal
 ShowInstDetails show
 InstallDir "C:\FarolRobo"
-VIProductVersion "1.0.0.0"
+VIProductVersion "1.0.1.0"
 VIAddVersionKey "ProductName" "Farol Contábil - Robô do Avante Web"
 VIAddVersionKey "CompanyName" "CPUSIS"
 VIAddVersionKey "FileDescription" "Baixa XML e relatórios financeiros do Avante Web para o Farol Contábil"
-VIAddVersionKey "FileVersion" "1.0.0.0"
+VIAddVersionKey "FileVersion" "1.0.1.0"
 VIAddVersionKey "ProductVersion" "${VERSAO}"
 Page instfiles
 Section

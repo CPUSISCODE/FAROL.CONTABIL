@@ -14,9 +14,11 @@
 const fs = require('fs'), path = require('path'), crypto = require('crypto');
 const { chromium } = require('playwright-core');
 
+const VERSAO = '1.0.1';
 const BASE = __dirname;
 const SITE = process.env.FAROL_TESTE_SITE || 'https://www.avanteweb.com.br/sistema';   // FAROL_TESTE_SITE só para teste com Avante simulado
 const PAINEL = SITE + '/pages/privado/indexParceiroPrincipal';
+class Indisponivel extends Error { }   // tela/opção que não existe para a empresa: pula sem contar erro
 const URL_GESTAO = SITE + '/pages/privado/fiscal/gestao/gestaoDocumentos';
 const URL_LANC = SITE + '/pages/privado/financeiro/relatorios/lancamentosFinanceiros';
 const URL_CONTAS = SITE + '/pages/privado/financeiro/relatorios/titulosReceberVencimentos';
@@ -69,7 +71,7 @@ async function avisar(situacao, mensagem, emp, mes) {   // registra no painel do
   try {
     const [a, m] = (mes || new Date().toISOString().slice(0, 7)).split('-').map(Number);
     await receptor({ acao: 'concluir', contabilidade: emp.contabilidade, cliente: emp.cliente, subpasta: emp.subpasta || '', cnpj: emp.cnpj, ano: a, mes: m,
-      arquivo: 'Avante Web (robô)', situacao, maquina: require('os').hostname(), versao: 'robo-avante-' + CFG.versao, mensagem: String(mensagem).slice(0, 500) });
+      arquivo: 'Avante Web (robô)', situacao, maquina: require('os').hostname(), versao: 'robo-avante-' + VERSAO, mensagem: String(mensagem).slice(0, 500) });
   } catch (e) { log('   (não consegui avisar o portal: ' + e.message + ')'); }
 }
 
@@ -92,7 +94,13 @@ async function entrarNoPainel(page, visivel) {
     await page.locator('button:has-text("Entrar"), input[type=submit][value*="Entrar" i]').first().click();
     await ajaxQuieto(page);
   }
+  if (!page.url().includes('indexParceiroPrincipal')) {   // às vezes o login cai na tela inicial do sistema: tenta o painel de novo
+    await page.goto(PAINEL, { waitUntil: 'domcontentloaded' }); await ajaxQuieto(page);
+  }
   if (!page.url().includes('indexParceiroPrincipal')) {
+    const pedeCodigo = await page.locator('input[type="password"], input[type="text"], input[type="tel"], input[type="number"]').filter({ visible: true }).count();
+    const texto = (await page.locator('body').innerText().catch(() => '')).toLowerCase();
+    if (!pedeCodigo || !/c[oó]digo|fator|verifica|autentica/.test(texto)) throw new Error('não consegui entrar no Painel do Parceiro (login do Avante recusado ou página mudou: ' + page.url() + ')');
     if (!visivel) throw new Error('o Avante pediu o código de 2 fatores: rode "Configurar robô" (navegador visível) e digite o código uma vez');
     log('Digite o código de 2 fatores no navegador... (até 5 minutos)');
     await page.waitForURL(/indexParceiroPrincipal|privado\/index/, { timeout: 300000 });
@@ -115,17 +123,35 @@ async function entrarNoCliente(page, cnpj, visivel) {
   await Promise.all([page.waitForURL(/privado\/index(?!Parceiro)/, { timeout: 60000 }), linha.locator('td:nth-child(4) a').first().click()]);
   await ajaxQuieto(page);
 }
-async function preencherData(page, id, d) {
+// campos que ficam dentro de um painel recolhido ("Filtros"): abre o painel antes de mexer
+async function mostrar(page, id) {
   const c = page.locator('[id="' + id + '"]');
+  if (!(await c.count())) throw new Indisponivel('a tela não tem o campo ' + id + ' para esta empresa');
+  if (await c.isVisible()) return c;
+  await page.evaluate((i) => {
+    let a = document.getElementById(i);
+    while (a) {
+      if (a.classList && a.classList.contains('ui-accordion-content') && getComputedStyle(a).display === 'none') { const h = a.previousElementSibling; if (h) h.click(); }
+      a = a.parentElement;
+    }
+  }, id);
+  try { await c.waitFor({ state: 'visible', timeout: 8000 }); } catch (e) { throw new Indisponivel('o campo ' + id + ' está escondido nesta tela (tela indisponível para esta empresa?)'); }
+  await esperar(300); return c;
+}
+async function preencherData(page, id, d) {
+  const c = await mostrar(page, id);
   await c.click({ clickCount: 3 }); await c.press('Control+A'); await c.press('Backspace');
   await c.pressSequentially(dmy(d), { delay: 35 }); await c.press('Tab'); await esperar(300);
   const v = await c.inputValue();
   if (v !== dmy(d)) throw new Error('não consegui preencher a data ' + id + ' (ficou "' + v + '")');
 }
 async function escolher(page, idBase, texto) {   // SelectOneMenu do PrimeFaces
-  await page.locator('[id="' + idBase + '_label"]').click();
+  const lbl = await mostrar(page, idBase + '_label');
   const item = page.locator('[id="' + idBase + '_items"] li').filter({ hasText: new RegExp('^\\s*' + texto.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*$') });
-  if (!(await item.count())) throw new Error('opção "' + texto + '" não existe em ' + idBase);
+  await lbl.click();
+  try { await page.locator('[id="' + idBase + '_items"] li').first().waitFor({ state: 'visible', timeout: 10000 }); } catch (e) { }
+  if (!(await item.count())) { await page.keyboard.press('Escape'); throw new Indisponivel('opção "' + texto + '" não existe para esta empresa'); }
+  if (/ui-state-disabled/.test((await item.first().getAttribute('class')) || '')) { await page.keyboard.press('Escape'); throw new Indisponivel('"' + texto + '" não está habilitado para esta empresa'); }
   await item.first().click(); await ajaxQuieto(page);
 }
 // clica e espera o download; se em vez do arquivo aparecer uma mensagem (ex.: nenhum documento), devolve a mensagem
@@ -138,7 +164,7 @@ async function baixar(page, botao, destino) {
   if (r.d) { await r.d.saveAs(destino); return { ok: true }; }
   const r2 = r.m ? r : await dl;
   if (r2.d) { await r2.d.saveAs(destino); return { ok: true }; }
-  return { ok: false, mensagem: r2.m || 'o Avante não gerou o arquivo' };
+  return r2.m ? { ok: false, mensagem: r2.m } : { ok: false, mensagem: 'ERRO: o Avante não gerou o arquivo nem deu aviso', semAviso: true };
 }
 
 // ---------------------------------------------------------------- um cliente
@@ -157,7 +183,7 @@ async function processarCliente(page, emp, meses, estado, visivel) {
         await escolher(page, 'form:tipoDocumento', tipo); await escolher(page, 'form:selectFormatoArquivo', 'XML');
         const nome = nomeSeguro(emp.cliente) + ' - Avante ' + tipo + ' ' + mmyyyy + '.zip', arq = path.join(TEMP, nome);
         const r = await baixar(page, page.getByRole('button', { name: /Baixar Documento/i }), arq);
-        if (!r.ok) { log('   ' + tipo + ' ' + mmyyyy + ': ' + r.mensagem); continue; }
+        if (!r.ok) { if (r.semAviso) erros++; log('   ' + tipo + ' ' + mmyyyy + ': ' + r.mensagem); continue; }
         const buf = fs.readFileSync(arq), h = sha(buf), chave = emp.cnpj + '|' + tipo + '|' + mes;
         if (buf.length < 22 || buf.readUInt32LE(0) !== 0x04034b50) throw new Error('o arquivo baixado não é um ZIP');
         if (opt('--so-baixar')) { fs.copyFileSync(arq, path.join(saida, nome)); log('   ' + tipo + ' ' + mmyyyy + ': baixado (' + Math.round(buf.length / 1024) + ' KB) em saida\\'); continue; }
@@ -165,7 +191,7 @@ async function processarCliente(page, emp, meses, estado, visivel) {
         await enviar(emp, mes, arq, nome, 'xml', 'application/zip');
         estado[chave] = h; fs.writeFileSync(ARQ_ESTADO, JSON.stringify(estado, null, 1)); enviados++;
         log('   ' + tipo + ' ' + mmyyyy + ': enviado ao Drive (' + Math.round(buf.length / 1024) + ' KB)');
-      } catch (e) { erros++; log('   ERRO ' + tipo + ' ' + mmyyyy + ': ' + e.message); } finally { try { fs.unlinkSync(path.join(TEMP, nomeSeguro(emp.cliente) + ' - Avante ' + tipo + ' ' + mmyyyy + '.zip')); } catch (e) { } }
+      } catch (e) { if (e instanceof Indisponivel) log('   ' + tipo + ' ' + mmyyyy + ': pulado (' + e.message + ')'); else { erros++; log('   ERRO ' + tipo + ' ' + mmyyyy + ': ' + e.message); } } finally { try { fs.unlinkSync(path.join(TEMP, nomeSeguro(emp.cliente) + ' - Avante ' + tipo + ' ' + mmyyyy + '.zip')); } catch (e) { } }
     }
     // 2) financeiro do mês: lançamentos financeiros (movimento no mês)
     if (CFG.financeiro !== false) {
@@ -178,8 +204,8 @@ async function processarCliente(page, emp, meses, estado, visivel) {
         if (r.ok) {
           if (opt('--so-baixar')) fs.copyFileSync(arq, path.join(saida, nome)); else await enviar(emp, mes, arq, nome, 'portal', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
           log('   financeiro ' + mmyyyy + ': lançamentos ' + (opt('--so-baixar') ? 'baixados' : 'enviados')); try { fs.unlinkSync(arq); } catch (e) { }
-        } else log('   financeiro ' + mmyyyy + ': ' + r.mensagem);
-      } catch (e) { erros++; log('   ERRO financeiro ' + mmyyyy + ': ' + e.message); }
+        } else { if (r.semAviso) erros++; log('   financeiro ' + mmyyyy + ': ' + r.mensagem); }
+      } catch (e) { if (e instanceof Indisponivel) log('   financeiro ' + mmyyyy + ': pulado (' + e.message + ')'); else { erros++; log('   ERRO financeiro ' + mmyyyy + ': ' + e.message); } }
     }
   }
   // 3) contas a receber e a pagar (posição de hoje: 1 ano para trás e 1 para frente)
@@ -196,8 +222,8 @@ async function processarCliente(page, emp, meses, estado, visivel) {
         if (r.ok) {
           if (opt('--so-baixar')) fs.copyFileSync(arq, path.join(saida, nome)); else await enviar(emp, mesHoje, arq, nome, 'portal', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
           log('   ' + rotulo.toLowerCase() + ': ' + (opt('--so-baixar') ? 'baixado' : 'enviado')); try { fs.unlinkSync(arq); } catch (e) { }
-        } else log('   ' + rotulo.toLowerCase() + ': ' + r.mensagem);
-      } catch (e) { erros++; log('   ERRO ' + rotulo.toLowerCase() + ': ' + e.message); }
+        } else { if (r.semAviso) erros++; log('   ' + rotulo.toLowerCase() + ': ' + r.mensagem); }
+      } catch (e) { if (e instanceof Indisponivel) log('   ' + rotulo.toLowerCase() + ': pulado (' + e.message + ')'); else { erros++; log('   ERRO ' + rotulo.toLowerCase() + ': ' + e.message); } }
     }
   }
   return { erros, enviados };
@@ -211,7 +237,7 @@ async function processarCliente(page, emp, meses, estado, visivel) {
   fs.writeFileSync(trava, String(process.pid));
   let ctx, codigo = 0;
   try {
-    log('===== robô Avante ' + CFG.versao + ' - início =====');
+    log('===== robô Avante ' + VERSAO + ' - início =====');
     ctx = await abrir(visivel);
     const page = ctx.pages()[0] || await ctx.newPage();
     page.setDefaultTimeout(45000);
