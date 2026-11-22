@@ -8,6 +8,7 @@ $ErrorActionPreference = 'Stop'
 $RECEPTOR_URL = 'https://script.google.com/macros/s/AKfycbwySsHymDOemTCxV-Oe-j4B0xHK1OIOtBDF-KjIdhHA0cf9YmLoUcP3AnRVpgW1AZLU/exec'
 $TAREFA = 'LC XML Contabilidade (CPUSIS)'
 $TAREFA_VIGIA = 'LC XML Vigia MySQL (CPUSIS)'
+$TAREFA_RETRO = 'LC XML Retroativo (CPUSIS)'
 $PASTA_PADRAO = 'C:\LCXML'
 $UTF8 = New-Object System.Text.UTF8Encoding($false)
 $UTF8_ESTRITO = New-Object System.Text.UTF8Encoding($false, $true)
@@ -210,6 +211,105 @@ function Empresas-Gestores($c, [string]$banco) {
   return $lista
 }
 
+# ---------------------------------------------------------------- meses com XML no banco (para o envio retroativo)
+# devolve @{ 'AAAA-MM' = quantidade de notas com XML (NF-e, NFC-e e compras) } das empresas escolhidas
+function Meses-Lc($c, [string]$banco, [int[]]$ids) {
+  $em = ($ids -join ',')
+  $cont = @{}
+  $q = @(
+    "SELECT DATE_FORMAT(dados_dataemissao,'%Y-%m'), COUNT(*) FROM nfe WHERE id_empresa IN ($em) AND xml IS NOT NULL AND xml<>'' GROUP BY 1",
+    "SELECT DATE_FORMAT(ide_dhemi,'%Y-%m'), COUNT(*) FROM nfce WHERE id_empresa IN ($em) GROUP BY 1",
+    "SELECT DATE_FORMAT(COALESCE(data_entradasaida,data_emissao),'%Y-%m'), COUNT(*) FROM entrada WHERE id_empresa IN ($em) AND xml IS NOT NULL AND xml<>'' GROUP BY 1"
+  )
+  foreach ($sql in $q) {
+    try { foreach ($l in (Sql-Mysql $c $sql $banco)) { $p = $l -split "`t"; if ($p[0] -match '^(19|20)\d\d-\d\d$') { $cont[$p[0]] = [int]$cont[$p[0]] + [int]$p[1] } } }
+    catch { Aviso ('não consegui contar parte das notas: ' + $_.Exception.Message) }
+  }
+  return $cont
+}
+function Meses-Gestores($c, [string]$banco, [int[]]$ids) {
+  $fl = ($ids -join ',')
+  $cont = @{}
+  $q = @(
+    "SELECT to_char(data,'YYYY-MM'), count(*) FROM mv_venda WHERE cod_filial IN ($fl) AND modelo='65' AND xml IS NOT NULL AND data_ex IS NULL GROUP BY 1",
+    "SELECT to_char(data_emissao,'YYYY-MM'), count(*) FROM mv_nota_saida WHERE cod_filial IN ($fl) AND modelo='55' AND arquivo_xml IS NOT NULL AND data_ex IS NULL GROUP BY 1",
+    "SELECT to_char(COALESCE(data_lancamento,data_emissao),'YYYY-MM'), count(*) FROM mv_nota_entrada WHERE cod_filial IN ($fl) AND modelo='55' AND arquivo IS NOT NULL AND data_ex IS NULL GROUP BY 1"
+  )
+  foreach ($sql in $q) {
+    try { foreach ($l in (Sql-Pg $c $sql $banco)) { $p = $l -split "`t"; if ($p[0] -match '^(19|20)\d\d-\d\d$') { $cont[$p[0]] = [int]$cont[$p[0]] + [int]$p[1] } } }
+    catch { Aviso ('não consegui contar parte das notas: ' + $_.Exception.Message) }
+  }
+  return $cont
+}
+# mostra os meses agrupados por ano:  2025  (8.412 notas)  jan 610 · fev 702 · ...
+function Mostrar-Meses($cont) {
+  $nomes = @('jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez')
+  foreach ($ano in (@($cont.Keys | ForEach-Object { $_.Substring(0, 4) }) | Sort-Object -Unique)) {
+    $ms = @($cont.Keys | Where-Object { $_.StartsWith($ano) } | Sort-Object)
+    $tot = 0; foreach ($m in $ms) { $tot += $cont[$m] }
+    Write-Host ('   ' + $ano + '  (' + $tot.ToString('N0', [Globalization.CultureInfo]'pt-BR') + ' notas em ' + $ms.Count + ' meses)') -ForegroundColor White
+    Write-Host ('         ' + (($ms | ForEach-Object { $nomes[[int]$_.Substring(5, 2) - 1] + ' ' + $cont[$_] }) -join '  ·  '))
+  }
+}
+# entende: T (todos) | 2025 (o ano todo) | 2025-03 ou 03/2025 | 2025-01 a 2025-06 (intervalo) | combinações separadas por vírgula
+function Ler-Meses([string]$r, [string[]]$disp) {
+  $disp = @($disp | Sort-Object -Unique)
+  $r = ([string]$r).Trim().ToUpper()
+  if (-not $r -or $r -in @('N', 'NAO', 'NÃO', 'NENHUM')) { return @() }
+  if ($r -in @('T', 'TODOS', 'TUDO')) { return $disp }
+  $norm = { param($x) $x = $x.Trim(); if ($x -match '^(\d{1,2})[/.-](\d{4})$') { return ('{0}-{1:00}' -f $matches[2], [int]$matches[1]) }; if ($x -match '^(\d{4})[/.-](\d{1,2})$') { return ('{0}-{1:00}' -f $matches[1], [int]$matches[2]) }; return $x }
+  $sel = @()
+  foreach ($parte in ($r -split '\s*[,;]\s*')) {
+    if (-not $parte) { continue }
+    if ($parte -match '^(.+?)(?:\s+(?:ATÉ|ATE|A)\s+|\s*\.\.\s*)(.+)$') {
+      $de = & $norm $matches[1]; $ate = & $norm $matches[2]
+      if ($de -match '^\d{4}$') { $de = $de + '-01' }; if ($ate -match '^\d{4}$') { $ate = $ate + '-12' }
+      $sel += @($disp | Where-Object { $_ -ge $de -and $_ -le $ate })
+    } elseif ($parte -match '^\d{4}$') { $sel += @($disp | Where-Object { $_.StartsWith($parte + '-') }) }
+    else { $m = & $norm $parte; if ($disp -contains $m) { $sel += $m } else { Aviso ('sem XML em ' + $parte + ' - ignorado') } }
+  }
+  return @($sel | Sort-Object -Unique)
+}
+# pergunta os meses e agenda o envio (tarefa única, como SYSTEM: continua mesmo se fechar a janela ou sair do Windows)
+function Envio-Retroativo([string]$pasta, $c, [bool]$ehLc, [int[]]$ids) {
+  Titulo 'Envio dos meses (retroativo)'
+  Info 'procurando em quais meses há XML no banco...'
+  $cont = $(if ($ehLc) { Meses-Lc $c $c.banco $ids } else { Meses-Gestores $c $c.banco $ids })
+  $atual = (Get-Date).ToString('yyyy-MM')
+  if (-not $cont.ContainsKey($atual)) { $cont[$atual] = 0 }
+  Write-Host ''
+  Mostrar-Meses $cont
+  Write-Host ''
+  Info 'Exemplos:  Enter = só o mês atual   |   2025 = o ano todo   |   2025-07 a 2026-10   |   03/2025, 05/2025   |   T = todos   |   N = nenhum'
+  $disp = @($cont.Keys)
+  while ($true) {
+    $r = Perguntar 'Quais meses enviar agora' $atual
+    $lista = @(Ler-Meses $r $disp)
+    if (-not $lista.Count) { if ($r.Trim().ToUpper() -in @('N', 'NAO', 'NÃO', 'NENHUM')) { Info 'nenhum envio agora: o agente manda o mês atual à meia-noite.'; return @() }; Aviso 'não entendi os meses - tente de novo'; continue }
+    $notas = 0; foreach ($m in $lista) { $notas += [int]$cont[$m] }
+    Info ('Vai enviar ' + $lista.Count + ' mês(es): ' + $lista[0] + $(if ($lista.Count -gt 1) { ' até ' + $lista[-1] } else { '' }) + ' (cerca de ' + $notas.ToString('N0', [Globalization.CultureInfo]'pt-BR') + ' notas)')
+    if (SimNao 'Confirma?' $true) { break }
+  }
+  Agendar-Retroativo $pasta $lista
+  return $lista
+}
+function Agendar-Retroativo([string]$pasta, [string[]]$lista) {
+  $arg = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + (Join-Path $pasta 'lcxml.ps1') + '" -SemAtualizar -Meses ' + ($lista -join ',')
+  if (Get-Command Register-ScheduledTask -ErrorAction SilentlyContinue) {
+    $acao = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $arg
+    $quando = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1)
+    $quem = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
+    $conf = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Hours 72) -MultipleInstances IgnoreNew
+    Register-ScheduledTask -TaskName $TAREFA_RETRO -Action $acao -Trigger $quando -Principal $quem -Settings $conf -Description ('Farol Contábil (CPUSIS): envio retroativo de ' + $lista.Count + ' mês(es), agendado em ' + (Get-Date).ToString('dd/MM/yyyy HH:mm')) -Force | Out-Null
+    try { Start-ScheduledTask -TaskName $TAREFA_RETRO } catch { }
+  } else {
+    Start-Process powershell.exe -ArgumentList ($arg -replace '-WindowStyle Hidden ', '')
+  }
+  Ok ('envio de ' + $lista.Count + ' mês(es) iniciado em segundo plano. Pode fechar esta janela e até sair do Windows: ele continua.')
+  Info ('Acompanhe em ' + (Join-Path $pasta 'logs') + ' ou no portal: cada mês aparece assim que termina.')
+  Info 'Se ainda estiver enviando à meia-noite, a rodada da noite espera e o mês atual vai na noite seguinte.'
+}
+
 # ---------------------------------------------------------------- programa principal
 function Ser-Admin { return ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator) }
 function Instalar {
@@ -229,8 +329,16 @@ function Instalar {
     try { $antigo = Get-Content (Join-Path $pasta 'config.json') -Raw -Encoding UTF8 | ConvertFrom-Json } catch { }
     Titulo 'Já existe uma instalação neste computador'
     if ($antigo) { Info ('Empresas: ' + ((@($antigo.empresas) | ForEach-Object { $_.cliente + $(if ($_.subpasta) { ' / ' + $_.subpasta } else { '' }) }) -join ', ')) }
-    $op = Escolher 'O que fazer?' @('Só atualizar o programa (mantém tudo como está)', 'Configurar de novo (banco, empresas, contabilidade)') 0
+    $op = Escolher 'O que fazer?' @('Só atualizar o programa (mantém tudo como está)', 'Enviar meses anteriores (retroativo)', 'Configurar de novo (banco, empresas, contabilidade)') 0
     if ($op -eq 0) { Copiar-Programa $pasta; Garantir-Tarefa $pasta; Ok 'programa atualizado'; return $true }
+    if ($op -eq 1) {
+      if (-not $antigo) { Erro 'não consegui ler o config.json desta instalação'; return $false }
+      Copiar-Programa $pasta; Garantir-Tarefa $pasta
+      $lc = -not ($antigo.sistema -eq 'gestores' -or ($antigo.postgres -and -not $antigo.mysql))
+      $cx = $(if ($lc) { $antigo.mysql } else { $antigo.postgres })
+      [void](Envio-Retroativo $pasta $cx $lc @(@($antigo.empresas) | ForEach-Object { [int]$_.id }))
+      return $true
+    }
   }
 
   # 2) senha do receptor
@@ -400,10 +508,7 @@ function Instalar {
   $mes = (Get-Date).ToString('yyyy-MM')
   & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $pasta 'lcxml.ps1') -SoGerar -SemAtualizar -Meses $mes 2>&1 | ForEach-Object { Write-Host ('      ' + $_) }
   if ($LASTEXITCODE -ne 0) { Aviso 'o teste terminou com erro: confira as mensagens acima (o log fica em C:\LCXML\logs).' } else { Ok ('teste concluído: os ZIPs ficaram em ' + (Join-Path $pasta 'saida')) }
-  if (SimNao 'Enviar agora para o Drive (mês atual e, no começo do mês, o anterior)?' $true) {
-    Start-Process powershell.exe -ArgumentList ('-NoProfile -ExecutionPolicy Bypass -File "' + (Join-Path $pasta 'lcxml.ps1') + '"')
-    Ok 'envio iniciado numa janela separada (pode fechar esta)'
-  }
+  [void](Envio-Retroativo $pasta $c $ehLc @($empresas | ForEach-Object { [int]$_.id }))
   return $true
 }
 
@@ -437,7 +542,7 @@ function Garantir-Tarefa([string]$pasta) {
   Ok ('tarefa "' + $TAREFA + '" criada: todo dia à meia-noite (ou quando o computador ligar)')
 }
 function Escrever-Desinstalador([string]$pasta) {
-  $bat = "@echo off`r`necho Removendo o agente Farol Contabil (CPUSIS)...`r`nschtasks /Delete /TN `"$TAREFA`" /F`r`nschtasks /Delete /TN `"$TAREFA_VIGIA`" /F`r`necho.`r`necho Tarefas removidas. A pasta $pasta pode ser apagada.`r`npause`r`n"
+  $bat = "@echo off`r`necho Removendo o agente Farol Contabil (CPUSIS)...`r`nschtasks /Delete /TN `"$TAREFA`" /F`r`nschtasks /Delete /TN `"$TAREFA_VIGIA`" /F`r`nschtasks /Delete /TN `"$TAREFA_RETRO`" /F`r`necho.`r`necho Tarefas removidas. A pasta $pasta pode ser apagada.`r`npause`r`n"
   [IO.File]::WriteAllText((Join-Path $pasta 'DESINSTALAR.bat'), $bat, [Text.Encoding]::ASCII)
 }
 
