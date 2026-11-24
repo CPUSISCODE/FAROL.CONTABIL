@@ -1038,8 +1038,8 @@ function desenharPainel() {
   var abrirCk = function (ck, aba) { var u = unidPorChave(ck); if (u) { ATUAL = { aba: aba || 'dias' }; abrir(u, u.meses.indexOf(mes) >= 0 ? mes : null); } };
   $('pCorpo').querySelectorAll('[data-ck]').forEach(function (el) { el.addEventListener('click', function () { abrirCk(el.dataset.ck, el.closest('.lim') ? 'trib' : 'dias'); }); });
   $('pCorpo').querySelectorAll('[data-a]').forEach(function (el) { el.addEventListener('click', function () { var a = alertas[+el.dataset.a]; abrirCk(a.x.ck, /CEST/.test(a.t) ? 'ncm' : 'trib'); }); });
-  $('pCorpo').querySelectorAll('[data-rf]').forEach(function (el) { el.addEventListener('click', function () { abrirCk(RF.linhas[+el.dataset.rf].x.ck, 'rf'); }); });
-  $('rfCsv').addEventListener('click', function () { csv([['rotulo', 'Cliente'], ['contabilidade', 'Contabilidade'], ['regimeNome', 'Regime'], ['desde', 'Obrigatório desde'], ['docs', 'Notas emitidas', 'int'], ['docsCom', 'Com IBS/CBS', 'int'], ['pctTxt', '% com IBS/CBS'], ['vIBS', 'IBS'], ['vCBS', 'CBS'], ['situacao', 'Situação']], RF.linhas, 'Reforma IBS-CBS ' + mes + '.csv'); });
+  $('pCorpo').querySelectorAll('[data-rf]').forEach(function (el) { el.addEventListener('click', function (ev) { abrirCk(RF.linhas[+el.dataset.rf].x.ck, ev.target.closest('[data-cf]') ? 'conf' : 'rf'); }); });
+  $('rfCsv').addEventListener('click', function () { csv([['rotulo', 'Cliente'], ['contabilidade', 'Contabilidade'], ['regimeNome', 'Regime'], ['desde', 'Obrigatório desde'], ['docs', 'Notas emitidas', 'int'], ['docsCom', 'Com IBS/CBS', 'int'], ['pctTxt', '% com IBS/CBS'], ['vIBS', 'IBS'], ['vCBS', 'CBS'], ['situacao', 'Situação'], ['conferencia', 'Conferência dos valores']], RF.linhas, 'Reforma IBS-CBS ' + mes + '.csv'); });
   var t = tabela($('pTab'), COL.dash, lista, 'vendas', true, { clicar: function (x) { abrirCk(x.ck, 'dias'); } });
   $('pFiltro').addEventListener('input', function () { t.filtrar(this.value); });
   $('pCsv').addEventListener('click', function () { csv(COL.dash, t.linhas(), 'Painel ' + mes + '.csv'); });
@@ -1075,23 +1075,27 @@ function rfSecaoPainel(lista, mes) {
   var linhas = lista.map(function (x) {
     var s = rfSituacao(x, mes);
     return { x: x, s: s, rotulo: x.rotulo, contabilidade: x.contabilidade, regimeNome: x.regimeNome || '—', desde: s.ob.desde, docs: s.docs, docsCom: s.det ? s.docsCom : null,
-      pctTxt: s.pct == null ? (s.det ? '' : 'sem detalhe') : Math.floor(s.pct) + '%', vIBS: s.vIBS, vCBS: s.vCBS, situacao: s.txt };
+      pctTxt: s.pct == null ? (s.det ? '' : 'sem detalhe') : Math.floor(s.pct) + '%', vIBS: s.vIBS, vCBS: s.vCBS, situacao: s.txt, cf: (x.rf || {}).cf || null,
+      conferencia: (function (cf) { if (!cf) return ''; var e = (cf.saiErro || 0) + (cf.entErro || 0); return e ? e + ' nota(s) com erro' : ((cf.saiConf || 0) + (cf.entConf || 0) ? 'Confere' : ''); })((x.rf || {}).cf) };
   }).sort(function (a, b) { return b.s.ordem - a.s.ordem || b.docs - a.docs; });
   var obrig = linhas.filter(function (l) { return l.s.ob.obrig && l.s.id !== 'semnotas'; });
   var obrigFalta = obrig.filter(function (l) { return l.s.id === 'nao' || l.s.id === 'parcial'; });
   var sn = linhas.filter(function (l) { return !l.s.ob.obrig && l.s.ob.desde === '04/01/2027' && l.s.id !== 'semnotas'; });
   var snPronto = sn.filter(function (l) { return l.s.id === 'ok' || l.s.id === 'destaca'; });
   var semDet = linhas.filter(function (l) { return !l.s.det && l.s.id !== 'semnotas'; }).length;
+  var cfTem = linhas.some(function (l) { return l.cf; }), cfErro = 0, cfCli = 0;
+  linhas.forEach(function (l) { if (l.cf) { var e = (l.cf.saiErro || 0) + (l.cf.entErro || 0); cfErro += e; if (e) cfCli++; } });
   var html = '<section class="card" id="rfSec"><div class="ch"><h2>Reforma tributária · IBS e CBS nos XML</h2><div class="ferr"><span>' + nomeMes(mes) + ' · NT 2025.002</span><button class="btn sec" type="button" id="rfCsv">Exportar para Excel (CSV)</button></div></div>' +
     '<div class="minis rf4"><div><span class="r">Regime normal preenchendo</span><b' + (obrigFalta.length ? ' style="color:var(--bad)"' : '') + '>' + (obrig.length - obrigFalta.length) + ' de ' + obrig.length + '</b></div>' +
     '<div><span class="r">Regime normal sem preencher</span><b' + (obrigFalta.length ? ' style="color:var(--bad)"' : '') + '>' + obrigFalta.length + '</b></div>' +
     '<div><span class="r">Simples/MEI já preparados para 2027</span><b>' + snPronto.length + ' de ' + sn.length + '</b></div>' +
-    '<div><span class="r">IBS + CBS destacados</span><b>' + mi(soma(lista, 'ibs') + soma(lista, 'cbs')) + '</b></div></div>' +
-    '<div class="tbl"><table><thead><tr><th>Cliente</th><th>Regime</th><th>Obrigatório desde</th><th class="n">Notas emitidas</th><th class="n">Com IBS/CBS</th><th class="n">IBS</th><th class="n">CBS</th><th>Situação</th></tr></thead><tbody>' +
+    '<div><span class="r">Notas com IBS/CBS calculado errado</span><b' + (cfErro ? ' style="color:var(--bad)"' : '') + '>' + (cfTem ? int(cfErro) + ' em ' + cfCli + ' cliente(s)' : 'aguardando') + '</b></div></div>' +
+    '<div class="tbl"><table><thead><tr><th>Cliente</th><th>Regime</th><th>Obrigatório desde</th><th class="n">Notas emitidas</th><th class="n">Com IBS/CBS</th><th class="n">IBS</th><th class="n">CBS</th><th>Situação</th><th>Conferência dos valores</th></tr></thead><tbody>' +
     linhas.map(function (l, i) {
       return '<tr class="cli" data-rf="' + i + '"><td class="b">' + esc(l.rotulo) + '</td><td>' + esc(l.regimeNome) + '</td><td>' + esc(l.desde) + '</td><td class="n">' + int(l.docs) + '</td>' +
         '<td class="n">' + (l.docsCom == null ? '<span class="sub">' + l.pctTxt + '</span>' : int(l.docsCom) + ' <span class="sub">' + l.pctTxt + '</span>') + '</td>' +
-        '<td class="n">' + brl(l.vIBS) + '</td><td class="n">' + brl(l.vCBS) + '</td><td><span class="pill ' + l.s.cls + '">' + esc(l.situacao) + '</span></td></tr>';
+        '<td class="n">' + brl(l.vIBS) + '</td><td class="n">' + brl(l.vCBS) + '</td><td><span class="pill ' + l.s.cls + '">' + esc(l.situacao) + '</span></td>' +
+        '<td>' + (l.conferencia ? '<span class="pill ' + (l.conferencia === 'Confere' ? '' : 'bad') + '" data-cf="' + i + '">' + esc(l.conferencia) + '</span>' : '<span class="sub">—</span>') + '</td></tr>';
     }).join('') + '</tbody></table></div>' +
     '<p class="nota">Regime normal (Presumido/Real): o grupo IBSCBS em cada item da NF-e e da NFC-e é obrigatório desde 03/08/2026. A SEFAZ adiou a rejeição, mas a nota sem o grupo continua irregular. Simples Nacional e MEI: obrigatório a partir de 04/01/2027.' +
     (semDet ? ' <b>' + semDet + ' cliente(s) com "sem detalhe"</b>: o programa do servidor ainda é anterior à contagem nota a nota; a situação vem dos valores de IBS/CBS destacados e fica exata depois da próxima atualização automática.' : '') + ' Clique no cliente para ver CST, cClassTrib e as notas sem IBS/CBS.</p></section>';
@@ -1802,7 +1806,7 @@ var COL = {
 };
 var ABAS = [
   { id: 'dias', nome: 'Dia a dia' }, { id: 'apur', nome: 'Apuração fiscal' }, { id: 'trib', nome: 'Tributação' }, { id: 'ncm', nome: 'NCMs' }, { id: 'pis', nome: 'PIS/COFINS' }, { id: 'prod', nome: 'Produtos' },
-  { id: 'dev', nome: 'Devoluções' }, { id: 'canc', nome: 'Cancelamentos e numeração' }, { id: 'pag', nome: 'Pagamentos' }, { id: 'rf', nome: 'Reforma (IBS/CBS)' }, { id: 'xml', nome: 'Buscar XML' }
+  { id: 'dev', nome: 'Devoluções' }, { id: 'canc', nome: 'Cancelamentos e numeração' }, { id: 'pag', nome: 'Pagamentos' }, { id: 'rf', nome: 'Reforma (IBS/CBS)' }, { id: 'conf', nome: 'Conferência IBS/CBS' }, { id: 'xml', nome: 'Buscar XML' }
 ];
 var ORIGENS = ['Todas', 'NFe', 'NFCe', 'Compras'];
 var NOME_ORIGEM = { NFe: 'NF-e emitida', NFCe: 'NFC-e', Compras: 'Compra' };
@@ -1813,6 +1817,7 @@ function desenharAba() {
   if (a === 'dias') { telaDias(c); return; }
   if (a === 'rf') { telaReforma(c); return; }
   if (a === 'apur') { telaApuracao(c); return; }
+  if (a === 'conf') { telaConferencia(c); return; }
   var ferr = function (comOrigem, nota) {
     return '<div class="ferr">' + (comOrigem ? '<div class="seg" role="group" aria-label="Origem">' + ORIGENS.map(function (o) { return '<button type="button" data-o="' + o + '" aria-pressed="' + (o === ATUAL.origem) + '">' + (o === 'Todas' ? 'Todas' : NOME_ORIGEM[o]) + '</button>'; }).join('') + '</div>' : '') +
       '<input type="search" id="fTab" placeholder="Filtrar…" aria-label="Filtrar tabela"><button class="btn sec" type="button" id="bCsv">Exportar para Excel (CSV)</button></div>' + (nota ? '<p class="nota">' + nota + '</p>' : '');
@@ -2699,6 +2704,156 @@ function guiaAuto() {
   }
   window.abrirReuniao = abrirReuniao;
   window.abrirCarteira = abrirCarteira;
+})();
+</script>
+<!-- ================= CONFERÊNCIA IBS/CBS (valores das notas x cálculo oficial da Receita) ================= -->
+<style>
+.cf-prob{display:grid;gap:0;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.cf-prob>div{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:14px;align-items:center;padding:11px 14px;border-top:1px solid var(--line)}
+.cf-prob>div:first-child{border-top:0}
+.cf-prob b{display:block}.cf-prob .s{display:block;font-size:12.5px;color:var(--muted);margin-top:2px}
+.cf-prob .q{font-variant-numeric:tabular-nums;font-weight:700;text-align:right;white-space:nowrap}
+.cf-det td{background:var(--bg2,rgba(127,127,127,.06))}
+.cf-it{width:100%;border-collapse:collapse;font-size:13px}
+.cf-it th,.cf-it td{padding:6px 6px;border-bottom:1px solid var(--line);text-align:left}
+.cf-it td.n,.cf-it th.n{text-align:right;font-variant-numeric:tabular-nums}
+.cf-msg{width:100%;min-height:170px;font:inherit;font-size:13.5px;padding:10px;border:1px solid var(--line);border-radius:8px;background:transparent;color:inherit}
+.cf-sel{cursor:pointer}.cf-sel:hover td{background:rgba(127,127,127,.07)}
+tr.cf-sel.aberta td{background:rgba(127,127,127,.1)}
+</style>
+<script>
+(function () {
+  var URL_RTC = API_BANCO.replace(/\/farol$/, '/rtc');
+  var CF = null;   // cache { ck, r }
+  var PROB = {
+    base: ['Base de cálculo errada', 'A base do IBS/CBS não pode conter ICMS, PIS, COFINS, FCP e outros tributos (LC 214/2025, art. 12, § 2º).'],
+    aliquota: ['Alíquota diferente da oficial', 'A alíquota informada não é a de referência da Receita para o período.'],
+    reducao: ['Redução diferente da prevista', 'O percentual de redução não é o que a tabela oficial prevê para o cClassTrib informado.'],
+    valor: ['Valor não fecha com base × alíquota', 'O IBS/CBS destacado não é o resultado da base vezes a alíquota da própria nota.'],
+    cst: ['CST não combina com o cClassTrib', 'Os 3 primeiros dígitos do cClassTrib precisam ser o CST do item.'],
+    classe: ['cClassTrib que não existe', 'O código não está na tabela oficial de classificações tributárias vigente.'],
+    semClass: ['Item sem cClassTrib', 'O grupo IBS/CBS veio sem a classificação tributária do item.']
+  };
+  var ORD = ['base', 'reducao', 'aliquota', 'valor', 'cst', 'classe', 'semClass'];
+  function R$(v) { return 'R$ ' + brl(v); }
+  function sinal(v) { v = Number(v || 0); return (v > 0 ? '+' : v < 0 ? '−' : '') + 'R$ ' + brl(Math.abs(v)); }
+  function chave() { var u = ATUAL.u; return chaveUnid(u.contabilidade, rotuloPainel(u)) + '_' + ATUAL.mes; }
+  function chamar(rtc) {
+    var u = ATUAL.u;
+    var corpo = { acao: 'tela', token: TOKEN, contabilidade: u.contabilidade, cliente: u.cliente, subpasta: u.subpasta, mes: ATUAL.mes,
+      chaves: (rtc.notas || []).map(function (n) { return n.chave; }), pares: rtc.pares || [] };
+    return fetch(URL_RTC, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(corpo) })
+      .then(function (r) { return r.json(); })
+      .then(function (j) { if (j.ok) return j.r; if (/SESSAO_EXPIRADA/.test(j.erro)) sair(true); throw new Error(j.erro); })
+      .catch(function () { return null; });   // sem a confirmação oficial a tela continua funcionando
+  }
+  window.telaConferencia = function (c) {
+    var rtc = RESUMO && RESUMO.rtc;
+    if (!rtc || !rtc.porOrigem) {
+      c.innerHTML = '<div class="card"><h2>Conferência IBS/CBS</h2><p class="nota">Este mês ainda foi resumido por uma versão anterior do programa do servidor, que não conferia os valores de IBS/CBS. ' +
+        'A conferência aparece aqui depois da próxima rodada automática (de madrugada), já com o programa novo.</p>' +
+        (rtc && rtc.erro ? '<p class="nota">Detalhe técnico: ' + esc(rtc.erro) + '</p>' : '') + '</div>';
+      return;
+    }
+    var ck = chave();
+    if (CF && CF.ck === ck) { desenhar(c, rtc, CF.r); return; }
+    desenhar(c, rtc, null);
+    if (USA_BANCO) chamar(rtc).then(function (r) { CF = { ck: ck, r: r }; if (ATUAL && ATUAL.aba === 'conf' && chave() === ck) desenhar($('conteudo'), rtc, r); });
+  };
+  function statusReceita(n, R) {
+    var x = R && R.conf && R.conf[n.chave];
+    if (!R) return '<span class="pill info">—</span>';
+    if (!x) return '<span class="pill info" title="Vai à calculadora da Receita na próxima madrugada">Aguardando Receita</span>';
+    if (x.ok) {
+      var conf = (x.itens || []).every(function (i) { return !i.baseConfere || !i.valorConfere; });
+      return conf ? '<span class="pill bad" title="A calculadora oficial calculou diferente da nota">Confirmado pela Receita</span>' : '<span class="pill warn" title="A Receita aceitou parte dos itens como estão">Receita: revisar</span>';
+    }
+    return '<span class="pill bad" title="' + esc(x.detalhe || '') + '">Receita: ' + esc(x.titulo || 'recusou') + '</span>';
+  }
+  function desenhar(c, F, R) {
+    var po = F.porOrigem || {}, sai = { conf: 0, ok: 0, erro: 0, dif: 0, sem: 0 };
+    ['NFe', 'NFCe'].forEach(function (o) { var x = po[o]; if (x) { sai.conf += x.conferidos || 0; sai.ok += x.ok || 0; sai.erro += x.comErro || 0; sai.dif += x.difTrib || 0; sai.sem += x.semGrupo || 0; } });
+    var ent = po.Compras || { conferidos: 0, ok: 0, comErro: 0, difTrib: 0, semGrupo: 0 };
+    var tab = F.tabela || {}, notas = F.notas || [], forn = (F.fornecedores || []).filter(function (f) { return f.comErro > 0; });
+    var probs = {}; Object.keys(F.problemas || {}).forEach(function (k) { var p = k.split('|'), lado = p[0] === 'Compras' ? 'ent' : 'sai'; probs[p[1]] = probs[p[1]] || { sai: 0, ent: 0 }; probs[p[1]][lado] += F.problemas[k]; });
+    var ncmRuins = []; (F.pares || []).forEach(function (p) { if (R && R.ncm && R.ncm[p] === false) ncmRuins.push(p); });
+    var totalErro = sai.erro + ent.comErro;
+    var sit = !sai.conf && !ent.conferidos ? ['info', 'Nenhuma nota deste mês trouxe o grupo IBS/CBS para conferir.']
+      : totalErro ? ['bad', totalErro + ' nota(s) com IBS/CBS diferente do cálculo oficial.'] : ['', 'Todas as notas com IBS/CBS conferem com o cálculo oficial.'];
+    var fonte = tab.fonte && tab.fonte !== 'nenhuma' ? 'Tabela oficial da Receita (' + esc((R && R.versao) || tab.versao || '') + '): CBS ' + aliq(tab.cbs) + ' · IBS estadual ' + aliq(tab.ibsUF) + ' · ' + int(tab.classes) + ' classificações.'
+      : 'Conferido sem a tabela oficial (só base e valores); alíquotas e reduções voltam a ser conferidas na próxima rodada.';
+    var lado = function (n) { return n.origem === 'Compras' ? 'Compra' : (n.origem === 'NFCe' ? 'NFC-e' : 'NF-e'); };
+    var linhasNotas = notas.map(function (n, i) {
+      var ps = ORD.filter(function (k) { return n.prob && n.prob[k]; });
+      return '<tr class="cf-sel" data-i="' + i + '"><td>' + lado(n) + '</td><td class="n">' + esc(n.numero) + '</td><td>' + dataBR(n.data) + '</td><td>' + esc(n.part || '') + '<span class="sub" style="display:block">' + esc(n.partDoc || '') + '</span></td>' +
+        '<td>' + ps.map(function (k) { return '<span class="pill ' + (k === 'base' || k === 'reducao' ? 'bad' : 'warn') + '" style="margin:1px">' + esc(PROB[k][0]) + '</span>'; }).join(' ') + '</td>' +
+        '<td class="n">' + int(n.itensErro) + ' de ' + int(n.itens) + '</td><td class="n">' + brl(n.bcNota) + '</td><td class="n">' + brl(n.bcEsp) + '</td><td class="n" style="color:var(--' + (n.dif ? 'bad' : 'muted') + ')">' + sinal(n.dif) + '</td><td>' + statusReceita(n, R) + '</td></tr>';
+    }).join('');
+    c.innerHTML =
+      '<div class="card"><p class="aviso ' + sit[0] + '" style="margin:0"><b>' + esc(sit[1]) + '</b></p><p class="nota" style="margin:6px 0 0">' + fonte +
+        ' As notas com divergência são reconferidas de madrugada na Calculadora de Tributos da Receita Federal.</p></div>' +
+      '<div class="kpis kpis4">' +
+        kpi2('Notas emitidas conferidas', int(sai.conf), sai.erro ? int(sai.erro) + ' com divergência' : 'todas conferem', null, sai.erro ? 'bad' : (sai.conf ? 'ok' : 'muted')) +
+        kpi2('Compras conferidas', int(ent.conferidos), ent.comErro ? int(ent.comErro) + ' com divergência' : 'todas conferem', null, ent.comErro ? 'bad' : (ent.conferidos ? 'ok' : 'muted')) +
+        kpi2('IBS + CBS a mais nas compras', R$(Math.max(0, ent.difTrib || 0)), 'crédito destacado acima do correto', null, (ent.difTrib || 0) > 0 ? 'bad' : 'muted') +
+        kpi2('Notas sem o grupo IBS/CBS', int(sai.sem + (ent.semGrupo || 0)), int(sai.sem) + ' emitidas · ' + int(ent.semGrupo || 0) + ' de compra', null, sai.sem ? 'warn' : 'muted') +
+      '</div>' +
+      '<section class="card"><div class="ch"><h2>Problemas encontrados</h2><span>itens com divergência</span></div>' +
+        (Object.keys(probs).length || ncmRuins.length ? '<div class="cf-prob">' + ORD.filter(function (k) { return probs[k]; }).map(function (k) {
+          var p = probs[k]; return '<div><span><b>' + esc(PROB[k][0]) + '</b><span class="s">' + esc(PROB[k][1]) + '</span></span><span class="q">' + (p.sai ? int(p.sai) + ' em vendas' : '') + '</span><span class="q">' + (p.ent ? int(p.ent) + ' em compras' : '') + '</span></div>';
+        }).join('') + (ncmRuins.length ? '<div><span><b>NCM não pode usar o cClassTrib</b><span class="s">A Receita respondeu que o NCM não está vinculado à classificação informada (redução ou isenção indevida). ' + esc(ncmRuins.slice(0, 6).map(function (p) { return p.replace('|', ' × '); }).join(', ')) + '</span></span><span class="q">' + int(ncmRuins.length) + ' produto(s)</span><span class="q"></span></div>' : '') + '</div>'
+          : '<p class="nota ok">Nenhuma divergência nos itens conferidos.</p>') + '</section>' +
+      (forn.length ? '<section class="card"><div class="ch"><h2>Fornecedores com IBS/CBS errado</h2><span>compras do mês</span></div><div class="tbl"><table><thead><tr><th>Fornecedor</th><th>CNPJ</th><th class="n">Notas</th><th class="n">Com divergência</th><th class="n">IBS + CBS a mais</th><th></th></tr></thead><tbody>' +
+        forn.map(function (f, i) { return '<tr><td class="b">' + esc(f.nome) + '</td><td>' + esc(f.doc) + '</td><td class="n">' + int(f.docs) + '</td><td class="n">' + int(f.comErro) + '</td><td class="n">' + sinal(f.difTrib) + '</td><td><button class="btn sec" type="button" data-f="' + i + '">Mensagem para o fornecedor</button></td></tr>'; }).join('') +
+        '</tbody></table></div><div id="cfMsg"></div></section>' : '') +
+      '<section class="card"><div class="ch"><h2>Notas com divergência</h2><div class="ferr"><span>' + (notas.length >= 300 ? 'as 300 primeiras' : int(notas.length) + ' nota(s)') + ' · clique para ver os itens</span><button class="btn sec" type="button" id="cfCsv">Exportar para Excel (CSV)</button></div></div>' +
+        (notas.length ? '<div class="tbl"><table><thead><tr><th>Tipo</th><th class="n">Número</th><th>Data</th><th>Emitente / destinatário</th><th>Problema</th><th class="n">Itens</th><th class="n">Base na nota</th><th class="n">Base correta</th><th class="n">IBS+CBS a mais</th><th>Receita</th></tr></thead><tbody id="cfNotas">' + linhasNotas + '</tbody></table></div>'
+          : '<p class="nota ok">Nenhuma nota com divergência.</p>') + '</section>' +
+      '<section class="card"><h2>Como a conferência é feita</h2><ul class="lst">' +
+        '<li><b>Base correta</b> = produtos + frete + seguro + outras despesas − desconto − ICMS − PIS − COFINS − FCP (e ICMS de partilha, monofásico e ISS, quando houver).</li>' +
+        '<li><b>Alíquotas e reduções</b> vêm da tabela oficial da Receita para o mês da nota e do cClassTrib de cada item.</li>' +
+        '<li><b>IBS+CBS a mais</b> = o que veio destacado na nota menos o que deveria ter vindo. Em compras, é crédito a maior para o cliente.</li>' +
+        '<li>As notas com divergência vão para a <b>Calculadora de Tributos da Receita</b> de madrugada; a coluna "Receita" mostra o resultado oficial.</li></ul></section>';
+    if ($('cfCsv')) $('cfCsv').onclick = function () {
+      csv([['tipo', 'Tipo'], ['numero', 'Número', 'int'], ['data', 'Data', 'data'], ['part', 'Emitente/Destinatário'], ['partDoc', 'CNPJ/CPF', 'm'], ['probs', 'Problemas'], ['itensErro', 'Itens com divergência', 'int'], ['itens', 'Itens', 'int'],
+        ['bcNota', 'Base na nota'], ['bcEsp', 'Base correta'], ['vNota', 'IBS+CBS na nota'], ['vEsp', 'IBS+CBS correto'], ['dif', 'Diferença'], ['chave', 'Chave de acesso', 'm']],
+        notas.map(function (n) { var x = Object.assign({}, n); x.tipo = lado(n); x.probs = ORD.filter(function (k) { return n.prob && n.prob[k]; }).map(function (k) { return PROB[k][0]; }).join(', '); return x; }),
+        'Conferencia IBS-CBS ' + rotuloUnid(ATUAL.u) + ' ' + ATUAL.mes + '.csv');
+    };
+    c.querySelectorAll('[data-f]').forEach(function (b) { b.onclick = function () { mensagem(forn[+b.dataset.f], notas); }; });
+    c.querySelectorAll('tr.cf-sel').forEach(function (tr) { tr.onclick = function () { detalhe(tr, notas[+tr.dataset.i], R); }; });
+  }
+  function detalhe(tr, n, R) {
+    var prox = tr.nextElementSibling;
+    if (prox && prox.classList.contains('cf-det')) { prox.remove(); tr.classList.remove('aberta'); return; }
+    tr.classList.add('aberta');
+    var of = R && R.conf && R.conf[n.chave], ofIt = {}; if (of && of.ok) (of.itens || []).forEach(function (i) { ofIt[i.n] = i.of; });
+    var it = (n.erros || []).map(function (e) {
+      var nt = e.nota || {}, o = ofIt[e.n], cl = R && R.classes && R.classes[e.cc];
+      return '<tr><td>' + esc(e.prod || '') + '<span class="sub" style="display:block">NCM ' + esc(e.ncm || '—') + ' · CST ' + esc(e.cst || '—') + ' · cClassTrib ' + esc(e.cc || '—') + (cl ? ' (' + esc(cl.trat) + ')' : '') + '</span></td>' +
+        '<td class="n">' + brl(nt.vBC) + '</td><td class="n">' + brl(e.bcEsp) + '</td><td class="n">' + (o ? brl(o.vBC) : '—') + '</td>' +
+        '<td class="n">' + aliq(nt.pCBS) + (nt.rCBS ? ' <span class="sub">−' + aliq(nt.rCBS) + '</span>' : '') + '</td><td class="n">' + brl((nt.vUF || 0) + (nt.vMun || 0) + (nt.vCBS || 0)) + '</td><td class="n">' + brl(e.vEsp) + '</td><td>' + (e.prob || []).map(function (k) { return esc((PROB[k] || [k])[0]); }).join(', ') + '</td></tr>';
+    }).join('');
+    var msgRec = of && !of.ok ? '<p class="nota" style="color:var(--bad)"><b>Resposta da Receita:</b> ' + esc(of.titulo) + ' — ' + esc(of.detalhe) + '</p>' : '';
+    var d = document.createElement('tr'); d.className = 'cf-det';
+    d.innerHTML = '<td colspan="10"><p class="nota" style="margin:0 0 6px">Chave ' + esc(n.chave) + ' · valor da nota R$ ' + brl(n.vNF) + (n.erros && n.erros.length < n.itensErro ? ' · mostrando ' + n.erros.length + ' de ' + n.itensErro + ' itens com divergência' : '') + '</p>' + msgRec +
+      (it ? '<div class="tbl"><table class="cf-it"><thead><tr><th>Item</th><th class="n">Base na nota</th><th class="n">Base correta</th><th class="n">Base Receita</th><th class="n">CBS %</th><th class="n">IBS+CBS na nota</th><th class="n">Correto</th><th>Problema</th></tr></thead><tbody>' + it + '</tbody></table></div>'
+        : '<p class="nota">O detalhe dos itens é guardado para as primeiras notas do mês; esta nota tem ' + int(n.itensErro) + ' item(ns) com divergência.</p>') + '</td>';
+    tr.parentNode.insertBefore(d, tr.nextSibling);
+  }
+  function mensagem(f, notas) {
+    var dele = notas.filter(function (n) { return n.origem === 'Compras' && n.partDoc === f.doc; });
+    var tipos = {}; dele.forEach(function (n) { Object.keys(n.prob || {}).forEach(function (k) { tipos[k] = 1; }); });
+    var u = ATUAL.u;
+    var txt = 'Prezados, ' + f.nome + ',\n\n' +
+      'Na conferência das notas fiscais que recebemos de vocês em ' + nomeMes(ATUAL.mes) + ', o grupo IBS/CBS (Reforma Tributária, NT 2025.002) veio diferente do cálculo oficial da Receita Federal:\n\n' +
+      ORD.filter(function (k) { return tipos[k]; }).map(function (k) { return '• ' + PROB[k][0] + ': ' + PROB[k][1]; }).join('\n') + '\n\n' +
+      'Notas: ' + (function () { var vis = {}, l = []; dele.forEach(function (n) { var k = 'nº ' + n.numero + ' de ' + dataBR(n.data); if (!vis[k]) { vis[k] = 1; l.push(k); } }); return l.slice(0, 15).join(', ') + (l.length > 15 ? ' e outras ' + (l.length - 15) : ''); })() + '.\n\n' +
+      'Pedimos que verifiquem a configuração fiscal do emissor de vocês para as próximas notas. A partir de 2027 o crédito de CBS depende do valor destacado corretamente.\n\n' +
+      'Atenciosamente,\n' + (u.cliente || '');
+    $('cfMsg').innerHTML = '<div style="margin-top:12px"><textarea class="cf-msg" id="cfTxt" aria-label="Mensagem para o fornecedor">' + esc(txt) + '</textarea><div class="ferr" style="margin-top:8px"><button class="btn" type="button" id="cfCopiar">Copiar mensagem</button><span class="sub" id="cfOk"></span></div></div>';
+    $('cfCopiar').onclick = function () { var t = $('cfTxt'); t.select(); try { navigator.clipboard.writeText(t.value).then(function () { $('cfOk').textContent = 'Copiada.'; }); } catch (e) { document.execCommand('copy'); $('cfOk').textContent = 'Copiada.'; } };
+  }
 })();
 </script>
 <!-- ================= APURAÇÃO FISCAL (estimativa: Simples Nacional e Lucro Presumido, comércio) ================= -->

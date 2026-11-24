@@ -40,7 +40,7 @@ var CONFIG = {
   GUARDAR_DIAS: 10, GUARDAR_SEMANAS: 0, GUARDAR_MESES: 0   // no máximo 10 dias (um backup por dia; mais velhos que 10 dias são apagados)
 };
 
-var VERSAO = '1.19';
+var VERSAO = '1.20';
 var PASTA_PORTAL = '_PORTAL_DADOS';   // resumos fiscais (JSON) e versão do agente
 var MESES = ['JANEIRO','FEVEREIRO','MARCO','ABRIL','MAIO','JUNHO','JULHO','AGOSTO','SETEMBRO','OUTUBRO','NOVEMBRO','DEZEMBRO'];
 var MESES_TXT = ['JANEIRO','FEVEREIRO','MARÇO','ABRIL','MAIO','JUNHO','JULHO','AGOSTO','SETEMBRO','OUTUBRO','NOVEMBRO','DEZEMBRO'];
@@ -792,6 +792,14 @@ function indicadores_(r) {
     o.rf = { det: false, docs: (o.nfeQtd || 0) + (o.nfceQtd || 0) };
   }
   o.rf.vIBS = arred(o.ibs); o.rf.vCBS = arred(o.cbs);
+  // conferência dos valores de IBS/CBS (agente 2.2+): notas com base, alíquota, redução ou valor diferente do cálculo oficial
+  var cf = r.rtc;
+  if (cf && cf.porOrigem) {
+    var ss = { conf: 0, ok: 0, erro: 0, dif: 0 }, cp2 = cf.porOrigem.Compras || {};
+    ['NFe', 'NFCe'].forEach(function (k) { var x = cf.porOrigem[k]; if (x) { ss.conf += Number(x.conferidos) || 0; ss.ok += Number(x.ok) || 0; ss.erro += Number(x.comErro) || 0; ss.dif += Number(x.difTrib) || 0; } });
+    o.rf.cf = { saiConf: ss.conf, saiErro: ss.erro, saiDif: arred(ss.dif), entConf: Number(cp2.conferidos) || 0, entErro: Number(cp2.comErro) || 0, entDif: arred(cp2.difTrib),
+      entSemGrupo: Number(cp2.semGrupo) || 0, fornErro: (cf.fornecedores || []).filter(function (f) { return f.comErro > 0; }).length, tabela: (cf.tabela || {}).fonte || '' };
+  }
   o.monofasico = arred(o.monofasico); o.stSaidas = arred(o.stSaidas);
   ['vendas', 'saidas', 'icms', 'st', 'ipi', 'pis', 'cofins', 'ibs', 'cbs', 'compras', 'comprasST', 'cancValor', 'devVenda', 'devCompra', 'nfeValor', 'nfceValor', 'cteValor'].forEach(function (k) { o[k] = arred(o[k]); });
   return o;

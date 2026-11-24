@@ -30,7 +30,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$VERSAO = '2.1'
+$VERSAO = '2.2'
 $BASE = $PSScriptRoot
 if (-not $Config) { $Config = Join-Path $BASE 'config.json' }
 $PASTA_LOG = Join-Path $BASE 'logs'
@@ -227,6 +227,7 @@ function Analisar-Doc([string]$grupo, [string]$texto) {
     origem = $origem; chave = $chave; modelo = (Txt (Filho $ide 'mod')); serie = (Txt (Filho $ide 'serie')); numero = [long](Txt (Filho $ide 'nNF'))
     data = $(if ($dh.Length -ge 10) { $dh.Substring(0, 10) } else { '' }); tpNF = (Txt (Filho $ide 'tpNF')); finNFe = (Txt (Filho $ide 'finNFe')); natOp = (Txt (Filho $ide 'natOp'))
     emitDoc = (Txt (Filho $emit 'CNPJ')); emitNome = (Txt (Filho $emit 'xNome')); crt = (Txt (Filho $emit 'CRT')); destDoc = $destDoc; destNome = (Txt (Filho $dest 'xNome'))
+    uf = (Txt (Filho (Filho $emit 'enderEmit') 'UF')); cMunFG = (Txt (Filho $ide 'cMunFG')); dh = $dh
     vNF = (Num (Filho $tot 'vNF')); itens = New-Object System.Collections.ArrayList; pag = New-Object System.Collections.ArrayList
     refs = @($x.GetElementsByTagName('refNFe') | ForEach-Object { $_.InnerText })
   }
@@ -246,6 +247,25 @@ function Analisar-Doc([string]$grupo, [string]$texto) {
       $g = Filho $nIbs 'gIBSCBS'
       if ($g) { $bcIbs = Num (Filho $g 'vBC'); $pUF = Num (Filho (Filho $g 'gIBSUF') 'pIBSUF'); $pMun = Num (Filho (Filho $g 'gIBSMun') 'pIBSMun'); $pCBS = Num (Filho (Filho $g 'gCBS') 'pCBS') }
     }
+    # conferência IBS/CBS (agente 2.2): componentes da base (LC 214/2025, art. 12) e o grupo como veio na nota
+    $rtcIt = $null
+    if ($nIbs) { try {
+      $gIbs = Filho $nIbs 'gIBSCBS'
+      $vUFDest = [decimal]0; $vFcpUFDest = [decimal]0; $nUFD = Filho $im 'ICMSUFDest'; if ($nUFD) { $vUFDest = Num (Filho $nUFD 'vICMSUFDest'); $vFcpUFDest = Num (Filho $nUFD 'vFCPUFDest') }
+      $vIss = [decimal]0; $nIss = Filho $im 'ISSQN'; if ($nIss) { $vIss = Num (Filho $nIss 'vISSQN') }
+      # comp: vProd, vFrete, vSeg, vOutro, vII, vDesc, vPIS, vCOFINS, vICMS, vFCP, vICMSUFDest, vFCPUFDest, vICMSMono, vISSQN (vetor para gastar pouca memória)
+      $rtcIt = @{ g = [bool]$gIbs
+        comp = [decimal[]]@((Num $pr['vProd']), (Num $pr['vFrete']), (Num $pr['vSeg']), (Num $pr['vOutro']), $(if ($nII) { Num (Filho $nII 'vII') } else { [decimal]0 }), (Num $pr['vDesc']),
+                            (Num (Filho $pis 'vPIS')), (Num (Filho $cof 'vCOFINS')), (Num (Filho $icms 'vICMS')), (Num (Filho $icms 'vFCP')), $vUFDest, $vFcpUFDest, (Num (Filho $icms 'vICMSMono')), $vIss) }
+      if ($gIbs) {
+        # por tributo: p, v, vDif, vDevTrib, pRedAliq, pAliqEfet (-1 = sem gRed)
+        foreach ($t in @(@('UF', 'gIBSUF', 'pIBSUF', 'vIBSUF'), @('Mun', 'gIBSMun', 'pIBSMun', 'vIBSMun'), @('CBS', 'gCBS', 'pCBS', 'vCBS'))) {
+          $gt = Filho $gIbs $t[1]; if (-not $gt) { continue }; $red = Filho $gt 'gRed'
+          $rtcIt[$t[0]] = [decimal[]]@((Num (Filho $gt $t[2])), (Num (Filho $gt $t[3])), (Num (Filho (Filho $gt 'gDif') 'vDif')), (Num (Filho (Filho $gt 'gDevTrib') 'vDevTrib')),
+                                       $(if ($red) { Num (Filho $red 'pRedAliq') } else { [decimal]0 }), $(if ($red) { Num (Filho $red 'pAliqEfet') } else { [decimal]-1 }))
+        }
+      }
+    } catch { $rtcIt = $null } }   # nunca deixa a conferência derrubar a leitura da nota
     $vST = Num (Filho $icms 'vICMSST'); $vFCPST = Num (Filho $icms 'vFCPST')
     $vDeson = [decimal]0; if ((Txt (Filho $icms 'indDeduzDeson')) -ne '0') { $vDeson = Num (Filho $icms 'vICMSDeson') }
     $vII = [decimal]0; $nII = Filho $im 'II'; if ($nII) { $vII = Num (Filho $nII 'vII') }
@@ -254,7 +274,7 @@ function Analisar-Doc([string]$grupo, [string]$texto) {
       cfop = (Txt $pr['CFOP']); cst = $cst; orig = (Txt (Filho $icms 'orig')); aliq = (Num (Filho $icms 'pICMS'))
       valor = $vItem; vBC = (Num (Filho $icms 'vBC')); vICMS = (Num (Filho $icms 'vICMS')); vBCST = (Num (Filho $icms 'vBCST')); vST = $vST
       vIPI = $vIPI; cstPis = (Txt (Filho $pis 'CST')); vPIS = (Num (Filho $pis 'vPIS')); cstCofins = (Txt (Filho $cof 'CST')); vCOFINS = (Num (Filho $cof 'vCOFINS'))
-      cstIBS = $cstIBS; vIBS = $vIBS; vCBS = $vCBS; temIbs = [bool]$nIbs; cClass = $cClass; bcIbs = $bcIbs; pUF = $pUF; pMun = $pMun; pCBS = $pCBS
+      cstIBS = $cstIBS; vIBS = $vIBS; vCBS = $vCBS; temIbs = [bool]$nIbs; cClass = $cClass; bcIbs = $bcIbs; pUF = $pUF; pMun = $pMun; pCBS = $pCBS; rtc = $rtcIt
       ncm = (Txt $pr['NCM']); cest = (Txt $pr['CEST']); cProd = (Txt $pr['cProd']); xProd = (Txt $pr['xProd']); un = (Txt $pr['uCom']); qtd = (Num $pr['qCom'])
     })
   }
@@ -282,6 +302,119 @@ function Analisar-Inut([string]$texto) {
 }
 
 function R2([decimal]$v) { return [Math]::Round($v, 2) }
+
+
+# ---------------------------------------------------------------- conferência IBS/CBS (reforma tributária)
+# Tabela oficial (alíquotas de referência e cClassTrib com reduções) vem da Calculadora de Tributos da Receita,
+# repassada pelo banco do Farol (função rtc). Sem ela, usa a cópia local de até 30 dias; sem nenhuma, só confere base e valores.
+$RTC_URL = 'https://cidvuirvojpsmukfxpll.supabase.co/functions/v1/rtc'
+$script:RTC_TAB = @{}
+$RTC_COMP = @('vProd', 'vFrete', 'vSeg', 'vOutro', 'vII', 'vDesc', 'vPIS', 'vCOFINS', 'vICMS', 'vFCP', 'vICMSUFDest', 'vFCPUFDest', 'vICMSMono', 'vISSQN')
+function Tabela-Rtc([datetime]$mes) {
+  $k = $mes.ToString('yyyy-MM')
+  if ($null -eq $script:RTC_TAB) { $script:RTC_TAB = @{} }
+  if ($script:RTC_TAB.ContainsKey($k)) { return $script:RTC_TAB[$k] }
+  $arq = Join-Path $BASE ('rtc_tabela_' + $k + '.json'); $tab = $null
+  try {
+    $r = Invoke-RestMethod -Uri ($RTC_URL + '?acao=tabela&data=' + $mes.ToString('yyyy-MM-15')) -Method Get -TimeoutSec 25
+    if ($r -is [string]) { $r = $r | ConvertFrom-Json }
+    if ($r.ok -and $r.tabela) { $tab = $r.tabela; try { [IO.File]::WriteAllText($arq, ($r.tabela | ConvertTo-Json -Depth 6 -Compress), $UTF8) } catch { } }
+  } catch { Log ('tabela IBS/CBS: ' + $_.Exception.Message) }
+  if (-not $tab -and (Test-Path $arq) -and ((Get-Date) - (Get-Item $arq).LastWriteTime).TotalDays -lt 30) { try { $tab = Get-Content $arq -Raw -Encoding UTF8 | ConvertFrom-Json } catch { } }
+  $t = @{ fonte = 'nenhuma'; cbs = $null; uf = $null; mun = $null; cls = @{} }
+  if ($tab) {
+    $t.fonte = [string]$tab.fonte; $t.versao = [string]$tab.versao
+    if ($null -ne $tab.cbs) { $t.cbs = [decimal]$tab.cbs }; if ($null -ne $tab.ibsUF) { $t.uf = [decimal]$tab.ibsUF }; if ($null -ne $tab.ibsMun) { $t.mun = [decimal]$tab.ibsMun }
+    foreach ($c in @($tab.classes)) { if ($c.c) { $t.cls[[string]$c.c] = $c } }
+  }
+  $script:RTC_TAB[$k] = $t
+  return $t
+}
+function Rd2([decimal]$v) { return [Math]::Round($v, 2, [MidpointRounding]::AwayFromZero) }
+# confere um item; devolve $null (sem grupo IBSCBS) ou @{ prob = códigos; bcEsp; vEsp; vNota }
+function Conferir-Item($it, $T) {
+  $r = $it.rtc; if (-not $r) { return $null }
+  $prob = New-Object System.Collections.ArrayList
+  $cc = [string]$it.cClass; $cst = [string]$it.cstIBS
+  if (-not $cc) { [void]$prob.Add('semClass') }
+  elseif ($cst -and $cc.Length -ge 3 -and $cc.Substring(0, 3) -ne $cst) { [void]$prob.Add('cst') }
+  $cl = $null; if ($cc -and $T.cls.Count) { $cl = $T.cls[$cc]; if (-not $cl) { [void]$prob.Add('classe') } }
+  $o = @{ prob = $prob; bcEsp = $null; vEsp = [decimal]0; vNota = [decimal]0 }
+  if (-not $r.g) { return $o }
+  $c = $r.comp
+  $bcEsp = $c[0] + $c[1] + $c[2] + $c[3] + $c[4] - $c[5] - $c[6] - $c[7] - $c[8] - $c[9] - $c[10] - $c[11] - $c[12] - $c[13]
+  if ($bcEsp -lt 0) { $bcEsp = [decimal]0 }
+  $o.bcEsp = Rd2 $bcEsp
+  if ([Math]::Abs($it.bcIbs - $o.bcEsp) -gt 0.05) { [void]$prob.Add('base') }
+  $refs = @{ UF = $T.uf; Mun = $T.mun; CBS = $T.cbs }
+  $redTab = @{ UF = $null; Mun = $null; CBS = $null }
+  if ($cl) {
+    if ($cl.padrao -eq $false) { $refs = @{ UF = $null; Mun = $null; CBS = $null } }   # alíquota fixa/específica (ex.: combustíveis): não compara alíquota nem redução
+    else { $redTab.UF = [decimal]$cl.rUF; $redTab.Mun = [decimal]$cl.rMun; $redTab.CBS = [decimal]$cl.rCBS }
+  }
+  $aliq = $false; $red = $false; $val = $false
+  foreach ($k in @('UF', 'Mun', 'CBS')) {
+    $a = $r[$k]; if (-not $a) { continue }
+    $p = $a[0]; $v = $a[1]; $vDif = $a[2]; $vDev = $a[3]; $rd = $a[4]; $pE = $a[5]
+    $o.vNota += $v
+    if ($null -ne $refs[$k] -and [Math]::Abs($p - $refs[$k]) -gt 0.0001) { $aliq = $true }
+    if ($null -ne $redTab[$k] -and [Math]::Abs($rd - $redTab[$k]) -gt 0.01) { $red = $true }
+    $pEf = $p; if ($pE -ge 0) { $pEf = $pE } elseif ($rd -gt 0) { $pEf = $p * (100 - $rd) / 100 }
+    if ([Math]::Abs($v - ((Rd2 ($it.bcIbs * $pEf / 100)) - $vDif - $vDev)) -gt 0.011) { $val = $true }
+    # o que deveria ser: base correta x alíquota de referência x redução da tabela
+    $pRef = $p; if ($null -ne $refs[$k]) { $pRef = $refs[$k] }
+    $rRef = $rd; if ($null -ne $redTab[$k]) { $rRef = $redTab[$k] }
+    $o.vEsp += (Rd2 ($o.bcEsp * $pRef * (100 - $rRef) / 10000)) - $vDif - $vDev
+  }
+  if ($aliq) { [void]$prob.Add('aliquota') }; if ($red) { [void]$prob.Add('reducao') }; if ($val) { [void]$prob.Add('valor') }
+  return $o
+}
+function Conferir-Rtc([datetime]$mes) {
+  $T = Tabela-Rtc $mes; $script:rtcDetalhes = 0
+  $orig = @{}; $notas = New-Object System.Collections.ArrayList; $forn = @{}; $pares = @{}; $probTot = @{}
+  foreach ($d in $script:AN.docs.Values) {
+    if ($script:AN.canceladas.ContainsKey($d.chave)) { continue }
+    $o = $d.origem
+    if (-not $orig.ContainsKey($o)) { $orig[$o] = [ordered]@{ docs = 0; conferidos = 0; ok = 0; comErro = 0; semGrupo = 0; itens = 0; itensErro = 0; difTrib = [decimal]0 } }
+    $R = $orig[$o]; $R.docs++
+    $temGrupo = $false; $erros = New-Object System.Collections.ArrayList; $nItErro = 0; $bcN = [decimal]0; $bcE = [decimal]0; $vN = [decimal]0; $vE = [decimal]0; $probN = @{}
+    foreach ($it in $d.itens) {
+      $cf = Conferir-Item $it $T
+      if ($null -eq $cf) { continue }
+      $temGrupo = $true; $R.itens++
+      if ($it.cClass -and $it.cClass -ne '000001' -and $it.ncm -and $pares.Count -lt 600) { $pares[$it.ncm + '|' + $it.cClass] = 1 }
+      if (-not $cf.prob.Count) { continue }
+      $nItErro++; $R.itensErro++
+      foreach ($p in $cf.prob) { $probN[$p] = 1 + [int]$probN[$p]; $probTot[$o + '|' + $p] = 1 + [int]$probTot[$o + '|' + $p] }
+      if ($null -ne $cf.bcEsp) { $bcN += $it.bcIbs; $bcE += $cf.bcEsp; $vN += $cf.vNota; $vE += $cf.vEsp }
+      if ($erros.Count -lt 8 -and $script:rtcDetalhes -lt 40) {
+        $comp = [ordered]@{}; $cv = $it.rtc.comp; for ($q = 0; $q -lt $RTC_COMP.Count; $q++) { if ($cv[$q] -ne 0) { $comp[$RTC_COMP[$q]] = $cv[$q] } }
+        $dec = [ordered]@{ vBC = $it.bcIbs }; foreach ($k in @('UF', 'Mun', 'CBS')) { $x = $it.rtc[$k]; if ($x) { $dec['p' + $k] = $x[0]; $dec['v' + $k] = $x[1]; if ($x[4]) { $dec['r' + $k] = $x[4] }; if ($x[2]) { $dec['dif' + $k] = $x[2] } } }
+        [void]$erros.Add([ordered]@{ n = $erros.Count + 1; ncm = $it.ncm; prod = $it.xProd; cst = $it.cstIBS; cc = $it.cClass; prob = @($cf.prob); bcEsp = $cf.bcEsp; vEsp = (R2 $cf.vEsp); nota = $dec; comp = $comp })
+      }
+    }
+    if (-not $temGrupo) { if ($d.itens.Count) { $R.semGrupo++ }; continue }
+    $R.conferidos++
+    if (-not $nItErro) { $R.ok++ } else { $R.comErro++; $R.difTrib += ($vN - $vE) }
+    if ($o -eq 'Compras' -and $d.emitDoc) {
+      if (-not $forn.ContainsKey($d.emitDoc)) { $forn[$d.emitDoc] = [ordered]@{ doc = $d.emitDoc; nome = $d.emitNome; docs = 0; comErro = 0; difTrib = [decimal]0 } }
+      $f = $forn[$d.emitDoc]; $f.docs++; if ($nItErro) { $f.comErro++; $f.difTrib += ($vN - $vE) }
+    }
+    if ($nItErro -and $erros.Count) { $script:rtcDetalhes++ }
+    if ($nItErro -and $notas.Count -lt 300) {
+      $part = $d.destNome; $partDoc = $d.destDoc; if ($o -eq 'Compras') { $part = $d.emitNome; $partDoc = $d.emitDoc }
+      $dh = $d.data
+      [void]$notas.Add([ordered]@{ chave = $d.chave; origem = $o; modelo = $d.modelo; serie = $d.serie; numero = $d.numero; data = $dh; part = $part; partDoc = $partDoc; crt = $d.crt
+        uf = $d.uf; mun = $d.cMunFG; dh = $d.dh; vNF = (R2 $d.vNF); itens = $d.itens.Count; itensErro = $nItErro; prob = $probN
+        bcNota = (R2 $bcN); bcEsp = (R2 $bcE); vNota = (R2 $vN); vEsp = (R2 $vE); dif = (R2 ($vN - $vE)); erros = @($erros) })
+    }
+  }
+  foreach ($v in $orig.Values) { $v.difTrib = R2 $v.difTrib }
+  $fl = @($forn.Values | ForEach-Object { $_.difTrib = R2 $_.difTrib; $_ } | Sort-Object { $_.comErro } -Descending | Select-Object -First 100)
+  $pt = [ordered]@{}; foreach ($k in $probTot.Keys) { $pt[$k] = $probTot[$k] }
+  return [ordered]@{ versao = 1; tabela = [ordered]@{ fonte = $T.fonte; versao = $T.versao; cbs = $T.cbs; ibsUF = $T.uf; ibsMun = $T.mun; classes = $T.cls.Count }
+    porOrigem = $orig; problemas = $pt; notas = @($notas); fornecedores = $fl; pares = @($pares.Keys) }
+}
 
 # soma tudo e devolve o objeto do resumo (JSON)
 function Montar-Resumo($emp, [datetime]$mes) {
@@ -409,6 +542,7 @@ function Montar-Resumo($emp, [datetime]$mes) {
     devolucoes = @($devol); canceladas = @($canc); inutilizacoes = @($script:AN.inut); falhasNumeracao = @($falhas)
     porDia = $porDia; comSistema = [bool]$script:AN.sistemaDia
     pendencias = @($(if ($script:AN.pendencias) { $script:AN.pendencias } else { @() })); comPendencias = ($null -ne $script:AN.pendencias)
+    rtc = $(try { Conferir-Rtc $mes } catch { [ordered]@{ erro = $_.Exception.Message } })
     reforma = [ordered]@{
       porOrigem = $rfOrig; classes = @(Fechar $rfCls); semGrupo = @($rfSem)
       fornecedores = [ordered]@{ total = $rfForn.Count; com = @($rfForn.Values | Where-Object { $_ }).Count }
@@ -685,8 +819,13 @@ function Processar-Manuais {
   $todos = @($lista.itens)
   $itens = @($todos | Where-Object { [string]$_.mes -ge $desde })
   if ($todos.Count -ne $itens.Count) { Log ("{0} meses anteriores a {1} ignorados." -f ($todos.Count - $itens.Count), $desde) }
+  # versão nova do programa: refaz uma vez o mês atual e o anterior (o resumo ganha o que a versão nova calcula)
+  $estM = Ler-Estado; $mesRefaz = (Get-Date).AddMonths(-1).ToString('yyyy-MM')
+  $refazVersao = ([string]$estM['_manuaisVersao'] -ne $VERSAO)
+  if ($refazVersao) { Log "Versão $VERSAO do programa: refazendo os resumos a partir de $mesRefaz." }
   $pend = @($itens | Where-Object {
     if ($Tudo -or -not $_.resumoMod) { return $true }
+    if ($refazVersao -and [string]$_.mes -ge $mesRefaz) { return $true }
     $rm = [datetime]$_.resumoMod
     return [bool](@($_.arquivos | Where-Object { [datetime]$_.mod -gt $rm }).Count)
   } | Sort-Object { $_.mes } -Descending)
@@ -764,6 +903,8 @@ function Processar-Manuais {
       Log ("   ERRO: " + $_.Exception.Message)
     }
   }
+  # só marca a versão quando deu tempo de passar por todos (senão a próxima execução continua refazendo)
+  if ($refazVersao -and ((Get-Date) - $inicio).TotalMinutes -le $LimiteMinutos) { $estM = Ler-Estado; $estM['_manuaisVersao'] = $VERSAO; Gravar-Estado $estM }
   return [int]($erros -gt 0)
 }
 
