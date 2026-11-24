@@ -253,10 +253,12 @@ function Analisar-Doc([string]$grupo, [string]$texto) {
       $gIbs = Filho $nIbs 'gIBSCBS'
       $vUFDest = [decimal]0; $vFcpUFDest = [decimal]0; $nUFD = Filho $im 'ICMSUFDest'; if ($nUFD) { $vUFDest = Num (Filho $nUFD 'vICMSUFDest'); $vFcpUFDest = Num (Filho $nUFD 'vFCPUFDest') }
       $vIss = [decimal]0; $nIss = Filho $im 'ISSQN'; if ($nIss) { $vIss = Num (Filho $nIss 'vISSQN') }
-      # comp: vProd, vFrete, vSeg, vOutro, vII, vDesc, vPIS, vCOFINS, vICMS, vFCP, vICMSUFDest, vFCPUFDest, vICMSMono, vISSQN (vetor para gastar pouca memória)
+      # ICMS desonerado (ex.: Área de Livre Comércio): muitos emissores abatem do preço mesmo sem indDeduzDeson; a conferência aceita a base com ou sem ele
+      $vDesonRtc = Num (Filho $icms 'vICMSDeson')
+      # comp: vProd, vFrete, vSeg, vOutro, vII, vDesc, vPIS, vCOFINS, vICMS, vFCP, vICMSUFDest, vFCPUFDest, vICMSMono, vISSQN, vICMSDeson abatido (vetor para gastar pouca memória)
       $rtcIt = @{ g = [bool]$gIbs
         comp = [decimal[]]@((Num $pr['vProd']), (Num $pr['vFrete']), (Num $pr['vSeg']), (Num $pr['vOutro']), $(if ($nII) { Num (Filho $nII 'vII') } else { [decimal]0 }), (Num $pr['vDesc']),
-                            (Num (Filho $pis 'vPIS')), (Num (Filho $cof 'vCOFINS')), (Num (Filho $icms 'vICMS')), (Num (Filho $icms 'vFCP')), $vUFDest, $vFcpUFDest, (Num (Filho $icms 'vICMSMono')), $vIss) }
+                            (Num (Filho $pis 'vPIS')), (Num (Filho $cof 'vCOFINS')), (Num (Filho $icms 'vICMS')), (Num (Filho $icms 'vFCP')), $vUFDest, $vFcpUFDest, (Num (Filho $icms 'vICMSMono')), $vIss, $vDesonRtc) }
       if ($gIbs) {
         # por tributo: p, v, vDif, vDevTrib, pRedAliq, pAliqEfet (-1 = sem gRed)
         foreach ($t in @(@('UF', 'gIBSUF', 'pIBSUF', 'vIBSUF'), @('Mun', 'gIBSMun', 'pIBSMun', 'vIBSMun'), @('CBS', 'gCBS', 'pCBS', 'vCBS'))) {
@@ -309,7 +311,7 @@ function R2([decimal]$v) { return [Math]::Round($v, 2) }
 # repassada pelo banco do Farol (função rtc). Sem ela, usa a cópia local de até 30 dias; sem nenhuma, só confere base e valores.
 $RTC_URL = 'https://cidvuirvojpsmukfxpll.supabase.co/functions/v1/rtc'
 $script:RTC_TAB = @{}
-$RTC_COMP = @('vProd', 'vFrete', 'vSeg', 'vOutro', 'vII', 'vDesc', 'vPIS', 'vCOFINS', 'vICMS', 'vFCP', 'vICMSUFDest', 'vFCPUFDest', 'vICMSMono', 'vISSQN')
+$RTC_COMP = @('vProd', 'vFrete', 'vSeg', 'vOutro', 'vII', 'vDesc', 'vPIS', 'vCOFINS', 'vICMS', 'vFCP', 'vICMSUFDest', 'vFCPUFDest', 'vICMSMono', 'vISSQN', 'vICMSDeson')
 function Tabela-Rtc([datetime]$mes) {
   $k = $mes.ToString('yyyy-MM')
   if ($null -eq $script:RTC_TAB) { $script:RTC_TAB = @{} }
@@ -342,9 +344,11 @@ function Conferir-Item($it, $T) {
   $o = @{ prob = $prob; bcEsp = $null; vEsp = [decimal]0; vNota = [decimal]0 }
   if (-not $r.g) { return $o }
   $c = $r.comp
-  $bcEsp = $c[0] + $c[1] + $c[2] + $c[3] + $c[4] - $c[5] - $c[6] - $c[7] - $c[8] - $c[9] - $c[10] - $c[11] - $c[12] - $c[13]
+  $bcEsp = $c[0] + $c[1] + $c[2] + $c[3] + $c[4] - $c[5] - $c[6] - $c[7] - $c[8] - $c[9] - $c[10] - $c[11] - $c[12] - $c[13] - $c[14]
   if ($bcEsp -lt 0) { $bcEsp = [decimal]0 }
   $o.bcEsp = Rd2 $bcEsp
+  # ICMS desonerado abatido: aceita a base com ou sem o abatimento (os emissores ainda divergem; a norma não é explícita)
+  if ($c[14] -gt 0 -and [Math]::Abs($it.bcIbs - (Rd2 ($bcEsp + $c[14]))) -le 0.05) { $o.bcEsp = $it.bcIbs }
   if ([Math]::Abs($it.bcIbs - $o.bcEsp) -gt 0.05) { [void]$prob.Add('base') }
   $refs = @{ UF = $T.uf; Mun = $T.mun; CBS = $T.cbs }
   $redTab = @{ UF = $null; Mun = $null; CBS = $null }
@@ -357,20 +361,23 @@ function Conferir-Item($it, $T) {
     $a = $r[$k]; if (-not $a) { continue }
     $p = $a[0]; $v = $a[1]; $vDif = $a[2]; $vDev = $a[3]; $rd = $a[4]; $pE = $a[5]
     $o.vNota += $v
-    if ($null -ne $refs[$k] -and [Math]::Abs($p - $refs[$k]) -gt 0.0001) { $aliq = $true }
-    if ($null -ne $redTab[$k] -and [Math]::Abs($rd - $redTab[$k]) -gt 0.01) { $red = $true }
+    # alíquota efetiva da nota (com a redução que ela mesma informa) x efetiva oficial (referência x redução da tabela)
     $pEf = $p; if ($pE -ge 0) { $pEf = $pE } elseif ($rd -gt 0) { $pEf = $p * (100 - $rd) / 100 }
-    if ([Math]::Abs($v - ((Rd2 ($it.bcIbs * $pEf / 100)) - $vDif - $vDev)) -gt 0.011) { $val = $true }
-    # o que deveria ser: base correta x alíquota de referência x redução da tabela
     $pRef = $p; if ($null -ne $refs[$k]) { $pRef = $refs[$k] }
     $rRef = $rd; if ($null -ne $redTab[$k]) { $rRef = $redTab[$k] }
-    $o.vEsp += (Rd2 ($o.bcEsp * $pRef * (100 - $rRef) / 10000)) - $vDif - $vDev
+    $efOf = $pRef * (100 - $rRef) / 100
+    if (($null -ne $refs[$k] -or $null -ne $redTab[$k]) -and [Math]::Abs($pEf - $efOf) -gt 0.0001) {
+      if ($null -ne $redTab[$k] -and [Math]::Abs($rd - $redTab[$k]) -gt 0.01) { $red = $true } else { $aliq = $true }
+    }
+    if ([Math]::Abs($v - ((Rd2 ($it.bcIbs * $pEf / 100)) - $vDif - $vDev)) -gt 0.011) { $val = $true }
+    # o que deveria ser: base correta x alíquota efetiva oficial
+    $o.vEsp += (Rd2 ($o.bcEsp * $efOf / 100)) - $vDif - $vDev
   }
   if ($aliq) { [void]$prob.Add('aliquota') }; if ($red) { [void]$prob.Add('reducao') }; if ($val) { [void]$prob.Add('valor') }
   return $o
 }
 function Conferir-Rtc([datetime]$mes) {
-  $T = Tabela-Rtc $mes; $script:rtcDetalhes = 0
+  $T = Tabela-Rtc $mes; $script:rtcDetalhes = @{}; $script:rtcNotas = @{}
   $orig = @{}; $notas = New-Object System.Collections.ArrayList; $forn = @{}; $pares = @{}; $probTot = @{}
   foreach ($d in $script:AN.docs.Values) {
     if ($script:AN.canceladas.ContainsKey($d.chave)) { continue }
@@ -387,7 +394,7 @@ function Conferir-Rtc([datetime]$mes) {
       $nItErro++; $R.itensErro++
       foreach ($p in $cf.prob) { $probN[$p] = 1 + [int]$probN[$p]; $probTot[$o + '|' + $p] = 1 + [int]$probTot[$o + '|' + $p] }
       if ($null -ne $cf.bcEsp) { $bcN += $it.bcIbs; $bcE += $cf.bcEsp; $vN += $cf.vNota; $vE += $cf.vEsp }
-      if ($erros.Count -lt 8 -and $script:rtcDetalhes -lt 40) {
+      if ($erros.Count -lt 8 -and [int]$script:rtcDetalhes[$o] -lt 25) {
         $comp = [ordered]@{}; $cv = $it.rtc.comp; for ($q = 0; $q -lt $RTC_COMP.Count; $q++) { if ($cv[$q] -ne 0) { $comp[$RTC_COMP[$q]] = $cv[$q] } }
         $dec = [ordered]@{ vBC = $it.bcIbs }; foreach ($k in @('UF', 'Mun', 'CBS')) { $x = $it.rtc[$k]; if ($x) { $dec['p' + $k] = $x[0]; $dec['v' + $k] = $x[1]; if ($x[4]) { $dec['r' + $k] = $x[4] }; if ($x[2]) { $dec['dif' + $k] = $x[2] } } }
         [void]$erros.Add([ordered]@{ n = $erros.Count + 1; ncm = $it.ncm; prod = $it.xProd; cst = $it.cstIBS; cc = $it.cClass; prob = @($cf.prob); bcEsp = $cf.bcEsp; vEsp = (R2 $cf.vEsp); nota = $dec; comp = $comp })
@@ -400,8 +407,9 @@ function Conferir-Rtc([datetime]$mes) {
       if (-not $forn.ContainsKey($d.emitDoc)) { $forn[$d.emitDoc] = [ordered]@{ doc = $d.emitDoc; nome = $d.emitNome; docs = 0; comErro = 0; difTrib = [decimal]0 } }
       $f = $forn[$d.emitDoc]; $f.docs++; if ($nItErro) { $f.comErro++; $f.difTrib += ($vN - $vE) }
     }
-    if ($nItErro -and $erros.Count) { $script:rtcDetalhes++ }
-    if ($nItErro -and $notas.Count -lt 300) {
+    if ($nItErro -and $erros.Count) { $script:rtcDetalhes[$o] = 1 + [int]$script:rtcDetalhes[$o] }
+    if ($nItErro -and [int]$script:rtcNotas[$o] -lt 120) {
+      $script:rtcNotas[$o] = 1 + [int]$script:rtcNotas[$o]
       $part = $d.destNome; $partDoc = $d.destDoc; if ($o -eq 'Compras') { $part = $d.emitNome; $partDoc = $d.emitDoc }
       $dh = $d.data
       [void]$notas.Add([ordered]@{ chave = $d.chave; origem = $o; modelo = $d.modelo; serie = $d.serie; numero = $d.numero; data = $dh; part = $part; partDoc = $partDoc; crt = $d.crt

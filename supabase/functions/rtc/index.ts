@@ -61,6 +61,7 @@ function pedidoNota(n: any) {
     municipio: Number(n.mun) || 0, uf: n.uf || undefined,
     itens: (n.erros || []).map((e: any, i: number) => {
       const g: Record<string, number> = {}; COMP.forEach((k) => (g[k] = Number(e.comp?.[k]) || 0));
+      g.vDesc = Math.round((g.vDesc + (Number(e.comp?.vICMSDeson) || 0)) * 100) / 100;   // ICMS desonerado abatido do preço entra como desconto
       return { numero: i + 1, ncm: e.ncm || undefined, cst: e.cst, cClassTrib: e.cc, quantidade: 1, unidade: 'UN', gComponentesBC: g };
     }),
   };
