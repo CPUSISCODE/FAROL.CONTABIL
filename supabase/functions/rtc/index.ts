@@ -7,7 +7,7 @@ import { createClient } from 'npm:@supabase/supabase-js@2.45.4';
 
 const db = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, { auth: { persistSession: false } });
 const API = 'https://piloto-cbs.tributos.gov.br/servico/calculadora-consumo/api/calculadora';
-const MAX_NOTAS = 50, MAX_PARES = 60, PAUSA = 300;   // cabe no tempo de uma chamada (roda 3x de madrugada/manhã)
+const MAX_NOTAS = 40, MAX_PARES = 40, PAUSA = 2500;   // devagar: o firewall da Receita bloqueia rajadas (roda 3x por dia)
 const json = (o: unknown, st = 200) => new Response(JSON.stringify(o), { status: st, headers: { 'Content-Type': 'application/json; charset=utf-8', 'Access-Control-Allow-Origin': '*' } });
 const dorme = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const COMP = ['vProd', 'vFrete', 'vSeg', 'vOutro', 'vII', 'vDesc', 'vPIS', 'vCOFINS', 'vICMS', 'vFCP', 'vICMSUFDest', 'vFCPUFDest', 'vICMSMono', 'vISSQN'];

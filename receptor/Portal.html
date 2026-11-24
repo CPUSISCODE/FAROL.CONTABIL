@@ -2768,7 +2768,8 @@ tr.cf-sel.aberta td{background:rgba(127,127,127,.1)}
       var conf = (x.itens || []).every(function (i) { return !i.baseConfere || !i.valorConfere; });
       return conf ? '<span class="pill bad" title="A calculadora oficial calculou diferente da nota">Confirmado pela Receita</span>' : '<span class="pill warn" title="A Receita aceitou parte dos itens como estão">Receita: revisar</span>';
     }
-    return '<span class="pill bad" title="' + esc(x.detalhe || '') + '">Receita: ' + esc(x.titulo || 'recusou') + '</span>';
+    if (/NCM/i.test(x.titulo || '')) return '<span class="pill bad" title="' + esc(x.detalhe || '') + '">Receita: ' + esc(x.titulo) + '</span>';
+    return '<span class="pill info" title="' + esc((x.titulo || '') + ': ' + (x.detalhe || '')) + '">Receita não calculou</span>';
   }
   function desenhar(c, F, R) {
     var po = F.porOrigem || {}, sai = { conf: 0, ok: 0, erro: 0, dif: 0, sem: 0 };
@@ -2834,7 +2835,7 @@ tr.cf-sel.aberta td{background:rgba(127,127,127,.1)}
         '<td class="n">' + brl(nt.vBC) + '</td><td class="n">' + brl(e.bcEsp) + '</td><td class="n">' + (o ? brl(o.vBC) : '—') + '</td>' +
         '<td class="n">' + aliq(nt.pCBS) + (nt.rCBS ? ' <span class="sub">−' + aliq(nt.rCBS) + '</span>' : '') + '</td><td class="n">' + brl((nt.vUF || 0) + (nt.vMun || 0) + (nt.vCBS || 0)) + '</td><td class="n">' + brl(e.vEsp) + '</td><td>' + (e.prob || []).map(function (k) { return esc((PROB[k] || [k])[0]); }).join(', ') + '</td></tr>';
     }).join('');
-    var msgRec = of && !of.ok ? '<p class="nota" style="color:var(--bad)"><b>Resposta da Receita:</b> ' + esc(of.titulo) + ' — ' + esc(of.detalhe) + '</p>' : '';
+    var msgRec = of && !of.ok ? '<p class="nota"' + (/NCM/i.test(of.titulo || '') ? ' style="color:var(--bad)"' : '') + '><b>Resposta da Receita:</b> ' + esc(of.titulo) + ' — ' + esc(of.detalhe) + (/NCM/i.test(of.titulo || '') ? '' : ' (a calculadora oficial pede dados que não vêm para o portal; a conferência do portal continua valendo)') + '</p>' : '';
     var d = document.createElement('tr'); d.className = 'cf-det';
     d.innerHTML = '<td colspan="10"><p class="nota" style="margin:0 0 6px">Chave ' + esc(n.chave) + ' · valor da nota R$ ' + brl(n.vNF) + (n.erros && n.erros.length < n.itensErro ? ' · mostrando ' + n.erros.length + ' de ' + n.itensErro + ' itens com divergência' : '') + '</p>' + msgRec +
       (it ? '<div class="tbl"><table class="cf-it"><thead><tr><th>Item</th><th class="n">Base na nota</th><th class="n">Base correta</th><th class="n">Base Receita</th><th class="n">CBS %</th><th class="n">IBS+CBS na nota</th><th class="n">Correto</th><th>Problema</th></tr></thead><tbody>' + it + '</tbody></table></div>'
