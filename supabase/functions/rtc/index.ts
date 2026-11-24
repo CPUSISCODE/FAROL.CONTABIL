@@ -7,7 +7,7 @@ import { createClient } from 'npm:@supabase/supabase-js@2.45.4';
 
 const db = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, { auth: { persistSession: false } });
 const API = 'https://piloto-cbs.tributos.gov.br/servico/calculadora-consumo/api/calculadora';
-const MAX_NOTAS = 40, MAX_PARES = 40, PAUSA = 2500;   // devagar: o firewall da Receita bloqueia rajadas (roda 3x por dia)
+const MAX_NOTAS = 25, MAX_PARES = 25, PAUSA = 2500;   // devagar: o firewall da Receita bloqueia rajadas (roda de hora em hora, de dia)
 const json = (o: unknown, st = 200) => new Response(JSON.stringify(o), { status: st, headers: { 'Content-Type': 'application/json; charset=utf-8', 'Access-Control-Allow-Origin': '*' } });
 const dorme = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const COMP = ['vProd', 'vFrete', 'vSeg', 'vOutro', 'vII', 'vDesc', 'vPIS', 'vCOFINS', 'vICMS', 'vFCP', 'vICMSUFDest', 'vFCPUFDest', 'vICMSMono', 'vISSQN'];
@@ -170,7 +170,11 @@ Deno.serve(async (r) => {
         const { data: cfg } = await db.from('rtc_config').select('token').eq('id', 1).maybeSingle();   // token guardado no banco (o agendamento lê dali)
         const TOKEN = String(cfg?.token || '');
         if (TOKEN.length < 32 || !iguais(String(req.token || ''), TOKEN)) return json({ ok: false, erro: 'não autorizado' }, 401);
-        return json({ ok: true, r: await confirmar() });
+        // responde na hora e continua em segundo plano (a chamada do agendamento não fica esperando)
+        const tarefa = confirmar().catch(async (e) => { await db.from('rtc_execucoes').insert({ resultado: { erro: String((e as Error)?.message || e) } }); });
+        const rt = (globalThis as any).EdgeRuntime;
+        if (rt?.waitUntil) { rt.waitUntil(tarefa); return json({ ok: true, iniciado: true }, 202); }
+        await tarefa; return json({ ok: true });
       }
     }
     return json({ ok: false, erro: 'Ação desconhecida.' }, 400);

@@ -14,4 +14,4 @@ create table if not exists rtc_config (id int primary key check (id = 1), token 
 alter table rtc_config enable row level security;
 revoke all on rtc_config from anon, authenticated;
 insert into rtc_config (id, token) values (1, encode(extensions.gen_random_bytes(24), 'hex')) on conflict (id) do nothing;
--- agendamentos: cron.schedule('rtc-confirmar-*', ...) chamando a função rtc com o token de rtc_config (07:15, 10:45 e 13:15 UTC)
+-- agendamento: cron "rtc-confirmar-madrugada" de hora em hora (15 7-23 * * * UTC) chamando a função rtc com o token de rtc_config; a função responde 202 e trabalha em segundo plano
