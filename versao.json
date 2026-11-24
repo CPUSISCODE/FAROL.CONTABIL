@@ -1,6 +1,6 @@
 {
   "receptor": "1.20",
-  "portal": "1.24",
+  "portal": "1.25",
   "agente": "2.2",
   "receptorMinimoAgente": "1.8.1",
   "agentePiloto": {

@@ -1806,7 +1806,7 @@ var COL = {
 };
 var ABAS = [
   { id: 'dias', nome: 'Dia a dia' }, { id: 'apur', nome: 'Apuração fiscal' }, { id: 'trib', nome: 'Tributação' }, { id: 'ncm', nome: 'NCMs' }, { id: 'pis', nome: 'PIS/COFINS' }, { id: 'prod', nome: 'Produtos' },
-  { id: 'dev', nome: 'Devoluções' }, { id: 'canc', nome: 'Cancelamentos e numeração' }, { id: 'pag', nome: 'Pagamentos' }, { id: 'rf', nome: 'Reforma (IBS/CBS)' }, { id: 'conf', nome: 'Conferência IBS/CBS' }, { id: 'xml', nome: 'Buscar XML' }
+  { id: 'dev', nome: 'Devoluções' }, { id: 'canc', nome: 'Cancelamentos e numeração' }, { id: 'pag', nome: 'Pagamentos' }, { id: 'rf', nome: 'Reforma (IBS/CBS)' }, { id: 'conf', nome: 'Conferência IBS/CBS' }, { id: 'cad', nome: 'Cadastro 2027' }, { id: 'xml', nome: 'Buscar XML' }
 ];
 var ORIGENS = ['Todas', 'NFe', 'NFCe', 'Compras'];
 var NOME_ORIGEM = { NFe: 'NF-e emitida', NFCe: 'NFC-e', Compras: 'Compra' };
@@ -1818,6 +1818,7 @@ function desenharAba() {
   if (a === 'rf') { telaReforma(c); return; }
   if (a === 'apur') { telaApuracao(c); return; }
   if (a === 'conf') { telaConferencia(c); return; }
+  if (a === 'cad') { telaCadastro(c); return; }
   var ferr = function (comOrigem, nota) {
     return '<div class="ferr">' + (comOrigem ? '<div class="seg" role="group" aria-label="Origem">' + ORIGENS.map(function (o) { return '<button type="button" data-o="' + o + '" aria-pressed="' + (o === ATUAL.origem) + '">' + (o === 'Todas' ? 'Todas' : NOME_ORIGEM[o]) + '</button>'; }).join('') + '</div>' : '') +
       '<input type="search" id="fTab" placeholder="Filtrar…" aria-label="Filtrar tabela"><button class="btn sec" type="button" id="bCsv">Exportar para Excel (CSV)</button></div>' + (nota ? '<p class="nota">' + nota + '</p>' : '');
@@ -2704,6 +2705,210 @@ function guiaAuto() {
   }
   window.abrirReuniao = abrirReuniao;
   window.abrirCarteira = abrirCarteira;
+})();
+</script>
+<!-- ================= CADASTRO 2027 (planilha padrão Farol de tributação dos produtos) ================= -->
+<style>
+.cad-f{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:4px 0 12px}
+.cad-f button.on{background:var(--brand,#0f6b55);color:#fff;border-color:transparent}
+.cad-t td.w{max-width:260px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+</style>
+<script>
+(function () {
+  var URL_RTC = API_BANCO.replace(/\/farol$/, '/rtc');
+  var CAD = null;   // { ck, meses, linhas, resumo }
+  var DEVOL = /^[1-7]2\d\d$|^[1-7]41[01]$|^[1-7]50[34]$|^[1-7]55[3-6]$|^[1-7]66[0-2]$|^[1-7]90[1-9]$|^[1-7]91[0-9]$|^[1-7]92[0-9]$|^[1-7]949$/;  // devoluções, remessas e retornos: não descrevem a venda do produto
+  var COLS = [
+    ['codigo', 'codigo', 'm'], ['ean', 'ean', 'm'], ['descricao', 'descricao'], ['ncm', 'ncm', 'm'], ['cest', 'cest', 'm'], ['unidade', 'unidade'],
+    ['notas', 'notas_de_venda', 'int'], ['ultima_venda', 'ultima_venda'],
+    ['icms_cst', 'icms_cst_csosn_atual', 'm'], ['icms_aliq', 'icms_aliquota_atual'], ['icms_red', 'icms_reducao_bc_atual'], ['cfop', 'cfop_mais_usado', 'm'], ['icms_alerta', 'icms_alerta'],
+    ['pis_cst', 'pis_cst_atual', 'm'], ['pis_aliq', 'pis_aliquota_atual'], ['cofins_cst', 'cofins_cst_atual', 'm'], ['cofins_aliq', 'cofins_aliquota_atual'],
+    ['ibs_cst', 'ibscbs_cst_atual', 'm'], ['cclass', 'cclasstrib_atual', 'm'],
+    ['ibs_cst_sug', 'ibscbs_cst_sugerido', 'm'], ['cclass_sug', 'cclasstrib_sugerido', 'm'], ['red_sug', 'reducao_ibscbs_pct'], ['trat_sug', 'tratamento_tributario'], ['desc_sug', 'descricao_cclasstrib'],
+    ['origem', 'origem_da_sugestao'], ['fornecedor', 'fornecedor_referencia'], ['ncm_receita', 'ncm_x_cclasstrib_receita'], ['status', 'status'], ['obs', 'observacao']
+  ];
+  function moda(o) { var m = null, n = -1; for (var k in o) if (o[k] > n) { n = o[k]; m = k; } return m; }
+  function inc(o, k) { if (k == null || k === '') return; o[k] = (o[k] || 0) + 1; }
+  function num(s) { return Number(s) || 0; }
+  function ean(s) { s = soDig(s); return s.length >= 8 && !/^0+$/.test(s) ? s : ''; }
+
+  window.telaCadastro = function (c) {
+    var u = ATUAL.u, ck = chaveUnid(u.contabilidade, rotuloPainel(u));
+    if (CAD && CAD.ck === ck) { desenhar(c); return; }
+    var pos = u.meses.indexOf(ATUAL.mes), meses3 = u.meses.slice(Math.max(0, pos), Math.max(0, pos) + 3);
+    if (!meses3.length) meses3 = [ATUAL.mes];
+    c.innerHTML = '<div class="card"><h2>Cadastro de produtos para 2027</h2>' +
+      '<p class="nota">Monta a <b>planilha padrão do Farol</b> com a tributação de cada produto vendido: como está hoje (ICMS, PIS/COFINS e IBS/CBS) e o enquadramento sugerido de IBS/CBS para 2027, ' +
+      'usando as notas de compra do próprio cliente (o mesmo produto, pelo código de barras, como o fornecedor classifica) e a tabela oficial da Receita. Nada é alterado no sistema do cliente: a planilha é para a contabilidade revisar e depois importar.</p>' +
+      '<div class="ferr"><label class="sub" for="cadPer">Usar as notas de&nbsp;<select id="cadPer">' +
+      '<option value="1">' + esc(nomeMes(ATUAL.mes)) + '</option>' +
+      (meses3.length > 1 ? '<option value="3" selected>' + esc(nomeMes(ATUAL.mes)) + ' e os ' + (meses3.length - 1) + ' meses anteriores</option>' : '') + '</select></label>' +
+      '<button class="btn" type="button" id="cadGerar">Montar a planilha</button><div class="barra hidden" id="cadBarra"><i></i></div><span class="sub" id="cadInfo"></span></div>' +
+      '<p class="nota">Os XML são abertos aqui no seu computador (pode levar de alguns segundos a poucos minutos, conforme o volume).</p></div>';
+    $('cadGerar').onclick = function () {
+      var meses = $('cadPer').value === '3' ? meses3 : [ATUAL.mes];
+      $('cadGerar').disabled = true;
+      montar(u, ck, meses).then(function () { desenhar($('conteudo')); }).catch(function (e) { $('cadGerar').disabled = false; info('Não deu certo: ' + e.message, null); });
+    };
+  };
+  function info(t, p) { if (!$('cadInfo')) return; $('cadInfo').textContent = t; var b = $('cadBarra'); if (p == null) b.classList.add('hidden'); else { b.classList.remove('hidden'); b.firstChild.style.width = (100 * p) + '%'; } }
+
+  function montar(u, ck, meses) {
+    if (!BUSCA || BUSCA.ck !== ck) BUSCA = { ck: ck, meses: {}, docs: [], porChave: {}, sel: {}, ord: 'data', asc: false, cnpj: RESUMO && RESUMO.cnpj };
+    var cadeia = Promise.resolve();
+    meses.forEach(function (m, i) { cadeia = cadeia.then(function () { return carregarMesBusca(u, m, function (t, p) { info(t, p == null ? null : (i + p) / meses.length * 0.6); }); }); });
+    var P = {}, F = {}, FN = {};
+    return cadeia.then(function () {
+      var docs = BUSCA.docs.filter(function (d) { return meses.indexOf(d.mes) >= 0 && d.sit === 'Autorizada' && (d.tipo === 'nfe' || d.tipo === 'nfce' || d.tipo === 'compra'); });
+      var i = 0, feitos = 0, utf = new TextDecoder('utf-8');
+      var um = function (d) {
+        return bytesXml(d).then(function (b) {
+          var s = utf.decode(b), dets = s.split(/<(?:\w+:)?det\s/).slice(1);
+          dets.forEach(function (det) {
+            var pr = xBloco(det, 'prod'), im = xBloco(det, 'imposto'), cfop = xTag(pr, 'CFOP');
+            var g = xBloco(im, 'IBSCBS'), cst = xTag(g, 'CST'), cc = xTag(g, 'cClassTrib'), e = ean(xTag(pr, 'cEAN')) || ean(xTag(pr, 'cEANTrib'));
+            if (d.tipo === 'compra') {
+              if (!cc) return;
+              var nc = xTag(pr, 'NCM'); if (nc) { var fn = FN[nc] = FN[nc] || { cc: {}, forn: {} }; inc(fn.cc, cst + '|' + cc); inc(fn.forn, d.emitNome || d.emitDoc); }
+              if (!e) return;
+              var f = F[e] = F[e] || { cc: {}, forn: {} }; inc(f.cc, cst + '|' + cc); inc(f.forn, d.emitNome || d.emitDoc); return;
+            }
+            if (DEVOL.test(cfop)) return;
+            var cod = xTag(pr, 'cProd'); if (!cod) return;
+            var p = P[cod] = P[cod] || { codigo: cod, desc: {}, ean: {}, ncm: {}, cest: {}, un: {}, notas: 0, ult: '', icms: {}, aliqI: {}, redI: {}, cfop: {}, pis: {}, aliqP: {}, cof: {}, aliqC: {}, ibs: {}, _d: {} };
+            if (!p._d[d.chave]) { p._d[d.chave] = 1; p.notas++; }
+            if (d.data > p.ult) p.ult = d.data;
+            inc(p.desc, xTag(pr, 'xProd')); inc(p.ean, e); inc(p.ncm, xTag(pr, 'NCM')); inc(p.cest, xTag(pr, 'CEST')); inc(p.un, xTag(pr, 'uCom')); inc(p.cfop, cfop);
+            var ic = xBloco(im, 'ICMS'), ccst = xTag(ic, 'CST') ? xTag(ic, 'orig') + xTag(ic, 'CST') : xTag(ic, 'CSOSN');
+            inc(p.icms, ccst); inc(p.aliqI, xTag(ic, 'pICMS')); inc(p.redI, xTag(ic, 'pRedBC'));
+            var pis = xBloco(im, 'PIS'), cof = xBloco(im, 'COFINS');
+            inc(p.pis, xTag(pis, 'CST')); inc(p.aliqP, xTag(pis, 'pPIS')); inc(p.cof, xTag(cof, 'CST')); inc(p.aliqC, xTag(cof, 'pCOFINS'));
+            if (cst || cc) inc(p.ibs, cst + '|' + cc);
+          });
+        }).catch(function () { }).then(function () { feitos++; if (feitos % 150 === 0) info('Lendo os produtos das notas… ' + int(feitos) + ' de ' + int(docs.length), 0.6 + 0.3 * feitos / docs.length); });
+      };
+      var trab = function () { if (i >= docs.length) return Promise.resolve(); var d = docs[i++]; return um(d).then(trab); };
+      var t = []; for (var w = 0; w < 10; w++) t.push(trab());
+      return Promise.all(t).then(function () { return docs.length; });
+    }).then(function (nDocs) {
+      info('Buscando a tabela oficial da Receita…', 0.92);
+      return fetch(URL_RTC + '?acao=tabela&data=' + meses[0] + '-15').then(function (r) { return r.json(); }).then(function (j) { return j.ok ? j.tabela : null; }).catch(function () { return null; })
+        .then(function (tab) { return { tab: tab, nDocs: nDocs }; });
+    }).then(function (x) {
+      var cls = {}; ((x.tab && x.tab.classes) || []).forEach(function (c) { cls[c.c] = c; });
+      var linhas = Object.keys(P).map(function (k) {
+        var p = P[k], L = { codigo: p.codigo, descricao: moda(p.desc) || '', ean: moda(p.ean) || '', ncm: moda(p.ncm) || '', cest: moda(p.cest) || '', unidade: moda(p.un) || '', notas: p.notas, ultima_venda: p.ult ? dataBR(p.ult) : '' };
+        L.icms_cst = moda(p.icms) || ''; L.icms_aliq = num(moda(p.aliqI)); L.icms_red = num(moda(p.redI)); L.cfop = moda(p.cfop) || '';
+        L.pis_cst = moda(p.pis) || ''; L.pis_aliq = num(moda(p.aliqP)); L.cofins_cst = moda(p.cof) || ''; L.cofins_aliq = num(moda(p.aliqC));
+        var alertas = [];
+        if (Object.keys(p.icms).length > 1) alertas.push('vendido com CST de ICMS diferentes (' + Object.keys(p.icms).join(', ') + ')');
+        if (Object.keys(p.ncm).length > 1) alertas.push('mais de um NCM nas notas (' + Object.keys(p.ncm).join(', ') + ')');
+        var atual = moda(p.ibs) || '|', at = atual.split('|'); L.ibs_cst = at[0]; L.cclass = at[1];
+        if (Object.keys(p.ibs).length > 1) alertas.push('vendido com mais de um cClassTrib (' + Object.keys(p.ibs).map(function (z) { return z.split('|')[1]; }).join(', ') + ')');
+        // sugestão: fornecedor (mesmo código de barras) > o que já usa nas vendas > tributação integral
+        var f = L.ean && F[L.ean], sug, origem, forn = '';
+        if (f) { sug = moda(f.cc); origem = 'nota de compra do fornecedor (mesmo código de barras)'; forn = moda(f.forn) || ''; }
+        else if (L.cclass) { sug = atual; origem = 'já usado nas vendas do cliente'; }
+        else if (L.ncm && FN[L.ncm]) { sug = moda(FN[L.ncm].cc); origem = 'nota de compra de produto com o mesmo NCM'; forn = moda(FN[L.ncm].forn) || ''; }
+        else { sug = '000|000001'; origem = 'regra geral: tributação integral'; }
+        var sg = sug.split('|'); L.ibs_cst_sug = sg[0] || (sg[1] || '').slice(0, 3); L.cclass_sug = sg[1]; L.fornecedor = forn; L.origem = origem;
+        var c = cls[L.cclass_sug];
+        L.red_sug = c ? c.rCBS : ''; L.trat_sug = c ? c.trat : ''; L.desc_sug = c ? c.d : (x.tab ? 'cClassTrib não encontrado na tabela oficial' : '');
+        if (!x.tab) L.desc_sug = 'tabela oficial indisponível agora';
+        L.icms_alerta = alertas.filter(function (a) { return /ICMS/.test(a); }).join('; ');
+        var obs = alertas.filter(function (a) { return !/ICMS/.test(a); });
+        if (L.cclass_sug && L.cclass_sug.slice(0, 3) !== L.ibs_cst_sug) obs.push('o CST precisa ser os 3 primeiros dígitos do cClassTrib');
+        if (L.cclass && L.cclass !== L.cclass_sug) obs.push('hoje sai com ' + L.cclass + '; o fornecedor ' + (forn ? '(' + forn + ') ' : '') + 'usa ' + L.cclass_sug + ': decidir qual está certo');
+        if (c && c.rCBS > 0) obs.push('redução de ' + c.rCBS + '%: confirme que o NCM está no anexo da LC 214/2025');
+        if (!L.ncm) obs.push('produto sem NCM nas notas');
+        L.status = !L.cclass ? 'Sem classificação hoje' : (L.cclass !== L.cclass_sug || (x.tab && !c) || alertas.length ? 'Revisar' : 'OK');
+        L.obs = obs.join('; ');
+        L._par = L.ncm && L.cclass_sug && L.cclass_sug !== '000001' ? L.ncm + '|' + L.cclass_sug : '';
+        return L;
+      });
+      linhas.sort(function (a, b) { var o = { 'Revisar': 0, 'Sem classificação hoje': 1, 'OK': 2 }; return (o[a.status] - o[b.status]) || (b.notas - a.notas); });
+      CAD = { ck: ATUAL.u && chaveUnid(ATUAL.u.contabilidade, rotuloPainel(ATUAL.u)), meses: meses, linhas: linhas, nDocs: x.nDocs, tab: x.tab, filtro: 'todos', nCompras: Object.keys(F).length };
+      // NCM x cClassTrib que a Receita já respondeu (consulta feita de madrugada pelo Farol)
+      var pares = []; linhas.forEach(function (l) { if (l._par && pares.indexOf(l._par) < 0) pares.push(l._par); });
+      if (!pares.length || !USA_BANCO) return;
+      var u = ATUAL.u;
+      return fetch(URL_RTC, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ acao: 'tela', token: TOKEN, contabilidade: u.contabilidade, cliente: u.cliente, subpasta: u.subpasta, mes: meses[0], chaves: [], pares: pares.slice(0, 600) }) })
+        .then(function (r) { return r.json(); }).then(function (j) {
+          if (!j.ok) return;
+          linhas.forEach(function (l) {
+            var v = l._par ? j.r.ncm[l._par] : undefined;
+            l.ncm_receita = v === true ? 'confirmado pela Receita' : v === false ? 'NCM NÃO vinculado ao cClassTrib' : (l._par ? 'não consultado ainda' : '');
+            if (v === false) { l.status = 'Revisar'; l.obs = 'a Receita diz que este NCM não pode usar o cClassTrib sugerido' + (l.obs ? '; ' + l.obs : ''); }
+          });
+        }).catch(function () { });
+    });
+  }
+
+  function desenhar(c) {
+    var L = CAD.linhas, cont = { OK: 0, 'Revisar': 0, 'Sem classificação hoje': 0 }, icmsAl = 0, red = 0, forn = 0;
+    L.forEach(function (l) { cont[l.status]++; if (l.icms_alerta) icmsAl++; if (Number(l.red_sug) > 0) red++; if (l.fornecedor) forn++; });
+    var vis = L.filter(function (l) { return CAD.filtro === 'todos' || l.status === CAD.filtro || (CAD.filtro === 'icms' && l.icms_alerta); });
+    c.innerHTML =
+      '<div class="card"><div class="ch"><h2>Cadastro de produtos para 2027</h2><div class="ferr"><button class="btn" type="button" id="cadXlsx">Baixar planilha (Excel)</button><button class="btn sec" type="button" id="cadCsv">Baixar em CSV</button><button class="btn sec" type="button" id="cadRefazer">Montar de novo</button></div></div>' +
+      '<p class="nota" style="margin:0">' + int(L.length) + ' produtos vendidos em ' + CAD.meses.map(nomeMes).join(', ') + ' · ' + int(CAD.nDocs) + ' notas lidas · ' + int(forn) + ' produtos com referência na nota do fornecedor' +
+      (CAD.tab ? ' · tabela oficial ' + esc(CAD.tab.versao || '') : ' · <b>tabela oficial da Receita indisponível agora</b> (as reduções ficam em branco; monte de novo mais tarde)') + '.</p></div>' +
+      '<div class="kpis kpis4">' +
+        kpi2('Prontos (OK)', int(cont.OK), 'cadastro já coerente', null, 'ok') +
+        kpi2('Para revisar', int(cont['Revisar']), 'diferente do fornecedor ou da tabela', null, cont['Revisar'] ? 'warn' : 'muted') +
+        kpi2('Sem IBS/CBS hoje', int(cont['Sem classificação hoje']), 'precisam de CST e cClassTrib até 2027', null, cont['Sem classificação hoje'] ? 'bad' : 'muted') +
+        kpi2('Alertas de ICMS', int(icmsAl), 'mesmo produto com CST diferentes', null, icmsAl ? 'warn' : 'muted') +
+      '</div>' +
+      '<section class="card"><div class="cad-f">' + [['todos', 'Todos'], ['Revisar', 'Revisar'], ['Sem classificação hoje', 'Sem IBS/CBS hoje'], ['OK', 'OK'], ['icms', 'Alertas de ICMS']].map(function (f) {
+        return '<button class="btn sec' + (CAD.filtro === f[0] ? ' on' : '') + '" type="button" data-fl="' + esc(f[0]) + '">' + f[1] + '</button>'; }).join('') +
+        '<span class="sub">mostrando ' + Math.min(200, vis.length) + ' de ' + int(vis.length) + ' · a planilha leva todos</span></div>' +
+        '<div class="tbl"><table class="cad-t"><thead><tr><th>Código</th><th>Produto</th><th>NCM</th><th>ICMS</th><th>PIS/COF</th><th>IBS/CBS hoje</th><th>Sugerido 2027</th><th>Origem</th><th>Status</th></tr></thead><tbody>' +
+        vis.slice(0, 200).map(function (l) {
+          return '<tr><td class="m">' + esc(l.codigo) + '</td><td class="w" title="' + esc(l.descricao) + '">' + esc(l.descricao) + '</td><td class="m">' + esc(l.ncm) + '</td><td class="m">' + esc(l.icms_cst) + (l.icms_aliq ? ' · ' + aliq(l.icms_aliq) : '') + (l.icms_alerta ? ' <span class="pill warn" title="' + esc(l.icms_alerta) + '">!</span>' : '') + '</td>' +
+            '<td class="m">' + esc(l.pis_cst) + '/' + esc(l.cofins_cst) + '</td><td class="m">' + (l.cclass ? esc(l.ibs_cst + ' · ' + l.cclass) : '<span class="sub">—</span>') + '</td>' +
+            '<td class="m"><b>' + esc(l.ibs_cst_sug + ' · ' + l.cclass_sug) + '</b>' + (Number(l.red_sug) ? ' <span class="sub">−' + l.red_sug + '%</span>' : '') + '</td><td class="sub" title="' + esc(l.origem + (l.fornecedor ? ' · ' + l.fornecedor : '')) + '">' + esc(/barras/.test(l.origem) ? 'fornecedor (cód. barras)' : /mesmo NCM/.test(l.origem) ? 'fornecedor (mesmo NCM)' : /vendas/.test(l.origem) ? 'vendas do cliente' : 'regra geral') + '</td>' +
+            '<td><span class="pill ' + (l.status === 'OK' ? '' : l.status === 'Revisar' ? 'warn' : 'bad') + '" title="' + esc(l.obs || '') + '">' + esc(l.status) + '</span></td></tr>';
+        }).join('') + '</tbody></table></div></section>' +
+      '<section class="card"><h2>Como usar</h2><ul class="lst">' +
+        '<li><b>Baixar planilha (Excel)</b> gera o arquivo <i>Cadastro 2027</i> com três abas: <b>Produtos</b> (uma linha por produto, colunas fixas no padrão Farol), <b>Resumo</b> e <b>Legenda</b> (o que é cada coluna).</li>' +
+        '<li>A contabilidade revisa as linhas <b>Revisar</b> e <b>Sem IBS/CBS hoje</b>; as colunas <i>_atual</i> mostram como o produto sai hoje e as colunas <i>_sugerido</i> o enquadramento de IBS/CBS proposto para 2027.</li>' +
+        '<li>Depois, a planilha é convertida para o layout de importação do sistema do cliente (os nomes das colunas não mudam, para o conversor funcionar sempre).</li>' +
+        '<li>PIS e COFINS deixam de existir em 2027 (substituídos pela CBS); as colunas deles servem para conferir dezembro. O ICMS continua até 2033.</li></ul></section>';
+    c.querySelectorAll('[data-fl]').forEach(function (b) { b.onclick = function () { CAD.filtro = b.dataset.fl; desenhar(c); }; });
+    $('cadRefazer').onclick = function () { CAD = null; telaCadastro(c); };
+    $('cadCsv').onclick = function () { csv(COLS.map(function (k) { return [k[0], k[1], k[2]]; }), CAD.linhas, nomeArq('csv')); };
+    $('cadXlsx').onclick = function () { baixarXlsx(); };
+  }
+  function nomeArq(ext) { return ('Cadastro 2027 - ' + rotuloUnid(ATUAL.u) + ' - ' + CAD.meses[CAD.meses.length - 1] + ' a ' + CAD.meses[0] + '.' + ext).replace(/[\\/:*?"<>|]/g, '-'); }
+  function carregarXlsx() {
+    if (window.XLSX) return Promise.resolve(window.XLSX);
+    return new Promise(function (ok, erro) { var s = document.createElement('script'); s.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js'; s.onload = function () { ok(window.XLSX); }; s.onerror = function () { erro(new Error('sem acesso à biblioteca do Excel')); }; document.head.appendChild(s); });
+  }
+  function baixarXlsx() {
+    var bt = $('cadXlsx'); bt.disabled = true; bt.textContent = 'Gerando…';
+    carregarXlsx().then(function (X) {
+      var cab = COLS.map(function (k) { return k[1]; });
+      var linhas = CAD.linhas.map(function (l) { return COLS.map(function (k) { var v = l[k[0]]; return v == null ? '' : (k[2] === 'm' ? String(v) : v); }); });
+      var ws = X.utils.aoa_to_sheet([cab].concat(linhas));
+      ws['!cols'] = COLS.map(function (k) { return { wch: k[0] === 'descricao' || k[0] === 'obs' || k[0] === 'desc_sug' || k[0] === 'origem' ? 40 : 16 }; });
+      ws['!autofilter'] = { ref: X.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: linhas.length, c: COLS.length - 1 } }) };
+      ws['!freeze'] = { xSplit: 3, ySplit: 1 };
+      var cont = {}; CAD.linhas.forEach(function (l) { cont[l.status] = (cont[l.status] || 0) + 1; });
+      var res = X.utils.aoa_to_sheet([['Farol Contábil · Cadastro de produtos para 2027'], [], ['Cliente', rotuloUnid(ATUAL.u)], ['Contabilidade', ATUAL.u.contabilidade], ['CNPJ', RESUMO && RESUMO.cnpj || ''],
+        ['Meses usados', CAD.meses.map(nomeMes).join(', ')], ['Notas lidas', CAD.nDocs], ['Produtos', CAD.linhas.length], ['OK', cont['OK'] || 0], ['Revisar', cont['Revisar'] || 0], ['Sem IBS/CBS hoje', cont['Sem classificação hoje'] || 0],
+        ['Tabela oficial', CAD.tab ? 'Calculadora de Tributos da Receita ' + (CAD.tab.versao || '') : 'indisponível na geração'], ['Gerado em', new Date().toLocaleString('pt-BR')]]);
+      res['!cols'] = [{ wch: 18 }, { wch: 60 }];
+      var LEG = [['coluna', 'o que é'], ['codigo / ean / descricao / ncm / cest / unidade', 'identificação do produto como aparece nas notas de venda (o valor mais frequente)'], ['notas_de_venda / ultima_venda', 'em quantas notas o produto saiu no período e a data da última'],
+        ['icms_*_atual / cfop_mais_usado', 'como o ICMS sai hoje (CST com origem, ou CSOSN no Simples)'], ['icms_alerta', 'o mesmo produto saindo com tributação de ICMS diferente: revisar o cadastro'],
+        ['pis_* / cofins_*', 'situação atual; PIS e COFINS acabam em 2027 (CBS)'], ['ibscbs_cst_atual / cclasstrib_atual', 'o grupo IBS/CBS que o sistema do cliente já preenche hoje (vazio = não preenche)'],
+        ['ibscbs_cst_sugerido / cclasstrib_sugerido', 'enquadramento proposto para 2027'], ['reducao_ibscbs_pct / tratamento_tributario / descricao_cclasstrib', 'o que a tabela oficial da Receita diz sobre o cClassTrib sugerido'],
+        ['origem_da_sugestao', 'de onde veio a sugestão: nota de compra do fornecedor (mesmo código de barras), o que o cliente já usa, ou a regra geral (000 / 000001)'],
+        ['ncm_x_cclasstrib_receita', 'resposta da Receita se o NCM pode usar o cClassTrib (para reduções e isenções)'], ['status', 'OK = coerente · Revisar = há diferença ou alerta · Sem classificação hoje = o sistema ainda não preenche IBS/CBS'], ['observacao', 'o motivo do status']];
+      var leg = X.utils.aoa_to_sheet(LEG); leg['!cols'] = [{ wch: 55 }, { wch: 110 }];
+      var wb = X.utils.book_new(); X.utils.book_append_sheet(wb, ws, 'Produtos'); X.utils.book_append_sheet(wb, res, 'Resumo'); X.utils.book_append_sheet(wb, leg, 'Legenda');
+      X.writeFile(wb, nomeArq('xlsx'));
+    }).catch(function (e) { alert('Não consegui gerar o Excel (' + e.message + '). Use "Baixar em CSV", que abre no Excel do mesmo jeito.'); })
+      .then(function () { bt.disabled = false; bt.textContent = 'Baixar planilha (Excel)'; });
+  }
 })();
 </script>
 <!-- ================= CONFERÊNCIA IBS/CBS (valores das notas x cálculo oficial da Receita) ================= -->
