@@ -114,7 +114,8 @@ async function confirmar() {
       if (feitos.has(par)) continue;
       const [ncm, cc, mes] = par.split('|');
       const { st, j } = await receita('/dados-abertos/classificacoes-tributarias/ncm-aplicavel?ncm=' + encodeURIComponent(ncm) + '&cClassTrib=' + encodeURIComponent(cc) + '&dataOcorrenciaFatoGerador=' + mes + '-15');
-      if (st === 200 && typeof j?.valido === 'boolean') await db.from('rtc_ncm').upsert({ par, valido: j.valido, em: new Date().toISOString() });
+      // grava sempre (sem resposta válida fica nulo), senão o mesmo par volta para a fila em toda rodada
+      await db.from('rtc_ncm').upsert({ par, valido: st === 200 && typeof j?.valido === 'boolean' ? j.valido : null, em: new Date().toISOString() });
       res.paresConferidos++; await dorme(PAUSA);
     }
   } catch (e) {
