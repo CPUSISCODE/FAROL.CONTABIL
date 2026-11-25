@@ -266,8 +266,9 @@ ul.lst{margin:6px 0 10px;padding-left:20px;display:grid;gap:4px}
 <section id="app" class="hidden">
   <header><div class="topo">
     <div class="marca"><div class="selo">CP</div><div><b>Portal Contábil</b><span>CPUSIS</span></div></div>
-    <nav class="nav" aria-label="Seções"><button type="button" data-t="central" class="hidden" id="navCentral">Central</button><button type="button" data-t="painel">Painel</button><button type="button" data-t="clientes">Clientes</button><button type="button" data-t="servidores" class="hidden" id="navSrv">Servidores</button><button type="button" data-t="financeiro" class="hidden" id="navFin">Financeiro</button><button type="button" data-t="config" class="hidden" id="navCfg">Configurações</button></nav>
+    <nav class="nav" aria-label="Seções"><button type="button" data-t="central" class="hidden" id="navCentral">Central</button><button type="button" data-t="painel">Painel</button><button type="button" data-t="clientes">Clientes</button><button type="button" data-t="servidores" class="hidden" id="navSrv">Servidores</button><button type="button" data-t="financeiro" class="hidden" id="navFin">Financeiro</button><button type="button" data-t="calc" class="hidden" id="navCalc">Calculadoras</button><button type="button" data-t="acessos" class="hidden" id="navAcessos">Acessos</button><button type="button" data-t="config" class="hidden" id="navCfg">Configurações</button></nav>
     <span class="quem" id="quem"></span>
+    <button class="btn sec" id="bSenha" type="button" title="Trocar a minha senha">Minha senha</button>
     <button class="btn sec" id="bSair" type="button">Sair</button>
   </div></header>
   <div id="impTopo"><img alt="CPUSIS · Cem Por Um Sistemas" id="impLogo"><div><b id="impTit">Farol Contábil</b><span id="impSub"></span><span id="impData"></span></div></div>
@@ -383,7 +384,9 @@ $('fLogin').addEventListener('submit', function (ev) {
   chamar('portalLogin', $('lg').value, $('sn').value).then(function (r) {
     $('bEntrar').disabled = false;
     if (!r.ok) { $('eLogin').textContent = r.erro; return; }
-    limparSessao(); guardarToken(r.token); $('sn').value = ''; iniciar();
+    limparSessao(); guardarToken(r.token); $('sn').value = '';
+    try { if (r.trocarSenha) sessionStorage.setItem('farol_trocar', '1'); else sessionStorage.removeItem('farol_trocar'); } catch (e) {}
+    iniciar();
   }).catch(function (e) { $('bEntrar').disabled = false; $('eLogin').textContent = e.message; });
 });
 $('bSair').addEventListener('click', function () { sair(false); });
@@ -397,6 +400,8 @@ function limparSessao() {
   if ($('navCentral')) $('navCentral').classList.add('hidden');
   if ($('navSrv')) $('navSrv').classList.add('hidden');
   if ($('navFin')) $('navFin').classList.add('hidden');
+  if ($('navCalc')) $('navCalc').classList.add('hidden');
+  if ($('navAcessos')) $('navAcessos').classList.add('hidden');
   FIN = null; FINC = null;
   SRV = null;
 }
@@ -408,14 +413,30 @@ function sair(expirou) {
   if (expirou) $('eLogin').textContent = 'Sua sessão expirou. Entre de novo.';
 }
 
+var NOME_PERFIL = { admin: 'Administrador', cpusis: 'Equipe CPUSIS', gestor: 'Gestor', contador: 'Contador', cliente: 'Cliente' };
+// módulos do login (o banco confere tudo de novo; aqui só esconde o que não pode usar)
+function mod(m) {
+  if (!DADOS) return false;
+  if (!DADOS.modulos) return m === 'bpo' || m === 'calculadora' || (DADOS.empresa ? false : (m !== 'usuarios' && m !== 'auditoria' && m !== 'servidores') || !!DADOS.admin);
+  return DADOS.modulos.indexOf(m) >= 0;
+}
 function iniciar() {
   $('login').classList.add('hidden'); $('app').classList.remove('hidden');
   var mostrar = function (d) {
-    DADOS = d; $('quem').textContent = d.nome; $('navCfg').classList.toggle('hidden', !d.admin); $('navCentral').classList.toggle('hidden', !d.admin); $('navSrv').classList.toggle('hidden', !d.admin);
-    $('navFin').classList.remove('hidden');
-    document.querySelectorAll('.nav button[data-t="painel"],.nav button[data-t="clientes"]').forEach(function (b) { b.classList.toggle('hidden', !!d.empresa); });
-    if (typeof guiaAuto === 'function') guiaAuto();
-    if (d.empresa) telaFinCliente(d.empresa.contabilidade, d.empresa.cliente, ''); else if (d.admin) telaCentral(); else telaPainel();
+    DADOS = d; $('quem').textContent = d.nome + (d.perfil ? ' · ' + (NOME_PERFIL[d.perfil] || d.perfil) : '');
+    var cp = d.perfil === 'admin' || d.perfil === 'cpusis' || (!d.perfil && d.admin);
+    $('navCfg').classList.toggle('hidden', !d.admin); $('navCentral').classList.toggle('hidden', !cp); $('navSrv').classList.toggle('hidden', !(cp && mod('servidores')));
+    $('navFin').classList.toggle('hidden', !mod('bpo'));
+    $('navCalc').classList.toggle('hidden', !!d.empresa || !mod('calculadora'));
+    $('navAcessos').classList.toggle('hidden', !mod('usuarios'));
+    document.querySelector('.nav button[data-t="painel"]').classList.toggle('hidden', !!d.empresa || !mod('painel'));
+    document.querySelector('.nav button[data-t="clientes"]').textContent = d.empresa ? 'Minha empresa' : 'Clientes';
+    document.querySelector('.nav button[data-t="clientes"]').classList.toggle('hidden', d.empresa ? !(d.unidades || []).length : !mod('clientes'));
+    var trocar = false; try { trocar = sessionStorage.getItem('farol_trocar') === '1'; } catch (e) {}
+    if (!trocar && typeof guiaAuto === 'function') guiaAuto();
+    if (trocar && typeof trocarSenha === 'function') setTimeout(function () { trocarSenha(true); }, 50);
+    if (d.empresa) { if ((d.unidades || []).length === 1 && d.unidades[0].meses.length) abrir(d.unidades[0]); else if ((d.unidades || []).length) telaLista(); else telaFinCliente(d.empresa.contabilidade, d.empresa.cliente, ''); }
+    else if (cp) telaCentral(); else if (mod('painel')) telaPainel(); else if (mod('clientes')) telaLista(); else if (mod('calculadora')) telaCalculadoras(); else if (mod('usuarios')) telaAcessos(); else telaFinanceiro();
   };
   // abre na hora com o que já foi carregado nesta sessão e atualiza por baixo
   var guardado = null; try { var g = JSON.parse(sessionStorage.getItem('portal_dados') || 'null'); if (g && g.token === TOKEN) guardado = g.d; } catch (e) {}
@@ -433,7 +454,7 @@ if (MODO_WEB) chamar('portalAparencia').then(function (ap) {
   try { localStorage.setItem('farol_aparencia', JSON.stringify(ap)); } catch (e) {}
   if (JSON.stringify(ap) !== JSON.stringify(APARENCIA_ATUAL)) aplicarAparencia(ap);
 }).catch(function () {});
-document.querySelector('.nav').addEventListener('click', function (ev) { var b = ev.target.closest('button'); if (!b || !DADOS) return; if (b.dataset.t === 'central') telaCentral(); else if (b.dataset.t === 'painel') telaPainel(); else if (b.dataset.t === 'config') telaConfig(); else if (b.dataset.t === 'servidores') telaServidores(); else if (b.dataset.t === 'financeiro') { if (DADOS.empresa) telaFinCliente(DADOS.empresa.contabilidade, DADOS.empresa.cliente, ''); else telaFinanceiro(); } else telaLista(); });
+document.querySelector('.nav').addEventListener('click', function (ev) { var b = ev.target.closest('button'); if (!b || !DADOS) return; if (b.dataset.t === 'central') telaCentral(); else if (b.dataset.t === 'painel') telaPainel(); else if (b.dataset.t === 'config') telaConfig(); else if (b.dataset.t === 'servidores') telaServidores(); else if (b.dataset.t === 'calc') telaCalculadoras(); else if (b.dataset.t === 'acessos') telaAcessos(); else if (b.dataset.t === 'financeiro') { if (DADOS.empresa) telaFinCliente(DADOS.empresa.contabilidade, DADOS.empresa.cliente, ''); else telaFinanceiro(); } else telaLista(); });
 function marcarNav(t) { document.querySelectorAll('.nav button').forEach(function (b) { if (b.dataset.t === t) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); }); }
 
 /* ---------------- tela 1: clientes ---------------- */
@@ -1517,8 +1538,15 @@ function detalheXml(d) {
     }
     corpo += '<details><summary>Ver o XML completo</summary><pre class="xml">' + esc(txt.length > 300000 ? txt.slice(0, 300000) + '\n…' : txt) + '</pre></details>';
     dlg.innerHTML = '<div class="cab"><div><h2 id="xDetTit">' + esc(TIPOS_XML[d.tipo] + ' nº ' + d.num + (d.serie ? ' · série ' + d.serie : '')) + '</h2><p class="sub">' + esc(nomeXml(d)) + ' · ' + esc(d.sit) + (d.valor && d.tipo !== 'evento' ? ' · R$ ' + brl(d.valor) : '') + '</p></div>' +
-      '<div class="acoes"><button class="btn" type="button" id="xDetBaixar">Baixar XML</button><button class="btn sec" type="button" id="xDetFechar">Fechar</button></div></div>' + corpo;
+      '<div class="acoes">' + (d.tipo === 'compra' || d.tipo === 'nfe' ? '<button class="btn sec" type="button" id="xDetEsp">Espelho da nota</button>' : '') +
+      (d.tipo === 'compra' && mod('calculadora') ? '<button class="btn sec" type="button" id="xDetCalc">Abrir na calculadora</button>' : '') +
+      '<button class="btn" type="button" id="xDetBaixar">Baixar XML</button><button class="btn sec" type="button" id="xDetFechar">Fechar</button></div></div>' + corpo;
     $('xDetBaixar').addEventListener('click', function () { baixarUmXml(d); });
+    if ($('xDetEsp')) $('xDetEsp').addEventListener('click', function () { farolEspelhoNota(d); });
+    if ($('xDetCalc')) $('xDetCalc').addEventListener('click', function () {
+      dlg.close(); ATUAL.aba = 'calc'; document.querySelectorAll('.abas .tab').forEach(function (x) { x.setAttribute('aria-selected', x.dataset.a === 'calc'); }); desenharAba();
+      var f = $('calcCli'); if (f) f.addEventListener('load', function () { setTimeout(function () { farolAbrirNaCalc(d); }, 300); }, { once: true });
+    });
     $('xDetFechar').addEventListener('click', function () { dlg.close(); });
     if (dlg.showModal) dlg.showModal(); else dlg.setAttribute('open', '');
   }).catch(function (e) { alertaXml(e.message); });
@@ -1540,8 +1568,9 @@ function avisoCfg(txt, erro) { var a = $('cfgAviso'); if (!a) return; a.classNam
 function contabsCfg() { return CFG.estrutura.map(function (c) { return c.nome; }); }
 
 function desenharConfig() {
-  var abas = [['logins', 'Logins dos contadores'], ['estrutura', 'Contabilidades e clientes'], ['regimes', 'Regimes'], ['unificar', 'Clientes duplicados']];
-  $('tela').innerHTML = '<div class="cab"><div><h1>Configurações</h1><p class="sub">Só o administrador vê esta área. As mudanças valem na hora (o contador precisa entrar de novo para ver contabilidades novas).</p></div></div>' +
+  if (CFG_ABA === 'logins') CFG_ABA = 'estrutura';
+  var abas = [['estrutura', 'Contabilidades e clientes'], ['regimes', 'Regimes'], ['unificar', 'Clientes duplicados']];
+  $('tela').innerHTML = '<div class="cab"><div><h1>Configurações</h1><p class="sub">Só o administrador vê esta área. Os logins e permissões ficam no menu <b>Acessos</b>.</p></div></div>' +
     '<div class="abas" role="tablist">' + abas.map(function (a) { return '<button class="tab" role="tab" type="button" data-c="' + a[0] + '" aria-selected="' + (a[0] === CFG_ABA) + '">' + a[1] + '</button>'; }).join('') + '</div>' +
     '<p id="cfgAviso" class="aviso" role="status"></p><div id="cfgCorpo"></div><dialog id="dlgUsu" aria-labelledby="dlgUsuTit"></dialog>';
   document.querySelector('.abas').addEventListener('click', function (ev) { var b = ev.target.closest('.tab'); if (b) { CFG_ABA = b.dataset.c; desenharConfig(); } });
@@ -1794,12 +1823,13 @@ function abrir(u, mes) {
 function telaCliente() {
   var u = ATUAL.u, r = RESUMO, t = r.totais || {};
   var nfe = t.NFe || {}, nfce = t.NFCe || {}, cp = t.Compras || {};
-  var html = '<div><button class="btn sec" id="bVoltar" type="button">← Clientes</button></div>' +
+  var umaSo = DADOS.empresa && DADOS.unidades.length === 1;
+  var html = (umaSo ? '' : '<div><button class="btn sec" id="bVoltar" type="button">← ' + (DADOS.empresa ? 'Minhas empresas' : 'Clientes') + '</button></div>') +
     '<div class="cab"><div><h1>' + esc(rotuloUnid(u)) + ' ' + regimeCliente(u) + '</h1><p class="sub">' + esc(u.contabilidade) + ' · CNPJ ' + esc(r.cnpj || '—') + ' · dados gerados em ' + new Date(r.geradoEm).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) + '</p></div>' +
     '<div class="acoes"><label class="sub" for="fMes">Mês&nbsp;<select id="fMes">' + u.meses.map(function (m) { return '<option value="' + m + '"' + (m === ATUAL.mes ? ' selected' : '') + '>' + nomeMes(m) + '</option>'; }).join('') + '</select></label>' +
-    (USA_BANCO ? '<button class="btn sec" id="bReuniao" type="button" title="Tela de apresentação para reunião com o cliente (TV, tablet ou notebook)">Modo Reunião</button>' : '') +
+    (USA_BANCO && mod('reuniao') && !DADOS.empresa ? '<button class="btn sec" id="bReuniao" type="button" title="Tela de apresentação para reunião com o cliente (TV, tablet ou notebook)">Modo Reunião</button>' : '') +
     '<button class="btn sec" id="bImprimir" type="button" title="Imprime a aba aberta ou salva em PDF, com a logo da CPUSIS">Imprimir / PDF</button>' +
-    '<button class="btn" id="bZip" type="button">Baixar XML do mês (ZIP)</button><div class="barra hidden" id="barra"><i></i></div><span class="sub" id="zipInfo"></span></div></div>' +
+    (mod('xml') ? '<button class="btn" id="bZip" type="button">Baixar XML do mês (ZIP)</button>' : '') + '<div class="barra hidden" id="barra"><i></i></div><span class="sub" id="zipInfo"></span></div></div>' +
     '<div class="kpis">' +
       kpi('NF-e emitidas', 'R$ ' + brl(nfe.valor), int(nfe.qtd) + ' notas · ' + int(nfe.canceladas) + ' canceladas') +
       kpi('NFC-e', 'R$ ' + brl(nfce.valor), int(nfce.qtd) + ' cupons · ' + int(nfce.canceladas) + ' cancelados') +
@@ -1808,14 +1838,16 @@ function telaCliente() {
       kpi('Devoluções', int((r.devolucoes || []).length), 'R$ ' + brl((r.devolucoes || []).reduce(function (a, d) { return a + d.valor; }, 0))) +
       kpi('CT-e / MDF-e', int((r.cte || {}).qtd) + ' / ' + int(r.mdfe), 'CT-e: R$ ' + brl((r.cte || {}).valor)) +
     '</div>' +
-    '<div class="abas" role="tablist">' + ABAS.map(function (a) { return '<button class="tab" role="tab" type="button" data-a="' + a.id + '" aria-selected="' + (a.id === ATUAL.aba) + '">' + a.nome + '</button>'; }).join('') + '</div>' +
+    '<div class="abas" role="tablist">' + abasVisiveis().map(function (a) { return '<button class="tab" role="tab" type="button" data-a="' + a.id + '" aria-selected="' + (a.id === ATUAL.aba) + '">' + a.nome + '</button>'; }).join('') + '</div>' +
     '<div id="conteudo"></div>';
   $('tela').innerHTML = html;
-  $('bVoltar').addEventListener('click', telaLista);
+  if ($('bVoltar')) $('bVoltar').addEventListener('click', telaLista);
   $('bImprimir').addEventListener('click', imprimirTela);
   if ($('bReuniao')) $('bReuniao').addEventListener('click', function () { abrirReuniao(ATUAL.u, ATUAL.mes); });
   $('fMes').addEventListener('change', function () { abrir(u, this.value); });
-  $('bZip').addEventListener('click', baixarZip);
+  if ($('bZip')) $('bZip').addEventListener('click', baixarZip);
+  if (!abasVisiveis().some(function (a) { return a.id === ATUAL.aba; })) ATUAL.aba = (abasVisiveis()[0] || {}).id;
+  document.querySelectorAll('.abas .tab').forEach(function (x) { x.setAttribute('aria-selected', x.dataset.a === ATUAL.aba); });
   document.querySelector('.abas').addEventListener('click', function (ev) { var b = ev.target.closest('.tab'); if (!b) return; ATUAL.aba = b.dataset.a; document.querySelectorAll('.tab').forEach(function (x) { x.setAttribute('aria-selected', x === b); }); desenharAba(); });
   desenharAba();
 }
@@ -1845,8 +1877,10 @@ var COL = {
 };
 var ABAS = [
   { id: 'dias', nome: 'Dia a dia' }, { id: 'apur', nome: 'Apuração fiscal' }, { id: 'trib', nome: 'Tributação' }, { id: 'ncm', nome: 'NCMs' }, { id: 'pis', nome: 'PIS/COFINS' }, { id: 'prod', nome: 'Produtos' },
-  { id: 'dev', nome: 'Devoluções' }, { id: 'canc', nome: 'Cancelamentos e numeração' }, { id: 'pag', nome: 'Pagamentos' }, { id: 'rf', nome: 'Reforma (IBS/CBS)' }, { id: 'conf', nome: 'Conferência IBS/CBS' }, { id: 'cad', nome: 'Cadastro 2027' }, { id: 'xml', nome: 'Buscar XML' }
+  { id: 'dev', nome: 'Devoluções' }, { id: 'canc', nome: 'Cancelamentos e numeração' }, { id: 'pag', nome: 'Pagamentos' }, { id: 'rf', nome: 'Reforma (IBS/CBS)' }, { id: 'conf', nome: 'Conferência IBS/CBS' }, { id: 'cad', nome: 'Análise fiscal dos produtos' }, { id: 'calc', nome: 'Calculadora' }, { id: 'xml', nome: 'Buscar XML' }
 ];
+var MOD_ABA = { conf: 'conferencia', cad: 'produtos', calc: 'calculadora', xml: 'xml' };
+function abasVisiveis() { return ABAS.filter(function (a) { return mod(MOD_ABA[a.id] || 'resumo') && !(DADOS.empresa && a.id === 'apur' && false); }); }
 var ORIGENS = ['Todas', 'NFe', 'NFCe', 'Compras'];
 var NOME_ORIGEM = { NFe: 'NF-e emitida', NFCe: 'NFC-e', Compras: 'Compra' };
 
@@ -1858,6 +1892,7 @@ function desenharAba() {
   if (a === 'apur') { telaApuracao(c); return; }
   if (a === 'conf') { telaConferencia(c); return; }
   if (a === 'cad') { telaCadastro(c); return; }
+  if (a === 'calc') { telaCalcCliente(c); return; }
   var ferr = function (comOrigem, nota) {
     return '<div class="ferr">' + (comOrigem ? '<div class="seg" role="group" aria-label="Origem">' + ORIGENS.map(function (o) { return '<button type="button" data-o="' + o + '" aria-pressed="' + (o === ATUAL.origem) + '">' + (o === 'Todas' ? 'Todas' : NOME_ORIGEM[o]) + '</button>'; }).join('') + '</div>' : '') +
       '<input type="search" id="fTab" placeholder="Filtrar…" aria-label="Filtrar tabela"><button class="btn sec" type="button" id="bCsv">Exportar para Excel (CSV)</button></div>' + (nota ? '<p class="nota">' + nota + '</p>' : '');
@@ -2398,8 +2433,10 @@ function guiaPassos(d) {
     P.push({ t: 'Buscar XML', h: '<p>Na aba <b>Buscar XML</b> da tela do cliente você acha qualquer nota do mês por <b>número, chave, nome ou CNPJ/CPF, valor e data</b>.</p><ul><li>Clique na nota para ver os dados principais (produtos, impostos, protocolo) ou <b>Ver o XML completo</b>.</li><li>Marque várias e use <b>Baixar marcados (ZIP)</b>, ou exporte a lista para o Excel.</li></ul>' });
     P.push({ t: 'Modo Reunião e Visão da carteira', h: '<p><b>Modo Reunião</b> (botão na tela do cliente): uma tela escura, feita para mostrar ao cliente na <b>TV, tablet ou notebook</b>. Use o botão de <b>tela cheia</b> e <b>Esc</b> para sair. Ela mostra:</p><ul><li>Faturamento, ticket médio e imposto destacado nas vendas do mês.</li><li><b>Vendas e compras dos últimos 12 meses</b> e quanto as vendas estão acima das compras.</li><li><b>Saúde fiscal</b>: nota de 0 a 100 (XML faltando, pendências na SEFAZ, falhas na numeração, Reforma Tributária).</li><li><b>Termômetro fiscal</b>: compara as vendas com as compras de revenda. O esperado é vender pelo menos 20% acima do que se compra; abaixo de 85% desse mínimo aparece <b>Risco de notificação</b>.</li></ul><p><b>Visão da carteira</b> (botão no Painel): todos os seus clientes com a nota e o termômetro, e a lista <b>Precisa de você hoje</b>.</p><p>O termômetro é uma <b>estimativa</b> feita com os XML do portal. Quando faltam notas de compra ou há menos de 6 meses de dados, ele avisa em vez de dar resultado.</p>', ir: 'painel' });
     P.push({ t: 'O que significam as pendências', h: '<p>As pendências vêm do próprio sistema do cliente e mostram o que ainda não está certo na SEFAZ:</p><ul class="guia-leg"><li>' + pill('warn', 'Contingência') + ' nota emitida sem internet: precisa ser transmitida hoje</li><li>' + pill('bad', 'Rejeitada') + ' a SEFAZ recusou: corrigir e reenviar</li><li>' + pill('bad', 'Numeração pulada') + ' faltam números na sequência: inutilizar</li><li>' + pill('info', 'Sem XML') + ' a nota existe no sistema, mas o XML autorizado não está lá: verificar</li><li>' + pill('info', 'Em digitação') + ' nota começada e não transmitida: transmitir ou excluir</li></ul><p>Quando a pendência é resolvida no sistema do cliente, ela some do portal no envio da noite seguinte.</p>' });
+    P.push({ t: 'Análise fiscal dos produtos e calculadoras', h: '<p>Na tela do cliente, a aba <b>Análise fiscal dos produtos</b> confere produto a produto o que saiu nas notas — <b>NCM, CST de ICMS / CSOSN, CFOP, CEST, PIS e COFINS, IBS/CBS e cClassTrib</b> — com as mesmas regras das calculadoras da CPUSIS. O que estiver errado aparece em destaque e sai numa <b>planilha com a correção pronta</b> para aprovar e importar no sistema do cliente.</p><p>A aba <b>Calculadora</b> abre a do regime do cliente (Simples ou Presumido), com as notas de compra do mês: <b>abrir na calculadora</b> (custo, ICMS de entrada, códigos de venda e preço) ou imprimir o <b>espelho da nota</b> para lançar no sistema. No menu <b>Calculadoras</b> você usa as duas para qualquer consulta.</p>' });
+    P.push({ t: 'Acessos e segurança', h: '<p>Cada login vê só o que o perfil permite: <b>gestor</b> e <b>contador</b> da contabilidade, e <b>cliente</b> (só a própria empresa). O gestor cria os logins dos contadores e clientes dele no menu <b>Acessos</b>, escolhe os módulos de cada um e vê o histórico de entradas.</p><p>Use <b>Minha senha</b> para trocar a sua. Depois de 1 hora parado o portal sai sozinho.</p>' });
     P.push({ t: 'Financeiro (BPO)', h: '<p>Para os clientes que contratam o <b>BPO financeiro</b>, a aba <b>Financeiro</b> mostra a carteira e, em cada cliente, o resumo, o extrato dos bancos categorizado, os comprovantes, as pendências e a <b>DRE e o fluxo de caixa</b> do mês.</p><p>Os clientes sem BPO simplesmente não aparecem nessa aba.</p>', ir: 'financeiro' });
-    if (admin) P.push({ t: 'Servidores e Configurações (só CPUSIS)', h: '<ul><li><b>Servidores</b>: cada servidor de cliente com a versão do agente, o último backup do banco (feito só de madrugada, guardando no máximo 10 dias) e a situação do banco.</li><li><b>Configurações</b>: logins das contabilidades, logins das empresas do BPO, regimes dos clientes, aparência do portal e clientes duplicados para juntar.</li></ul>', ir: 'servidores' });
+    if (admin) P.push({ t: 'Servidores e Configurações (só CPUSIS)', h: '<ul><li><b>Servidores</b>: cada servidor de cliente com a versão do agente, o último backup do banco (feito só de madrugada, guardando no máximo 10 dias) e a situação do banco.</li><li><b>Acessos</b>: todos os logins (CPUSIS, contabilidades e clientes), perfis, módulos, sessões e o registro de acessos.</li><li><b>Configurações</b>: contabilidades e clientes, regimes, aparência do portal e clientes duplicados para juntar.</li></ul>', ir: 'servidores' });
     P.push({ t: 'Pronto!', h: '<ul><li>Os números são atualizados <b>todo dia</b> depois do envio da noite. O mês atual vai se completando dia a dia.</li><li>O mês anterior continua sendo reenviado nos primeiros dias do mês seguinte, para pegar notas transmitidas atrasadas.</li><li>Ao terminar, use <b>Sair</b> no topo, principalmente em computador compartilhado.</li></ul><p>Dúvidas? ' + (APARENCIA_ATUAL && APARENCIA_ATUAL.suporte ? 'Fale com o suporte: <b>' + esc(APARENCIA_ATUAL.suporte) + '</b>.' : 'Fale com a CPUSIS.') + ' Este guia fica sempre no botão <b>Ajuda</b>.</p>' });
   }
   return P;
@@ -2746,207 +2783,627 @@ function guiaAuto() {
   window.abrirCarteira = abrirCarteira;
 })();
 </script>
-<!-- ================= CADASTRO 2027 (planilha padrão Farol de tributação dos produtos) ================= -->
+<!-- ================= ACESSOS E PERMISSÕES · MINHA SENHA · INATIVIDADE · CALCULADORAS · ESPELHO DA NOTA ================= -->
+<style>
+.ac-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:6px 14px}
+.ac-grid label{display:flex;gap:7px;align-items:flex-start;font-size:13.5px;color:var(--ink)}
+.ac-grid label small{display:block;color:var(--muted);font-size:11.5px}
+.ac-tag{display:inline-block;font-size:11px;padding:1px 7px;border-radius:999px;background:var(--soft);color:var(--muted);margin:1px 3px 1px 0}
+.calc-quadro{width:100%;min-height:900px;border:1px solid var(--line);border-radius:12px;background:var(--panel)}
+.calc-esc{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
+.calc-esc button{text-align:left;border:1px solid var(--line);background:var(--panel);border-radius:12px;padding:16px;cursor:pointer}
+.calc-esc button[aria-pressed=true]{border-color:var(--brand);box-shadow:0 0 0 2px var(--brand-soft)}
+.calc-esc b{display:block;font-size:15px;margin-bottom:4px}
+.ac-forca{height:6px;border-radius:9px;background:var(--soft);overflow:hidden}.ac-forca i{display:block;height:100%;width:0;background:var(--bad);transition:width .2s}
+</style>
+<script>
+(function () {
+  /* ---------------- minha senha (e troca obrigatória no primeiro acesso) ---------------- */
+  function forca(s) { var p = 0; if (s.length >= 8) p++; if (s.length >= 12) p++; if (/[a-z]/.test(s) && /[A-Z]/.test(s)) p++; if (/\d/.test(s)) p++; if (/[^A-Za-z0-9]/.test(s)) p++; return p; }
+  window.trocarSenha = function (obrigatoria) {
+    var d = $('dlgSenha'); if (!d) { d = document.createElement('dialog'); d.id = 'dlgSenha'; d.setAttribute('aria-labelledby', 'dlgSenhaTit'); document.body.appendChild(d); }
+    d.style.width = 'min(440px,calc(100vw - 32px))';
+    d.innerHTML = '<form class="form" id="fSenha"><h2 id="dlgSenhaTit">' + (obrigatoria ? 'Crie a sua senha' : 'Trocar a minha senha') + '</h2>' +
+      (obrigatoria ? '<p class="nota">Por segurança, troque a senha que você recebeu por uma só sua antes de continuar.</p>' : '') +
+      '<label>Senha atual<input type="password" id="sAtual" autocomplete="current-password" required></label>' +
+      '<label>Senha nova (mínimo 8 caracteres, com letras e números)<input type="password" id="sNova" autocomplete="new-password" required minlength="8"></label>' +
+      '<div class="ac-forca" aria-hidden="true"><i id="sForca"></i></div>' +
+      '<label>Repita a senha nova<input type="password" id="sNova2" autocomplete="new-password" required minlength="8"></label>' +
+      '<p class="erro" id="sErro" role="alert"></p>' +
+      '<div class="ferr"><button class="btn" type="submit" id="sOk">Salvar a senha</button>' + (obrigatoria ? '<button class="btn sec" type="button" id="sSair">Sair</button>' : '<button class="btn sec" type="button" id="sFechar">Cancelar</button>') + '</div>' +
+      '<p class="nota">Ao trocar a senha, os outros computadores e celulares onde você estava conectado saem sozinhos.</p></form>';
+    d.showModal();
+    if (obrigatoria) d.addEventListener('cancel', function (e) { e.preventDefault(); });
+    $('sNova').addEventListener('input', function () { var f = forca(this.value); $('sForca').style.width = (f * 20) + '%'; $('sForca').style.background = f >= 4 ? 'var(--ok,#1a7f5a)' : f >= 3 ? 'var(--warn)' : 'var(--bad)'; });
+    if ($('sFechar')) $('sFechar').onclick = function () { d.close(); };
+    if ($('sSair')) $('sSair').onclick = function () { d.close(); sair(false); };
+    $('fSenha').onsubmit = function (ev) {
+      ev.preventDefault();
+      if ($('sNova').value !== $('sNova2').value) { $('sErro').textContent = 'As duas senhas novas não são iguais.'; return; }
+      $('sOk').disabled = true; $('sErro').textContent = '';
+      chamar('portalTrocarSenha', TOKEN, $('sAtual').value, $('sNova').value).then(function () {
+        try { sessionStorage.removeItem('farol_trocar'); } catch (e) { }
+        d.close(); alert('Senha trocada.');
+      }).catch(function (e) { $('sOk').disabled = false; $('sErro').textContent = e.message; });
+    };
+  };
+  $('bSenha').addEventListener('click', function () { trocarSenha(false); });
+
+  /* ---------------- sai sozinho depois de 60 minutos sem uso ---------------- */
+  var ultimoUso = Date.now();
+  ['mousemove', 'keydown', 'click', 'touchstart', 'scroll'].forEach(function (ev) { window.addEventListener(ev, function () { ultimoUso = Date.now(); }, { passive: true }); });
+  setInterval(function () {
+    if (TOKEN && DADOS && Date.now() - ultimoUso > 60 * 60e3) { sair(false); $('eLogin').textContent = 'Você saiu sozinho depois de 1 hora sem usar o portal.'; }
+  }, 60e3);
+
+  /* ---------------- acessos e permissões ---------------- */
+  var AC = null, AC_ABA = 'logins';
+  window.telaAcessos = function () {
+    marcarNav('acessos'); ATUAL = null; RESUMO = null;
+    $('tela').innerHTML = carregando('Carregando os acessos…');
+    chamar('portalUsuarios', TOKEN).then(function (r) { AC = r; desenharAcessos(); })
+      .catch(function (e) { $('tela').innerHTML = '<div class="card erro">' + esc(e.message) + '</div>'; });
+  };
+  function avisoAc(t, erro) { var a = $('acAviso'); if (!a) return; a.className = 'aviso' + (erro ? ' bad' : ''); a.textContent = t || ''; if (t) setTimeout(function () { if (a.textContent === t) a.textContent = ''; }, 7000); }
+  function quando(iso) { return iso ? new Date(iso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '—'; }
+  function desenharAcessos() {
+    var abas = [['logins', 'Logins'], ['perfis', 'Perfis e o que cada um vê']];
+    if (mod('auditoria')) abas.push(['registro', 'Registro de acessos']);
+    $('tela').innerHTML = '<div class="cab"><div><h1>Acessos e permissões</h1><p class="sub">' + (AC.nivel === 'tudo' ? 'Logins da CPUSIS, das contabilidades e dos clientes.' : 'Logins dos contadores e dos clientes das suas contabilidades.') +
+      ' Cada login vê só o que o perfil e os módulos marcados permitem — e o servidor confere tudo de novo a cada clique.</p></div></div>' +
+      '<div class="abas" role="tablist">' + abas.map(function (a) { return '<button class="tab" role="tab" type="button" data-ac="' + a[0] + '" aria-selected="' + (a[0] === AC_ABA) + '">' + a[1] + '</button>'; }).join('') + '</div>' +
+      '<p id="acAviso" class="aviso" role="status"></p><div id="acCorpo"></div><dialog id="dlgAc" aria-labelledby="dlgAcTit"></dialog>';
+    document.querySelector('.abas').addEventListener('click', function (ev) { var b = ev.target.closest('.tab'); if (b) { AC_ABA = b.dataset.ac; desenharAcessos(); } });
+    if (AC_ABA === 'perfis') acPerfis(); else if (AC_ABA === 'registro') acRegistro(); else acLogins();
+  }
+  function rotuloAlcance(u) {
+    if (u.perfil === 'admin' || u.perfil === 'cpusis') return '<span class="pill">todas as contabilidades</span>';
+    if (u.perfil === 'cliente') return '<span class="pill info">' + esc(u.empresa_cliente) + '</span> <span class="sub">' + esc(u.empresa_contab) + '</span>';
+    return esc(u.contabs.join(', '));
+  }
+  function acLogins() {
+    var filtro = '';
+    var html = '<div class="ferr"><button class="btn" type="button" id="acNovo">+ Novo login</button><input type="search" id="acBusca" placeholder="Buscar login, nome, contabilidade ou empresa" style="min-width:280px">' +
+      '<select id="acPerfil"><option value="">Todos os perfis</option>' + Object.keys(AC.perfis).map(function (p) { return '<option value="' + p + '">' + esc(AC.perfis[p].nome) + '</option>'; }).join('') + '</select></div>' +
+      '<div class="kpis kpis4">' + kpi2('Logins', int(AC.usuarios.length), int(AC.usuarios.filter(function (u) { return u.ativo; }).length) + ' ativos', null) +
+        kpi2('Conectados agora', int(AC.usuarios.filter(function (u) { return u.sessoes; }).length), 'com sessão aberta', null) +
+        kpi2('Senha antiga', int(AC.usuarios.filter(function (u) { return u.senhaAntiga && u.temSenha; }).length), 'atualiza sozinha no próximo login', null, 'muted') +
+        kpi2('Senha errada (30 dias)', int(AC.usuarios.reduce(function (a, u) { return a + u.falhas30; }, 0)), 'tentativas recusadas', null, AC.usuarios.some(function (u) { return u.falhas30 > 5; }) ? 'warn' : 'muted') + '</div>' +
+      '<div class="tbl" id="acTab"></div>';
+    $('acCorpo').innerHTML = html;
+    var desenhar = function () {
+      var b = norm($('acBusca').value || ''), pf = $('acPerfil').value;
+      var L = AC.usuarios.filter(function (u) { return (!pf || u.perfil === pf) && (!b || norm([u.login, u.nome, u.contabs.join(' '), u.empresa_cliente, u.empresa_contab].join(' ')).indexOf(b) >= 0); });
+      $('acTab').innerHTML = '<table><thead><tr><th>Login</th><th>Nome</th><th>Perfil</th><th>Vê</th><th>Situação</th><th class="n">Acessos 30d</th><th>Último acesso</th><th></th></tr></thead><tbody>' +
+        L.map(function (u) {
+          var i = AC.usuarios.indexOf(u);
+          return '<tr><td class="m">' + esc(u.login) + (u.login === AC.eu ? ' <span class="sub">(você)</span>' : '') + '</td><td>' + esc(u.nome) + '</td><td>' + esc((AC.perfis[u.perfil] || { nome: NOME_PERFIL[u.perfil] || u.perfil }).nome) + (u.modulos ? ' <span class="ac-tag" title="' + esc(u.modulosEfetivos.map(function (m) { return AC.modulos[m]; }).join(', ')) + '">módulos sob medida</span>' : '') + '</td>' +
+            '<td class="w">' + rotuloAlcance(u) + '</td>' +
+            '<td>' + (u.ativo ? '<span class="pill">ativo</span>' : '<span class="pill bad">desativado</span>') + (u.trocar_senha ? ' <span class="pill warn">vai trocar a senha</span>' : '') + (u.sessoes ? ' <span class="pill info">conectado</span>' : '') + (u.falhas30 > 5 ? ' <span class="pill warn">' + u.falhas30 + ' senhas erradas</span>' : '') + '</td>' +
+            '<td class="n">' + int(u.acessos30) + '</td><td>' + quando(u.ultimo_acesso) + '</td>' +
+            '<td><button class="lnk" type="button" data-ed="' + i + '">editar</button> · <button class="lnk" type="button" data-hist="' + i + '">histórico</button></td></tr>';
+        }).join('') + '</tbody></table>';
+      $('acTab').querySelectorAll('[data-ed]').forEach(function (x) { x.onclick = function () { dlgLogin(AC.usuarios[+x.dataset.ed]); }; });
+      $('acTab').querySelectorAll('[data-hist]').forEach(function (x) { x.onclick = function () { dlgHistorico(AC.usuarios[+x.dataset.hist]); }; });
+    };
+    $('acBusca').addEventListener('input', desenhar); $('acPerfil').addEventListener('change', desenhar); desenhar();
+    $('acNovo').onclick = function () { dlgLogin(null); };
+  }
+  function senhaAleatoria() {
+    var a = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789', b = new Uint32Array(12), s = '';
+    crypto.getRandomValues(b); for (var i = 0; i < 12; i++) s += a[b[i] % a.length];
+    return s.replace(/^(.)(.)/, function (m, x, y) { return x + (/\d/.test(s) ? y : '7'); });
+  }
+  function dlgLogin(u) {
+    var novo = !u; u = u || { login: '', nome: '', email: '', perfil: AC.nivel === 'tudo' ? 'contador' : 'contador', contabs: [], empresa_contab: '', empresa_cliente: '', modulos: null, ativo: true, trocar_senha: true, obs: '' };
+    var d = $('dlgAc');
+    var perfis = Object.keys(AC.perfis);
+    d.innerHTML = '<form class="form" id="fAc"><h2 id="dlgAcTit">' + (novo ? 'Novo login' : 'Login ' + esc(u.login)) + '</h2>' +
+      '<div class="ferr" style="align-items:flex-start"><label style="flex:1;min-width:180px">Login (sem espaço)<input id="aLogin" type="text" required value="' + esc(u.login) + '" autocomplete="off" pattern="[a-zA-Z0-9._@-]{3,40}"></label>' +
+      '<label style="flex:2;min-width:220px">Nome<input id="aNome" type="text" value="' + esc(u.nome) + '"></label>' +
+      '<label style="flex:2;min-width:220px">E-mail (opcional)<input id="aEmail" type="email" value="' + esc(u.email) + '"></label></div>' +
+      '<label>Perfil<select id="aPerfil">' + perfis.map(function (p) { return '<option value="' + p + '"' + (p === u.perfil ? ' selected' : '') + '>' + esc(AC.perfis[p].nome) + '</option>'; }).join('') + '</select></label>' +
+      '<div id="aAlc"></div>' +
+      '<fieldset style="border:1px solid var(--line);border-radius:9px;padding:10px 12px"><legend class="sub">Módulos que este login usa</legend><div class="ac-grid" id="aMods"></div>' +
+      '<p class="nota" style="margin:6px 0 0">Desmarque o que ele não deve ver. Cada perfil tem um limite: o que não aparece aqui o perfil não permite.</p></fieldset>' +
+      '<div class="ferr" style="align-items:flex-end"><label style="flex:1;min-width:220px">' + (novo ? 'Senha inicial' : 'Senha nova (deixe em branco para manter)') + '<input id="aSenha" type="text" autocomplete="new-password" placeholder="mínimo 8, letras e números"></label>' +
+      '<button class="btn sec" type="button" id="aGerar">Gerar senha</button></div>' +
+      '<label class="ck"><input type="checkbox" id="aTrocar"' + (u.trocar_senha || novo ? ' checked' : '') + '> Pedir para trocar a senha no próximo acesso</label>' +
+      '<label class="ck"><input type="checkbox" id="aAtivo"' + (u.ativo ? ' checked' : '') + '> Login ativo</label>' +
+      '<label>Observação interna<input id="aObs" type="text" value="' + esc(u.obs || '') + '" maxlength="300"></label>' +
+      '<p class="erro" id="aErro" role="alert"></p>' +
+      '<div class="ferr"><button class="btn" type="submit" id="aSalvar">Salvar</button><button class="btn sec" type="button" id="aFechar">Fechar</button>' +
+      (novo ? '' : '<button class="btn sec" type="button" id="aSessoes">Desconectar agora</button><button class="btn sec" type="button" id="aExcluir" style="margin-left:auto;color:var(--bad);border-color:var(--bad)">Excluir login</button>') + '</div></form>';
+    d.showModal();
+    var alcance = function () {
+      var p = $('aPerfil').value, h = '';
+      if (p === 'admin' || p === 'cpusis') h = '<p class="nota">Vê todas as contabilidades e clientes.</p>';
+      else if (p === 'cliente') {
+        var cs = Object.keys(AC.clientes).sort();
+        h = '<div class="ferr"><label style="flex:1">Contabilidade<select id="aEmpC">' + cs.map(function (c) { return '<option' + (c === u.empresa_contab ? ' selected' : '') + '>' + esc(c) + '</option>'; }).join('') + '</select></label>' +
+          '<label style="flex:2">Empresa (o cliente vê só ela: XML, resumos, análises, calculadora e financeiro, se tiver BPO)<select id="aEmpK"></select></label></div>';
+      } else {
+        h = '<fieldset style="border:1px solid var(--line);border-radius:9px;padding:10px 12px"><legend class="sub">Contabilidades que este login vê</legend><div class="ac-grid">' +
+          AC.contabilidades.map(function (c) { return '<label><input type="checkbox" data-ct value="' + esc(c) + '"' + (u.contabs.indexOf(c) >= 0 ? ' checked' : '') + '>' + esc(c) + '</label>'; }).join('') + '</div></fieldset>';
+      }
+      $('aAlc').innerHTML = h;
+      if ($('aEmpC')) {
+        var enche = function () { var l = AC.clientes[$('aEmpC').value] || []; $('aEmpK').innerHTML = l.map(function (k) { return '<option' + (k === u.empresa_cliente ? ' selected' : '') + '>' + esc(k) + '</option>'; }).join(''); };
+        $('aEmpC').onchange = enche; enche();
+      }
+      var P = AC.perfis[p], ef = u.perfil === p && u.modulos ? u.modulosEfetivos : P.padrao;
+      $('aMods').innerHTML = P.max.map(function (m) { return '<label><input type="checkbox" data-md value="' + m + '"' + (ef.indexOf(m) >= 0 ? ' checked' : '') + (m === 'usuarios' && AC.nivel !== 'tudo' ? ' disabled' : '') + '><span>' + esc(AC.modulos[m]) + '</span></label>'; }).join('');
+    };
+    $('aPerfil').onchange = alcance; alcance();
+    $('aGerar').onclick = function () { $('aSenha').value = senhaAleatoria(); $('aTrocar').checked = true; };
+    $('aFechar').onclick = function () { d.close(); };
+    if ($('aSessoes')) $('aSessoes').onclick = function () { chamar('portalDerrubarSessoes', TOKEN, u.login).then(function () { avisoAc('Sessões de ' + u.login + ' encerradas.'); d.close(); telaAcessos(); }).catch(function (e) { $('aErro').textContent = e.message; }); };
+    if ($('aExcluir')) $('aExcluir').onclick = function () {
+      if (!confirm('Excluir o login "' + u.login + '"? Ele sai na hora e não consegue mais entrar. (Para só bloquear, desmarque "Login ativo".)')) return;
+      chamar('portalExcluirUsuario', TOKEN, u.login).then(function (r) { AC = r; d.close(); desenharAcessos(); avisoAc('Login ' + u.login + ' excluído.'); }).catch(function (e) { $('aErro').textContent = e.message; });
+    };
+    $('fAc').onsubmit = function (ev) {
+      ev.preventDefault();
+      var p = $('aPerfil').value, P = AC.perfis[p];
+      var mods = Array.prototype.map.call(d.querySelectorAll('[data-md]:checked'), function (x) { return x.value; });
+      var dados = { original: novo ? '' : u.login, login: $('aLogin').value.trim(), nome: $('aNome').value.trim(), email: $('aEmail').value.trim(), perfil: p,
+        contabs: Array.prototype.map.call(d.querySelectorAll('[data-ct]:checked'), function (x) { return x.value; }),
+        empresa_contab: $('aEmpC') ? $('aEmpC').value : '', empresa_cliente: $('aEmpK') ? $('aEmpK').value : '',
+        modulos: mods.length === P.padrao.length && P.padrao.every(function (m) { return mods.indexOf(m) >= 0; }) ? null : mods,
+        senha: $('aSenha').value, trocar_senha: $('aTrocar').checked, ativo: $('aAtivo').checked, obs: $('aObs').value };
+      $('aSalvar').disabled = true; $('aErro').textContent = '';
+      chamar('portalSalvarUsuario', TOKEN, dados).then(function (r) {
+        AC = r; d.close(); desenharAcessos();
+        avisoAc('Login ' + dados.login.toLowerCase() + ' salvo.' + (dados.senha ? ' Passe a senha para a pessoa por um canal seguro (de preferência pessoalmente ou por telefone).' : '') + (novo ? '' : ' Se ele estava conectado, precisa entrar de novo.'));
+      }).catch(function (e) { $('aSalvar').disabled = false; $('aErro').textContent = e.message; });
+    };
+  }
+  function dlgHistorico(u) {
+    var d = $('dlgAc');
+    d.innerHTML = '<h2 id="dlgAcTit">Histórico de ' + esc(u.login) + '</h2>' + carregando('Lendo…');
+    d.showModal();
+    chamar('portalSessoes', TOKEN, u.login).then(function (r) {
+      d.innerHTML = '<h2 id="dlgAcTit">Histórico de ' + esc(u.login) + '</h2>' +
+        '<h3>Conectado agora</h3>' + (r.sessoes.length ? '<div class="tbl"><table><thead><tr><th>Entrou</th><th>Último uso</th><th>IP</th><th>Navegador</th></tr></thead><tbody>' +
+          r.sessoes.map(function (s) { return '<tr><td>' + quando(s.criado_em) + '</td><td>' + quando(s.visto_em) + '</td><td class="m">' + esc(s.ip || '—') + '</td><td class="w sub">' + esc((s.agente || '').slice(0, 90)) + '</td></tr>'; }).join('') + '</tbody></table></div>' : '<p class="nota">Nenhuma sessão aberta.</p>') +
+        '<h3>Últimas ações</h3><div class="tbl"><table><thead><tr><th>Quando</th><th>Ação</th><th>Detalhe</th><th>IP</th></tr></thead><tbody>' +
+        r.acessos.map(function (a) { return '<tr><td>' + quando(a.em) + '</td><td>' + esc(NOME_ACAO[a.acao] || a.acao) + '</td><td class="w">' + esc(a.detalhe || '') + '</td><td class="m">' + esc(a.ip || '—') + '</td></tr>'; }).join('') + '</tbody></table></div>' +
+        '<div class="ferr"><button class="btn sec" type="button" id="hFechar">Fechar</button></div>';
+      $('hFechar').onclick = function () { d.close(); };
+    }).catch(function (e) { d.innerHTML = '<p class="erro">' + esc(e.message) + '</p><button class="btn sec" type="button" onclick="this.closest(\'dialog\').close()">Fechar</button>'; });
+  }
+  var NOME_ACAO = { login: 'Entrou', login_falhou: 'Senha errada', sair: 'Saiu', download: 'Baixou XML', admin_login: 'Mexeu em login', senha: 'Trocou a senha' };
+  function acPerfis() {
+    var M = AC.modulos, P = AC.perfis;
+    $('acCorpo').innerHTML = '<section class="card"><p class="nota">✔ = já vem marcado no perfil · ○ = o perfil permite, mas vem desmarcado · em branco = o perfil não permite. Dá para tirar módulos de cada login na edição.</p>' +
+      '<div class="tbl"><table><thead><tr><th>Módulo</th>' + Object.keys(P).map(function (p) { return '<th>' + esc(P[p].nome) + '</th>'; }).join('') + '</tr></thead><tbody>' +
+      Object.keys(M).map(function (m) { return '<tr><td>' + esc(M[m]) + '</td>' + Object.keys(P).map(function (p) { return '<td style="text-align:center">' + (P[p].padrao.indexOf(m) >= 0 ? '✔' : P[p].max.indexOf(m) >= 0 ? '○' : '') + '</td>'; }).join('') + '</tr>'; }).join('') +
+      '</tbody></table></div></section>' +
+      '<section class="card"><h2>Como os acessos são protegidos</h2><ul class="lst">' +
+      '<li>Senhas guardadas só como código criptografado (PBKDF2, 150 mil rodadas). Nem a CPUSIS consegue ver a senha de ninguém.</li>' +
+      '<li>8 senhas erradas seguidas travam o login por 15 minutos; 30 erros do mesmo computador travam o computador.</li>' +
+      '<li>A sessão cai com 4 horas sem uso e, de qualquer jeito, 12 horas depois de entrar. Na tela, 1 hora parada já tira a pessoa.</li>' +
+      '<li>Trocar senha, perfil ou módulos desconecta o login na hora em todos os aparelhos.</li>' +
+      '<li>Cliente vê só a própria empresa; contador vê só as contabilidades marcadas. O servidor confere isso a cada pedido, não só a tela.</li>' +
+      '<li>Toda entrada, senha errada, download de XML e mudança de login fica registrada com data, hora e IP.</li></ul></section>';
+  }
+  function acRegistro() {
+    $('acCorpo').innerHTML = '<div class="ferr"><input id="rLogin" type="search" placeholder="Login"><select id="rAcao"><option value="">Todas as ações</option>' + Object.keys(NOME_ACAO).map(function (a) { return '<option value="' + a + '">' + NOME_ACAO[a] + '</option>'; }).join('') + '</select><button class="btn sec" type="button" id="rBusca">Buscar</button><button class="btn sec" type="button" id="rCsv">Exportar (CSV)</button></div><div id="rTab">' + carregando('Lendo…') + '</div>';
+    var L = [];
+    var buscar = function () {
+      chamar('portalAuditoria', TOKEN, { login: $('rLogin').value.trim(), acao: $('rAcao').value }).then(function (r) {
+        L = r.map(function (a) { return { em: quando(a.em), login: a.login, acao: NOME_ACAO[a.acao] || a.acao, detalhe: a.detalhe || '', ip: a.ip || '' }; });
+        $('rTab').innerHTML = '<div class="tbl"><table><thead><tr><th>Quando</th><th>Login</th><th>Ação</th><th>Detalhe</th><th>IP</th></tr></thead><tbody>' +
+          L.map(function (a) { return '<tr><td>' + esc(a.em) + '</td><td class="m">' + esc(a.login) + '</td><td>' + esc(a.acao) + '</td><td class="w">' + esc(a.detalhe) + '</td><td class="m">' + esc(a.ip) + '</td></tr>'; }).join('') + '</tbody></table></div><p class="nota">Últimos 500 registros.</p>';
+      }).catch(function (e) { $('rTab').innerHTML = '<div class="card erro">' + esc(e.message) + '</div>'; });
+    };
+    $('rBusca').onclick = buscar; $('rCsv').onclick = function () { csv([['em', 'Quando'], ['login', 'Login'], ['acao', 'Ação'], ['detalhe', 'Detalhe'], ['ip', 'IP']], L, 'registro de acessos.csv'); };
+    buscar();
+  }
+
+  /* ---------------- calculadoras (SN e LP) ---------------- */
+  window.VERSAO_PORTAL = '1.27';
+  window.BASE_CALC = /(^|\.)github\.io$|^farol\.test$/.test(location.hostname) ? 'calc/' : 'https://cpusiscode.github.io/FAROL.CONTABIL/calc/';
+  var CALC_SEL = null;
+  function quadro(regime, id) {
+    return '<iframe class="calc-quadro" id="' + id + '" title="Calculadora ' + (regime === 'sn' ? 'Simples Nacional' : 'Lucro Presumido') + '" src="' + BASE_CALC + regime + '.html?v=' + encodeURIComponent((window.VERSAO_PORTAL || '') + '') + '"></iframe>';
+  }
+  window.addEventListener('message', function (ev) {
+    if (ev.origin !== location.origin || !ev.data || ev.data.tipo !== 'farolCalcAltura') return;
+    document.querySelectorAll('.calc-quadro').forEach(function (f) { if (f.contentWindow === ev.source) f.style.height = Math.max(900, ev.data.h + 30) + 'px'; });
+  });
+  window.telaCalculadoras = function () {
+    marcarNav('calc'); ATUAL = null; RESUMO = null;
+    $('tela').innerHTML = '<div class="cab"><div><h1>Calculadoras tributárias</h1><p class="sub">As calculadoras da CPUSIS para comércio no Acre: consulta de NCM (ST, MVA, monofásico, cesta básica, IBS/CBS), custo e preço de venda pelo XML da nota de compra, auditoria de cadastro e custo operacional.</p></div></div>' +
+      '<div class="calc-esc"><button type="button" data-cr="sn" aria-pressed="' + (CALC_SEL === 'sn') + '"><b>Simples Nacional</b><span class="sub">CSOSN, PIS/COFINS no DAS (04/49), antecipação e ST na entrada</span></button>' +
+      '<button type="button" data-cr="lp" aria-pressed="' + (CALC_SEL === 'lp') + '"><b>Lucro Presumido</b><span class="sub">CST de ICMS, PIS/COFINS cumulativo (01/04), IRPJ e CSLL de presunção</span></button></div>' +
+      '<div id="calcArea" style="margin-top:12px">' + (CALC_SEL ? quadro(CALC_SEL, 'calcQ') : '<p class="nota">Escolha a calculadora.</p>') + '</div>';
+    document.querySelectorAll('[data-cr]').forEach(function (b) { b.onclick = function () { CALC_SEL = b.dataset.cr; telaCalculadoras(); }; });
+  };
+  function regimeDoCliente() {
+    var crt = String((RESUMO && RESUMO.crt) || '');
+    var inf = DADOS.regimes && DADOS.regimes[chaveUnid(ATUAL.u.contabilidade, rotuloPainel(ATUAL.u))];
+    var r = String(inf || '').toUpperCase();
+    if (/SN|SIMPLES|MEI/.test(r)) return 'sn';
+    if (/PRESUMIDO|REAL/.test(r)) return 'lp';
+    return crt === '3' ? 'lp' : 'sn';
+  }
+  window.telaCalcCliente = function (c) {
+    var rg = regimeDoCliente();
+    c.innerHTML = '<section class="card"><div class="ch"><h2>Calculadora · ' + (rg === 'sn' ? 'Simples Nacional' : 'Lucro Presumido') + '</h2><span>escolhida pelo regime do cliente' + (String((RESUMO || {}).crt) === '3' && rg === 'lp' ? ' (regime normal: use a do Lucro Presumido; no Lucro Real o PIS/COFINS é não cumulativo)' : '') + '</span></div>' +
+      '<p class="nota">Notas de compra do mês: abra uma na calculadora para ver custo, ICMS de entrada, códigos de venda e preço sugerido, ou imprima o <b>espelho da nota</b> para ajudar no lançamento no sistema.</p>' +
+      '<div class="ferr"><button class="btn sec" type="button" id="ccCarregar">Listar as notas de compra de ' + esc(nomeMes(ATUAL.mes)) + '</button><div class="barra hidden" id="ccBarra"><i></i></div><span class="sub" id="ccInfo"></span></div><div id="ccNotas"></div></section>' +
+      quadro(rg, 'calcCli');
+    $('ccCarregar').onclick = function () { listarCompras(); };
+  };
+  function infoCc(t, p) { if (!$('ccInfo')) return; $('ccInfo').textContent = t; var b = $('ccBarra'); if (p == null) b.classList.add('hidden'); else { b.classList.remove('hidden'); b.firstChild.style.width = (100 * p) + '%'; } }
+  function listarCompras() {
+    var u = ATUAL.u, ck = chaveUnid(u.contabilidade, rotuloPainel(u));
+    if (!BUSCA || BUSCA.ck !== ck) BUSCA = { ck: ck, meses: {}, docs: [], porChave: {}, sel: {}, ord: 'data', asc: false, cnpj: RESUMO && RESUMO.cnpj };
+    $('ccCarregar').disabled = true;
+    carregarMesBusca(u, ATUAL.mes, infoCc).then(function () {
+      infoCc('', null);
+      var L = BUSCA.docs.filter(function (d) { return d.mes === ATUAL.mes && d.tipo === 'compra'; }).sort(function (a, b) { return a.data < b.data ? 1 : -1; });
+      if (!L.length) { $('ccNotas').innerHTML = '<p class="nota">Nenhuma nota de compra no ZIP deste mês.</p>'; return; }
+      $('ccNotas').innerHTML = '<input type="search" id="ccBusca" placeholder="Fornecedor, número ou chave" style="min-width:280px;margin:8px 0"><div class="tbl" style="max-height:340px"><table><thead><tr><th>Data</th><th>Número</th><th>Fornecedor</th><th class="n">Valor</th><th></th></tr></thead><tbody id="ccCorpo"></tbody></table></div>';
+      var desenhar = function () {
+        var b = norm($('ccBusca').value || '');
+        $('ccCorpo').innerHTML = L.filter(function (d) { return !b || norm([d.emitNome, d.num, d.chave, d.emitDoc].join(' ')).indexOf(b) >= 0; }).slice(0, 300).map(function (d) {
+          var i = BUSCA.docs.indexOf(d);
+          return '<tr><td>' + esc(dataBR(d.data)) + '</td><td class="m">' + esc(d.num) + '</td><td class="w">' + esc(d.emitNome || d.emitDoc) + '</td><td class="n">' + brl(d.valor) + '</td>' +
+            '<td><button class="lnk" type="button" data-cc="' + i + '">abrir na calculadora</button> · <button class="lnk" type="button" data-esp="' + i + '">espelho da nota</button></td></tr>';
+        }).join('');
+        $('ccCorpo').querySelectorAll('[data-cc]').forEach(function (x) { x.onclick = function () { abrirNaCalc(BUSCA.docs[+x.dataset.cc]); }; });
+        $('ccCorpo').querySelectorAll('[data-esp]').forEach(function (x) { x.onclick = function () { espelhoNota(BUSCA.docs[+x.dataset.esp]); }; });
+      };
+      $('ccBusca').oninput = desenhar; desenhar();
+    }).catch(function (e) { infoCc('Não deu certo: ' + e.message, null); $('ccCarregar').disabled = false; });
+  }
+  function textoXml(d) { return bytesXml(d).then(function (b) { return new TextDecoder('utf-8').decode(b); }); }
+  function abrirNaCalc(d) {
+    textoXml(d).then(function (t) {
+      var f = $('calcCli'); if (!f) return;
+      f.contentWindow.postMessage({ tipo: 'xml', texto: t }, location.origin);
+      f.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }
+  window.farolAbrirNaCalc = abrirNaCalc;
+
+  /* ---------------- espelho da nota de compra (para lançar no sistema), com a logo da CPUSIS ---------------- */
+  function n2(v) { return (Number(v) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+  function nq(v) { return (Number(v) || 0).toLocaleString('pt-BR', { maximumFractionDigits: 4 }); }
+  function espelhoNota(d) {
+    var w = window.open('', '_blank'); if (!w) { alert('O navegador bloqueou a janela do espelho. Permita pop-ups deste site.'); return; }
+    w.document.write('<p style="font:14px Arial;padding:20px">Montando o espelho da nota…</p>');
+    textoXml(d).then(function (s) {
+      var ide = xBloco(s, 'ide'), em = xBloco(s, 'emit'), de = xBloco(s, 'dest'), tot = xBloco(s, 'ICMSTot'), tr = xBloco(s, 'transp'), cob = xBloco(s, 'cobr'), inf = xBloco(s, 'infAdic');
+      var ender = xBloco(em, 'enderEmit');
+      var dets = s.split(/<(?:\w+:)?det\s/).slice(1);
+      var itens = dets.map(function (det, i) {
+        var pr = xBloco(det, 'prod'), im = xBloco(det, 'imposto'), ic = xBloco(im, 'ICMS'), ipi = xBloco(im, 'IPI'), pis = xBloco(im, 'PIS'), cof = xBloco(im, 'COFINS'), g = xBloco(im, 'IBSCBS');
+        var cst = xTag(ic, 'CST') ? xTag(ic, 'orig') + xTag(ic, 'CST') : xTag(ic, 'orig') + xTag(ic, 'CSOSN');
+        return { n: i + 1, cod: xTag(pr, 'cProd'), ean: xTag(pr, 'cEAN'), desc: xTag(pr, 'xProd'), ncm: xTag(pr, 'NCM'), cest: xTag(pr, 'CEST'), cfop: xTag(pr, 'CFOP'), cst: cst, un: xTag(pr, 'uCom'), q: xTag(pr, 'qCom'), vu: xTag(pr, 'vUnCom'), vp: xTag(pr, 'vProd'), vd: xTag(pr, 'vDesc'),
+          bc: xTag(ic, 'vBC'), p: xTag(ic, 'pICMS'), v: xTag(ic, 'vICMS'), vst: xTag(ic, 'vICMSST'), ipi: xTag(ipi, 'vIPI'), cstp: xTag(pis, 'CST') + '/' + xTag(cof, 'CST'), ibs: g ? xTag(g, 'CST') + ' ' + xTag(g, 'cClassTrib') : '' };
+      });
+      var dups = (cob.match(/<(?:\w+:)?dup>[\s\S]*?<\/(?:\w+:)?dup>/g) || []).map(function (x) { return xTag(x, 'nDup') + ' · ' + dataBR(xTag(x, 'dVenc')) + ' · R$ ' + n2(xTag(x, 'vDup')); });
+      var chave = d.chave || '';
+      var html = '<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Espelho NF-e ' + esc(xTag(ide, 'nNF')) + ' - ' + esc(xTag(em, 'xNome')) + '</title><style>' +
+        '@page{size:A4 landscape;margin:9mm}*{box-sizing:border-box}body{font:11px Arial,Helvetica,sans-serif;color:#111;margin:0;-webkit-print-color-adjust:exact;print-color-adjust:exact}' +
+        '.topo{display:flex;align-items:center;gap:14px;border-bottom:2px solid #0b2545;padding-bottom:6px;margin-bottom:8px}.topo img{height:58px}.topo b{font-size:15px;color:#0b2545;display:block}' +
+        '.cx{border:1px solid #999;border-radius:4px;padding:5px 7px;margin-bottom:6px}.cx h3{margin:0 0 3px;font-size:10px;text-transform:uppercase;color:#0b2545;letter-spacing:.04em}' +
+        '.g{display:grid;gap:4px 14px}.g4{grid-template-columns:repeat(4,1fr)}.g6{grid-template-columns:repeat(6,1fr)}.g small{display:block;color:#555;font-size:9px;text-transform:uppercase}' +
+        'table{width:100%;border-collapse:collapse;font-size:9.6px}th,td{border:1px solid #bbb;padding:2px 4px;vertical-align:top}th{background:#e8edf4;text-align:left}td.n,th.n{text-align:right;white-space:nowrap}td.m{font-family:Consolas,monospace;white-space:nowrap}' +
+        '.rod{margin-top:8px;font-size:9px;color:#555;border-top:1px solid #ccc;padding-top:3px;text-align:center}.bt{position:fixed;top:8px;right:8px}@media print{.bt{display:none}}</style></head><body>' +
+        '<button class="bt" onclick="print()">Imprimir</button>' +
+        '<div class="topo"><img src="' + LOGO_CPUSIS + '" alt="CPUSIS"><div><b>Espelho da NF-e' + (d.tipo === 'compra' ? ' de compra · para lançamento' : ' emitida') + '</b><span>Farol Contábil · CPUSIS — Cem Por Um Sistemas · ' + esc(rotuloUnid(ATUAL.u)) + ' · gerado em ' + new Date().toLocaleString('pt-BR') + '</span></div></div>' +
+        '<div class="cx"><h3>Nota</h3><div class="g g6"><div><small>Número / série</small>' + esc(xTag(ide, 'nNF')) + ' / ' + esc(xTag(ide, 'serie')) + '</div><div><small>Emissão</small>' + esc(dataBR((xTag(ide, 'dhEmi') || xTag(ide, 'dEmi')).slice(0, 10))) + '</div>' +
+          '<div><small>Natureza</small>' + esc(xTag(ide, 'natOp')) + '</div><div><small>Modelo</small>' + esc(xTag(ide, 'mod')) + '</div><div style="grid-column:span 2"><small>Chave de acesso</small><span class="m">' + esc(chave.replace(/(\d{4})/g, '$1 ').trim()) + '</span></div></div></div>' +
+        '<div class="cx"><h3>Fornecedor (emitente)</h3><div class="g g4"><div style="grid-column:span 2"><small>Razão social</small>' + esc(xTag(em, 'xNome')) + '</div><div><small>CNPJ/CPF</small>' + esc(fmtDoc(xTag(em, 'CNPJ') || xTag(em, 'CPF'))) + '</div><div><small>IE · CRT</small>' + esc(xTag(em, 'IE')) + ' · ' + esc(xTag(em, 'CRT')) + '</div>' +
+          '<div style="grid-column:span 3"><small>Endereço</small>' + esc([xTag(ender, 'xLgr'), xTag(ender, 'nro'), xTag(ender, 'xBairro'), xTag(ender, 'xMun') + '/' + xTag(ender, 'UF')].filter(Boolean).join(', ')) + '</div><div><small>Destinatário</small>' + esc(xTag(de, 'xNome')) + '</div></div></div>' +
+        '<table><thead><tr><th>#</th><th>Código</th><th>EAN</th><th>Descrição</th><th>NCM</th><th>CEST</th><th>CFOP</th><th>CST/CSOSN</th><th>Un</th><th class="n">Qtd</th><th class="n">V. unit.</th><th class="n">V. prod.</th><th class="n">Desc.</th><th class="n">BC ICMS</th><th class="n">% ICMS</th><th class="n">ICMS</th><th class="n">ICMS ST</th><th class="n">IPI</th><th>PIS/COF</th><th>IBS/CBS</th></tr></thead><tbody>' +
+        itens.map(function (x) { return '<tr><td>' + x.n + '</td><td class="m">' + esc(x.cod) + '</td><td class="m">' + esc(/^\d+$/.test(x.ean) ? x.ean : '') + '</td><td>' + esc(x.desc) + '</td><td class="m">' + esc(x.ncm) + '</td><td class="m">' + esc(x.cest) + '</td><td class="m">' + esc(x.cfop) + '</td><td class="m">' + esc(x.cst) + '</td><td>' + esc(x.un) + '</td>' +
+          '<td class="n">' + nq(x.q) + '</td><td class="n">' + n2(x.vu) + '</td><td class="n">' + n2(x.vp) + '</td><td class="n">' + (x.vd ? n2(x.vd) : '') + '</td><td class="n">' + (x.bc ? n2(x.bc) : '') + '</td><td class="n">' + (x.p ? n2(x.p) : '') + '</td><td class="n">' + (x.v ? n2(x.v) : '') + '</td><td class="n">' + (x.vst ? n2(x.vst) : '') + '</td><td class="n">' + (x.ipi ? n2(x.ipi) : '') + '</td><td class="m">' + esc(x.cstp) + '</td><td class="m">' + esc(x.ibs) + '</td></tr>'; }).join('') +
+        '</tbody></table>' +
+        '<div class="cx" style="margin-top:6px"><h3>Totais</h3><div class="g g6">' + [['Produtos', 'vProd'], ['Desconto', 'vDesc'], ['Frete', 'vFrete'], ['Seguro', 'vSeg'], ['Outras', 'vOutro'], ['IPI', 'vIPI'], ['BC ICMS', 'vBC'], ['ICMS', 'vICMS'], ['BC ST', 'vBCST'], ['ICMS ST', 'vST'], ['ICMS desonerado', 'vICMSDeson'], ['Total da nota', 'vNF']].map(function (t) { return '<div><small>' + t[0] + '</small><b>R$ ' + n2(xTag(tot, t[1])) + '</b></div>'; }).join('') + '</div></div>' +
+        (dups.length ? '<div class="cx"><h3>Duplicatas</h3>' + esc(dups.join('  |  ')) + '</div>' : '') +
+        '<div class="cx"><h3>Transporte</h3>' + esc(['Frete por conta: ' + ({ 0: 'emitente', 1: 'destinatário', 2: 'terceiros', 9: 'sem frete' }[xTag(tr, 'modFrete')] || xTag(tr, 'modFrete')), xTag(xBloco(tr, 'transporta'), 'xNome')].filter(Boolean).join(' · ')) + '</div>' +
+        (xTag(inf, 'infCpl') ? '<div class="cx"><h3>Informações complementares</h3>' + esc(xTag(inf, 'infCpl')) + '</div>' : '') +
+        '<div class="rod">Espelho para conferência e lançamento — não substitui o DANFE nem o XML. Farol Contábil · CPUSIS — Cem Por Um Sistemas · Epitaciolândia/AC</div>' +
+        '<script>setTimeout(function(){print()},500)<\/script></body></html>';
+      w.document.open(); w.document.write(html); w.document.close();
+    }).catch(function (e) { w.document.body.innerHTML = '<p style="font:14px Arial;padding:20px">Não consegui ler este XML: ' + esc(e.message) + '</p>'; });
+  }
+  window.farolEspelhoNota = espelhoNota;
+})();
+</script>
+<!-- ================= ANÁLISE FISCAL DOS PRODUTOS (antigo "Cadastro 2027"): confere produto a produto e gera a planilha com a correção ================= -->
 <style>
 .cad-f{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:4px 0 12px}
 .cad-f button.on{background:var(--brand,#0f6b55);color:#fff;border-color:transparent}
-.cad-t td.w{max-width:260px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cad-t td.w{max-width:240px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cad-t td.x{background:var(--bad-soft)}
+.cad-t td.x b{color:var(--bad)}
+.cad-t .de{display:block;font-size:11px;color:var(--muted);text-decoration:line-through}
 </style>
 <script>
 (function () {
   var URL_RTC = API_BANCO.replace(/\/farol$/, '/rtc');
-  var CAD = null;   // { ck, meses, linhas, resumo }
-  var DEVOL = /^[1-7]2\d\d$|^[1-7]41[01]$|^[1-7]50[34]$|^[1-7]55[3-6]$|^[1-7]66[0-2]$|^[1-7]90[1-9]$|^[1-7]91[0-9]$|^[1-7]92[0-9]$|^[1-7]949$/;  // devoluções, remessas e retornos: não descrevem a venda do produto
+  var CAD = null;
+  var DEVOL = /^[1-7]2\d\d$|^[1-7]41[01]$|^[1-7]50[34]$|^[1-7]55[3-6]$|^[1-7]66[0-2]$|^[1-7]90[1-9]$|^[1-7]91[0-9]$|^[1-7]92[0-9]$|^[1-7]949$/;
+  var CAMPOS = [['ncm', 'NCM'], ['icms', 'ICMS (CST/CSOSN)'], ['cfop', 'CFOP'], ['cest', 'CEST'], ['pis', 'PIS/COFINS'], ['ibs', 'IBS/CBS · cClassTrib']];
   var COLS = [
-    ['codigo', 'codigo', 'm'], ['ean', 'ean', 'm'], ['descricao', 'descricao'], ['ncm', 'ncm', 'm'], ['cest', 'cest', 'm'], ['unidade', 'unidade'],
-    ['notas', 'notas_de_venda', 'int'], ['ultima_venda', 'ultima_venda'],
-    ['icms_cst', 'icms_cst_csosn_atual', 'm'], ['icms_aliq', 'icms_aliquota_atual'], ['icms_red', 'icms_reducao_bc_atual'], ['cfop', 'cfop_mais_usado', 'm'], ['icms_alerta', 'icms_alerta'],
-    ['pis_cst', 'pis_cst_atual', 'm'], ['pis_aliq', 'pis_aliquota_atual'], ['cofins_cst', 'cofins_cst_atual', 'm'], ['cofins_aliq', 'cofins_aliquota_atual'],
-    ['ibs_cst', 'ibscbs_cst_atual', 'm'], ['cclass', 'cclasstrib_atual', 'm'],
-    ['ibs_cst_sug', 'ibscbs_cst_sugerido', 'm'], ['cclass_sug', 'cclasstrib_sugerido', 'm'], ['red_sug', 'reducao_ibscbs_pct'], ['trat_sug', 'tratamento_tributario'], ['desc_sug', 'descricao_cclasstrib'],
-    ['origem', 'origem_da_sugestao'], ['fornecedor', 'fornecedor_referencia'], ['ncm_receita', 'ncm_x_cclasstrib_receita'], ['status', 'status'], ['obs', 'observacao']
+    ['codigo', 'codigo', 'm'], ['ean', 'ean', 'm'], ['descricao', 'descricao'], ['unidade', 'unidade'], ['notas', 'notas_de_venda', 'int'], ['ultima_venda', 'ultima_venda'],
+    ['ncm', 'ncm_atual', 'm'], ['cest', 'cest_atual', 'm'], ['orig', 'icms_origem', 'm'], ['icms_cst', 'icms_cst_csosn_atual', 'm'], ['icms_aliq', 'icms_aliquota_atual'], ['cfop', 'cfop_atual', 'm'],
+    ['pis_cst', 'pis_cst_atual', 'm'], ['cofins_cst', 'cofins_cst_atual', 'm'], ['ibs_cst', 'ibscbs_cst_atual', 'm'], ['cclass', 'cclasstrib_atual', 'm'],
+    ['f_ncm', 'ncm_final', 'm'], ['f_cest', 'cest_final', 'm'], ['f_icms', 'icms_cst_csosn_final', 'm'], ['f_cfop', 'cfop_final', 'm'], ['f_pis', 'pis_cst_final', 'm'], ['f_cofins', 'cofins_cst_final', 'm'],
+    ['f_ibs', 'ibscbs_cst_final', 'm'], ['f_cclass', 'cclasstrib_final', 'm'], ['red', 'reducao_ibscbs_pct'], ['enquadramento', 'enquadramento_ibscbs'],
+    ['segmento_st', 'segmento_st_acre'], ['mva', 'mva_referencia'], ['monofasico', 'monofasico'], ['cesta', 'cesta_basica_acre'],
+    ['erros', 'campos_corrigidos'], ['status', 'status'], ['obs', 'observacao'], ['fornecedor', 'fornecedor_referencia'], ['ncm_receita', 'ncm_x_cclasstrib_receita'], ['aprovado', 'aprovado']
   ];
   function moda(o) { var m = null, n = -1; for (var k in o) if (o[k] > n) { n = o[k]; m = k; } return m; }
   function inc(o, k) { if (k == null || k === '') return; o[k] = (o[k] || 0) + 1; }
   function num(s) { return Number(s) || 0; }
   function ean(s) { s = soDig(s); return s.length >= 8 && !/^0+$/.test(s) ? s : ''; }
 
+  // motor das calculadoras (mesmas regras de GUIA-SN / GUIA-LP) e base NCM do banco
+  function carregarMotor() {
+    if (window.FAROL_MOTOR) return Promise.resolve(window.FAROL_MOTOR);
+    return new Promise(function (ok, erro) { var s = document.createElement('script'); s.src = (window.BASE_CALC || 'calc/') + 'motor.js?v=' + (window.VERSAO_PORTAL || ''); s.onload = function () { window.FAROL_MOTOR ? ok(window.FAROL_MOTOR) : erro(new Error('motor')); }; s.onerror = function () { erro(new Error('não consegui carregar as regras das calculadoras')); }; document.head.appendChild(s); });
+  }
+  window.carregarBaseNcm = function () {
+    var cache = null; try { cache = JSON.parse(localStorage.getItem('farol-base-ncm') || 'null'); } catch (e) { }
+    var monta = function (b) { var m = {}; b.rows.forEach(function (r) { var p = r.split('|'); m[p[0]] = { desc: p[1], seg: p[2] === '' ? null : b.segs[+p[2]], mva: p[3] === '' ? null : Number(p[3]), mono: p[4] === '' ? null : b.monos[+p[4]] }; }); m._versao = b.versao; return m; };
+    return chamar('portalNcmBase', TOKEN, cache && cache.versao || '').then(function (r) {
+      if (r.igual && cache) return monta(cache);
+      try { localStorage.setItem('farol-base-ncm', JSON.stringify({ versao: r.versao, segs: r.segs, monos: r.monos, rows: r.rows })); } catch (e) { }
+      return monta(r);
+    }).catch(function (e) { if (cache) return monta(cache); throw e; });
+  };
+  function regimeAtual() {
+    var crt = String((RESUMO && RESUMO.crt) || '');
+    var inf = String((DADOS.regimes && DADOS.regimes[chaveUnid(ATUAL.u.contabilidade, rotuloPainel(ATUAL.u))]) || '').toUpperCase();
+    if (crt === '1' || crt === '2' || crt === '4') return 'SN';
+    if (crt === '3') return /REAL/.test(inf) ? 'REAL' : 'LP';
+    if (/SN|SIMPLES|MEI/.test(inf)) return 'SN';
+    return /REAL/.test(inf) ? 'REAL' : 'LP';
+  }
+
   window.telaCadastro = function (c) {
     var u = ATUAL.u, ck = chaveUnid(u.contabilidade, rotuloPainel(u));
-    if (CAD && CAD.ck === ck) { desenhar(c); return; }
+    if (CAD && CAD.ck === ck && CAD.mesTela === ATUAL.mes) { desenhar(c); return; }
     var pos = u.meses.indexOf(ATUAL.mes), meses3 = u.meses.slice(Math.max(0, pos), Math.max(0, pos) + 3);
     if (!meses3.length) meses3 = [ATUAL.mes];
-    c.innerHTML = '<div class="card"><h2>Cadastro de produtos para 2027</h2>' +
-      '<p class="nota">Monta a <b>planilha padrão do Farol</b> com a tributação de cada produto vendido: como está hoje (ICMS, PIS/COFINS e IBS/CBS) e o enquadramento sugerido de IBS/CBS para 2027, ' +
-      'usando as notas de compra do próprio cliente (o mesmo produto, pelo código de barras, como o fornecedor classifica) e a tabela oficial da Receita. Nada é alterado no sistema do cliente: a planilha é para a contabilidade revisar e depois importar.</p>' +
+    var rg = regimeAtual();
+    c.innerHTML = '<div class="card"><h2>Análise fiscal dos produtos</h2>' +
+      '<p class="nota">Confere <b>produto a produto</b> o que saiu nas notas de venda — <b>NCM, CST de ICMS / CSOSN, CFOP, CEST, CST de PIS e COFINS, IBS/CBS e cClassTrib</b> — com as mesmas regras das calculadoras da CPUSIS (' + (rg === 'SN' ? 'Simples Nacional' : rg === 'REAL' ? 'Lucro Real, pelas regras do Lucro Presumido' : 'Lucro Presumido') + ', RICMS/AC, base de 10.687 NCMs com ST e monofásicos), ' +
+      'as notas de compra do próprio cliente e a tabela oficial da Receita. O que estiver diferente aparece aqui e sai numa planilha <b>com a correção pronta</b> (colunas <i>_final</i>) para a contabilidade aprovar e o cliente importar no sistema.</p>' +
       '<div class="ferr"><label class="sub" for="cadPer">Usar as notas de&nbsp;<select id="cadPer">' +
       '<option value="1">' + esc(nomeMes(ATUAL.mes)) + '</option>' +
       (meses3.length > 1 ? '<option value="3" selected>' + esc(nomeMes(ATUAL.mes)) + ' e os ' + (meses3.length - 1) + ' meses anteriores</option>' : '') + '</select></label>' +
-      '<button class="btn" type="button" id="cadGerar">Montar a planilha</button><div class="barra hidden" id="cadBarra"><i></i></div><span class="sub" id="cadInfo"></span></div>' +
-      '<p class="nota">Os XML são abertos aqui no seu computador (pode levar de alguns segundos a poucos minutos, conforme o volume).</p></div>';
+      '<button class="btn" type="button" id="cadGerar">Analisar os produtos</button><div class="barra hidden" id="cadBarra"><i></i></div><span class="sub" id="cadInfo"></span></div>' +
+      '<p class="nota">Os XML são abertos aqui no seu computador (de alguns segundos a poucos minutos, conforme o volume). Nada é alterado no sistema do cliente.</p></div>';
     $('cadGerar').onclick = function () {
       var meses = $('cadPer').value === '3' ? meses3 : [ATUAL.mes];
       $('cadGerar').disabled = true;
-      montar(u, ck, meses).then(function () { desenhar($('conteudo')); }).catch(function (e) { $('cadGerar').disabled = false; info('Não deu certo: ' + e.message, null); });
+      montar(u, ck, meses, rg).then(function () { desenhar($('conteudo')); }).catch(function (e) { $('cadGerar').disabled = false; info('Não deu certo: ' + e.message, null); });
     };
   };
   function info(t, p) { if (!$('cadInfo')) return; $('cadInfo').textContent = t; var b = $('cadBarra'); if (p == null) b.classList.add('hidden'); else { b.classList.remove('hidden'); b.firstChild.style.width = (100 * p) + '%'; } }
 
-  function montar(u, ck, meses) {
+  function montar(u, ck, meses, rg) {
     if (!BUSCA || BUSCA.ck !== ck) BUSCA = { ck: ck, meses: {}, docs: [], porChave: {}, sel: {}, ord: 'data', asc: false, cnpj: RESUMO && RESUMO.cnpj };
     var cadeia = Promise.resolve();
-    meses.forEach(function (m, i) { cadeia = cadeia.then(function () { return carregarMesBusca(u, m, function (t, p) { info(t, p == null ? null : (i + p) / meses.length * 0.6); }); }); });
-    var P = {}, F = {}, FN = {};
+    meses.forEach(function (m, i) { cadeia = cadeia.then(function () { return carregarMesBusca(u, m, function (t, p) { info(t, p == null ? null : (i + p) / meses.length * 0.55); }); }); });
+    var P = {}, F = {}, FN = {}, MOT = null, BASE = null;
+    var extras = Promise.all([carregarMotor(), carregarBaseNcm()]).then(function (r) { MOT = r[0]; BASE = r[1]; });
     return cadeia.then(function () {
       var docs = BUSCA.docs.filter(function (d) { return meses.indexOf(d.mes) >= 0 && d.sit === 'Autorizada' && (d.tipo === 'nfe' || d.tipo === 'nfce' || d.tipo === 'compra'); });
       var i = 0, feitos = 0, utf = new TextDecoder('utf-8');
       var um = function (d) {
         return bytesXml(d).then(function (b) {
           var s = utf.decode(b), dets = s.split(/<(?:\w+:)?det\s/).slice(1);
+          var ufEmit = xTag(xBloco(s, 'enderEmit'), 'UF');
           dets.forEach(function (det) {
             var pr = xBloco(det, 'prod'), im = xBloco(det, 'imposto'), cfop = xTag(pr, 'CFOP');
             var g = xBloco(im, 'IBSCBS'), cst = xTag(g, 'CST'), cc = xTag(g, 'cClassTrib'), e = ean(xTag(pr, 'cEAN')) || ean(xTag(pr, 'cEANTrib'));
             if (d.tipo === 'compra') {
-              if (!cc) return;
-              var nc = xTag(pr, 'NCM'); if (nc) { var fn = FN[nc] = FN[nc] || { cc: {}, forn: {} }; inc(fn.cc, cst + '|' + cc); inc(fn.forn, d.emitNome || d.emitDoc); }
+              var nc = xTag(pr, 'NCM');
+              if (cc && nc) { var fn = FN[nc] = FN[nc] || { cc: {}, forn: {} }; inc(fn.cc, cst + '|' + cc); inc(fn.forn, d.emitNome || d.emitDoc); }
               if (!e) return;
-              var f = F[e] = F[e] || { cc: {}, forn: {} }; inc(f.cc, cst + '|' + cc); inc(f.forn, d.emitNome || d.emitDoc); return;
+              var f = F[e] = F[e] || { cc: {}, forn: {}, ncm: {}, cest: {}, uf: {} }; if (cc) inc(f.cc, cst + '|' + cc); inc(f.forn, d.emitNome || d.emitDoc); inc(f.ncm, nc); inc(f.cest, xTag(pr, 'CEST')); inc(f.uf, ufEmit); return;
             }
             if (DEVOL.test(cfop)) return;
             var cod = xTag(pr, 'cProd'); if (!cod) return;
-            var p = P[cod] = P[cod] || { codigo: cod, desc: {}, ean: {}, ncm: {}, cest: {}, un: {}, notas: 0, ult: '', icms: {}, aliqI: {}, redI: {}, cfop: {}, pis: {}, aliqP: {}, cof: {}, aliqC: {}, ibs: {}, _d: {} };
+            var p = P[cod] = P[cod] || { codigo: cod, desc: {}, ean: {}, ncm: {}, cest: {}, un: {}, notas: 0, ult: '', orig: {}, icms: {}, aliqI: {}, cfop: {}, pis: {}, cof: {}, ibs: {}, _d: {} };
             if (!p._d[d.chave]) { p._d[d.chave] = 1; p.notas++; }
             if (d.data > p.ult) p.ult = d.data;
             inc(p.desc, xTag(pr, 'xProd')); inc(p.ean, e); inc(p.ncm, xTag(pr, 'NCM')); inc(p.cest, xTag(pr, 'CEST')); inc(p.un, xTag(pr, 'uCom')); inc(p.cfop, cfop);
-            var ic = xBloco(im, 'ICMS'), ccst = xTag(ic, 'CST') ? xTag(ic, 'orig') + xTag(ic, 'CST') : xTag(ic, 'CSOSN');
-            inc(p.icms, ccst); inc(p.aliqI, xTag(ic, 'pICMS')); inc(p.redI, xTag(ic, 'pRedBC'));
-            var pis = xBloco(im, 'PIS'), cof = xBloco(im, 'COFINS');
-            inc(p.pis, xTag(pis, 'CST')); inc(p.aliqP, xTag(pis, 'pPIS')); inc(p.cof, xTag(cof, 'CST')); inc(p.aliqC, xTag(cof, 'pCOFINS'));
+            var ic = xBloco(im, 'ICMS');
+            inc(p.orig, xTag(ic, 'orig')); inc(p.icms, xTag(ic, 'CST') || xTag(ic, 'CSOSN')); inc(p.aliqI, xTag(ic, 'pICMS'));
+            inc(p.pis, xTag(xBloco(im, 'PIS'), 'CST')); inc(p.cof, xTag(xBloco(im, 'COFINS'), 'CST'));
             if (cst || cc) inc(p.ibs, cst + '|' + cc);
           });
-        }).catch(function () { }).then(function () { feitos++; if (feitos % 150 === 0) info('Lendo os produtos das notas… ' + int(feitos) + ' de ' + int(docs.length), 0.6 + 0.3 * feitos / docs.length); });
+        }).catch(function () { }).then(function () { feitos++; if (feitos % 150 === 0) info('Lendo os produtos das notas… ' + int(feitos) + ' de ' + int(docs.length), 0.55 + 0.3 * feitos / docs.length); });
       };
       var trab = function () { if (i >= docs.length) return Promise.resolve(); var d = docs[i++]; return um(d).then(trab); };
       var t = []; for (var w = 0; w < 10; w++) t.push(trab());
       return Promise.all(t).then(function () { return docs.length; });
     }).then(function (nDocs) {
-      info('Buscando a tabela oficial da Receita…', 0.92);
-      return fetch(URL_RTC + '?acao=tabela&data=' + meses[0] + '-15').then(function (r) { return r.json(); }).then(function (j) { return j.ok ? j.tabela : null; }).catch(function () { return null; })
-        .then(function (tab) { return { tab: tab, nDocs: nDocs }; });
+      info('Carregando as regras das calculadoras e a tabela da Receita…', 0.88);
+      return extras.then(function () {
+        return fetch(URL_RTC + '?acao=tabela&data=' + meses[0] + '-15').then(function (r) { return r.json(); }).then(function (j) { return j.ok ? j.tabela : null; }).catch(function () { return null; });
+      }).then(function (tab) { return { tab: tab, nDocs: nDocs }; });
     }).then(function (x) {
       var cls = {}; ((x.tab && x.tab.classes) || []).forEach(function (c) { cls[c.c] = c; });
+      var regra = MOT.regra[rg === 'SN' ? 'SN' : 'LP'];
       var linhas = Object.keys(P).map(function (k) {
         var p = P[k], L = { codigo: p.codigo, descricao: moda(p.desc) || '', ean: moda(p.ean) || '', ncm: moda(p.ncm) || '', cest: moda(p.cest) || '', unidade: moda(p.un) || '', notas: p.notas, ultima_venda: p.ult ? dataBR(p.ult) : '' };
-        L.icms_cst = moda(p.icms) || ''; L.icms_aliq = num(moda(p.aliqI)); L.icms_red = num(moda(p.redI)); L.cfop = moda(p.cfop) || '';
-        L.pis_cst = moda(p.pis) || ''; L.pis_aliq = num(moda(p.aliqP)); L.cofins_cst = moda(p.cof) || ''; L.cofins_aliq = num(moda(p.aliqC));
-        var alertas = [];
-        if (Object.keys(p.icms).length > 1) alertas.push('vendido com CST de ICMS diferentes (' + Object.keys(p.icms).join(', ') + ')');
-        if (Object.keys(p.ncm).length > 1) alertas.push('mais de um NCM nas notas (' + Object.keys(p.ncm).join(', ') + ')');
+        L.orig = moda(p.orig) || '0'; L.icms_cst = moda(p.icms) || ''; L.icms_aliq = num(moda(p.aliqI)); L.cfop = moda(p.cfop) || '';
+        L.pis_cst = moda(p.pis) || ''; L.cofins_cst = moda(p.cof) || '';
         var atual = moda(p.ibs) || '|', at = atual.split('|'); L.ibs_cst = at[0]; L.cclass = at[1];
-        if (Object.keys(p.ibs).length > 1) alertas.push('vendido com mais de um cClassTrib (' + Object.keys(p.ibs).map(function (z) { return z.split('|')[1]; }).join(', ') + ')');
-        // sugestão: fornecedor (mesmo código de barras) > o que já usa nas vendas > tributação integral
-        var f = L.ean && F[L.ean], sug, origem, forn = '';
-        if (f) { sug = moda(f.cc); origem = 'nota de compra do fornecedor (mesmo código de barras)'; forn = moda(f.forn) || ''; }
-        else if (L.cclass) { sug = atual; origem = 'já usado nas vendas do cliente'; }
-        else if (L.ncm && FN[L.ncm]) { sug = moda(FN[L.ncm].cc); origem = 'nota de compra de produto com o mesmo NCM'; forn = moda(FN[L.ncm].forn) || ''; }
-        else { sug = '000|000001'; origem = 'regra geral: tributação integral'; }
-        var sg = sug.split('|'); L.ibs_cst_sug = sg[0] || (sg[1] || '').slice(0, 3); L.cclass_sug = sg[1]; L.fornecedor = forn; L.origem = origem;
-        var c = cls[L.cclass_sug];
-        L.red_sug = c ? c.rCBS : ''; L.trat_sug = c ? c.trat : ''; L.desc_sug = c ? c.d : (x.tab ? 'cClassTrib não encontrado na tabela oficial' : '');
-        if (!x.tab) L.desc_sug = 'tabela oficial indisponível agora';
-        L.icms_alerta = alertas.filter(function (a) { return /ICMS/.test(a); }).join('; ');
-        var obs = alertas.filter(function (a) { return !/ICMS/.test(a); });
-        if (L.cclass_sug && L.cclass_sug.slice(0, 3) !== L.ibs_cst_sug) obs.push('o CST precisa ser os 3 primeiros dígitos do cClassTrib');
-        if (L.cclass && L.cclass !== L.cclass_sug) obs.push('hoje sai com ' + L.cclass + '; o fornecedor ' + (forn ? '(' + forn + ') ' : '') + 'usa ' + L.cclass_sug + ': decidir qual está certo');
-        if (c && c.rCBS > 0) obs.push('redução de ' + c.rCBS + '%: confirme que o NCM está no anexo da LC 214/2025');
-        if (!L.ncm) obs.push('produto sem NCM nas notas');
-        L.status = !L.cclass ? 'Sem classificação hoje' : (L.cclass !== L.cclass_sug || (x.tab && !c) || alertas.length ? 'Revisar' : 'OK');
+        var obs = [], erros = [], f = L.ean && F[L.ean];
+        if (Object.keys(p.icms).length > 1) obs.push('saiu com ' + Object.keys(p.icms).length + ' CST/CSOSN diferentes (' + Object.keys(p.icms).join(', ') + ')');
+        if (Object.keys(p.ncm).length > 1) obs.push('saiu com mais de um NCM (' + Object.keys(p.ncm).join(', ') + ')');
+        // 1) NCM
+        var ncm = soDig(L.ncm), rec = BASE[ncm];
+        L.f_ncm = ncm;
+        if (!rec) {
+          var fNcm = f && moda(f.ncm);
+          if (fNcm && BASE[fNcm]) { L.f_ncm = fNcm; rec = BASE[fNcm]; erros.push('ncm'); obs.push('NCM ' + (ncm || 'vazio') + ' não existe na tabela; o fornecedor usa ' + fNcm + ' para o mesmo código de barras'); }
+          else { erros.push('ncm'); obs.push('NCM ' + (ncm || 'vazio') + ' não existe na tabela de NCM — corrigir no cadastro (não dá para sugerir sozinho)'); }
+        } else if (f && moda(f.ncm) && moda(f.ncm) !== ncm && BASE[moda(f.ncm)]) obs.push('o fornecedor usa o NCM ' + moda(f.ncm) + ' para o mesmo código de barras: conferir');
+        L.f_cest = L.cest; L.f_icms = L.icms_cst; L.f_cfop = L.cfop; L.f_pis = L.pis_cst; L.f_cofins = L.cofins_cst; L.f_ibs = L.ibs_cst; L.f_cclass = L.cclass;
+        if (rec) {
+          L.segmento_st = rec.seg || ''; L.mva = rec.mva == null ? '' : rec.mva; L.monofasico = rec.mono || '';
+          var cesta = MOT.qualifyCestaAC(L.f_ncm, false), item = cesta && cesta.item;
+          L.cesta = cesta && cesta.qualifica ? item.nome : (item && item.interna ? item.nome + ' (só produção do Acre)' : '');
+          var e = regra({ seg: rec.seg, mono: rec.mono }, cesta);
+          // 2) ICMS
+          var cstAtual = rg === 'SN' ? L.icms_cst : L.icms_cst.slice(-2);
+          if (cstAtual !== e.cst) {
+            L.f_icms = e.cst; erros.push('icms');
+            obs.push((rg === 'SN' ? 'CSOSN ' : 'CST ') + (cstAtual || 'vazio') + ' → ' + e.cst + (cesta && cesta.qualifica ? ' (cesta básica do Acre: ' + item.nome + ' — venda interna sem destaque de ICMS)' : rec.seg ? ' (NCM com ST no Acre: ' + rec.seg + ')' : ' (sem ST e fora da cesta: tributação normal)'));
+          }
+          // 3) CFOP (só nas vendas dentro do estado)
+          if (/^5(101|102|401|403|405)$/.test(L.cfop) && L.cfop !== e.cfop && !(e.cfop === '5405' && /^5(401|403)$/.test(L.cfop)) && !(e.cfop === '5102' && L.cfop === '5101')) { L.f_cfop = e.cfop; erros.push('cfop'); obs.push('CFOP ' + L.cfop + ' → ' + e.cfop); }
+          // 4) CEST
+          if (rec.seg && !L.cest) { erros.push('cest'); var fc = f && moda(f.cest); if (fc) { L.f_cest = fc; obs.push('falta o CEST (produto com ST); o fornecedor usa ' + fc); } else obs.push('falta o CEST (produto com ST): informar no cadastro'); }
+          // 5) PIS/COFINS
+          // monofásico tem de sair 04; fora dele, o 04 está errado. Alíquota zero / isenção / suspensão (06 a 09) não é desfeita
+          // pela regra geral: produtos da cesta federal (Lei 10.925/2004) e outros benefícios saem assim de propósito.
+          var okPis = function (v) {
+            if (rec.mono) return v === '04';
+            if (v === '04') return false;
+            if (rg === 'SN') return v === '49' || v === '99' || /^0[6-9]$/.test(v);
+            return v === e.cst_pis || /^0[6-9]$/.test(v) || (rg === 'REAL' && /^0[1-2]$/.test(v));
+          };
+          if (!okPis(L.pis_cst) || !okPis(L.cofins_cst)) {
+            L.f_pis = okPis(L.pis_cst) ? L.pis_cst : e.cst_pis; L.f_cofins = okPis(L.cofins_cst) ? L.cofins_cst : e.cst_cofins; erros.push('pis');
+            obs.push('PIS/COFINS ' + (L.pis_cst || '—') + '/' + (L.cofins_cst || '—') + ' → ' + L.f_pis + '/' + L.f_cofins + (rec.mono ? ' (monofásico: ' + rec.mono + ')' : L.pis_cst === '04' ? ' (NCM não é monofásico)' : ''));
+          } else if (/^0[6-9]$/.test(L.pis_cst) && !rec.mono) obs.push('PIS/COFINS ' + L.pis_cst + ' (alíquota zero/isenção): confirmar o enquadramento do produto');
+          // 6) IBS/CBS e cClassTrib: regra das calculadoras > fornecedor confirmado > o que já usa
+          var rt = MOT.classifyRT(L.f_ncm), sug = rt.cst + '|' + rt.ct, origem = 'regra das calculadoras (LC 214/2025)';
+          var fSug = f && moda(f.cc), nSug = FN[L.f_ncm] && moda(FN[L.f_ncm].cc);
+          if (rt.ct === '000001' && fSug && fSug.split('|')[1] !== '000001') { L._parForn = L.f_ncm + '|' + fSug.split('|')[1]; L._fSug = fSug; }
+          L.fornecedor = f ? (moda(f.forn) || '') : '';
+          var sg = sug.split('|'); L.f_ibs = sg[0]; L.f_cclass = sg[1]; L.origem_ibs = origem;
+          if (fSug && fSug !== sug) obs.push('o fornecedor ' + (L.fornecedor ? '(' + L.fornecedor + ') ' : '') + 'manda ' + fSug.replace('|', ' / ') + (L._parForn ? ': se a Receita confirmar o NCM, vale o do fornecedor' : ''));
+          else if (!fSug && nSug && nSug !== sug) obs.push('fornecedores de produtos com o mesmo NCM usam ' + nSug.replace('|', ' / '));
+          if (rt.caveat && rt.ct !== '000001') obs.push(rt.caveat);
+          if (L.cclass !== L.f_cclass || L.ibs_cst !== L.f_ibs) { erros.push('ibs'); if (!L.cclass) obs.push('o sistema ainda não preenche IBS/CBS neste produto' + (rg === 'SN' ? ' (Simples: obrigatório a partir de 01/2027)' : '')); }
+          var c = cls[L.f_cclass]; L.red = c ? c.rCBS : ''; L.enquadramento = rt.label + (c && c.d ? ' · ' + c.d : '');
+        }
+        L.erros = erros.map(function (k) { return (CAMPOS.filter(function (x) { return x[0] === k; })[0] || [k, k])[1]; }).join(', ');
+        L._erros = erros;
+        L.status = erros.indexOf('ncm') >= 0 && !rec ? 'NCM inválido' : erros.length ? 'Corrigir' : obs.length ? 'Conferir' : 'OK';
         L.obs = obs.join('; ');
-        L._par = L.ncm && L.cclass_sug && L.cclass_sug !== '000001' ? L.ncm + '|' + L.cclass_sug : '';
+        L.aprovado = '';
+        L._par = L._parForn || (L.f_ncm && L.f_cclass && L.f_cclass !== '000001' ? L.f_ncm + '|' + L.f_cclass : '');
         return L;
       });
-      linhas.sort(function (a, b) { var o = { 'Revisar': 0, 'Sem classificação hoje': 1, 'OK': 2 }; return (o[a.status] - o[b.status]) || (b.notas - a.notas); });
-      CAD = { ck: ATUAL.u && chaveUnid(ATUAL.u.contabilidade, rotuloPainel(ATUAL.u)), meses: meses, linhas: linhas, nDocs: x.nDocs, tab: x.tab, filtro: 'todos', nCompras: Object.keys(F).length };
-      // NCM x cClassTrib que a Receita já respondeu (consulta feita de madrugada pelo Farol)
+      var ordem = { 'NCM inválido': 0, 'Corrigir': 1, 'Conferir': 2, 'OK': 3 };
+      linhas.sort(function (a, b) { return (ordem[a.status] - ordem[b.status]) || (b.notas - a.notas); });
+      CAD = { ck: chaveUnid(ATUAL.u.contabilidade, rotuloPainel(ATUAL.u)), mesTela: ATUAL.mes, meses: meses, linhas: linhas, nDocs: x.nDocs, tab: x.tab, filtro: 'erro', regime: rg, motor: MOT.origem, base: BASE._versao };
+      // pares NCM x cClassTrib já respondidos pela Receita (consulta feita de madrugada)
       var pares = []; linhas.forEach(function (l) { if (l._par && pares.indexOf(l._par) < 0) pares.push(l._par); });
       if (!pares.length || !USA_BANCO) return;
-      var u = ATUAL.u;
-      return fetch(URL_RTC, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ acao: 'tela', token: TOKEN, contabilidade: u.contabilidade, cliente: u.cliente, subpasta: u.subpasta, mes: meses[0], chaves: [], pares: pares.slice(0, 600) }) })
+      var un = ATUAL.u;
+      return fetch(URL_RTC, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ acao: 'tela', token: TOKEN, contabilidade: un.contabilidade, cliente: un.cliente, subpasta: un.subpasta, mes: meses[0], chaves: [], pares: pares.slice(0, 600) }) })
         .then(function (r) { return r.json(); }).then(function (j) {
           if (!j.ok) return;
           linhas.forEach(function (l) {
-            var v = l._par ? j.r.ncm[l._par] : undefined;
-            l.ncm_receita = v === true ? 'confirmado pela Receita' : v === false ? 'NCM NÃO vinculado ao cClassTrib' : (l._par ? 'não consultado ainda' : '');
-            if (v === false) { l.status = 'Revisar'; l.obs = 'a Receita diz que este NCM não pode usar o cClassTrib sugerido' + (l.obs ? '; ' + l.obs : ''); }
+            if (!l._par) return;
+            var v = j.r.ncm[l._par];
+            if (l._parForn && v === true) {   // a Receita confirma o enquadramento do fornecedor: vale ele
+              var s2 = l._fSug.split('|'); l.f_ibs = s2[0]; l.f_cclass = s2[1]; l.origem_ibs = 'fornecedor, confirmado pela Receita';
+              var c = cls[l.f_cclass]; l.red = c ? c.rCBS : ''; l.enquadramento = 'fornecedor (confirmado pela Receita)' + (c && c.d ? ' · ' + c.d : '');
+              l._erros = l._erros.filter(function (e) { return e !== 'ibs'; }); if (l.cclass !== l.f_cclass || l.ibs_cst !== l.f_ibs) l._erros.push('ibs');
+              l.erros = l._erros.map(function (k) { return (CAMPOS.filter(function (x) { return x[0] === k; })[0] || [k, k])[1]; }).join(', ');
+              l.status = l._erros.length ? 'Corrigir' : 'Conferir';
+            }
+            l.ncm_receita = v === true ? 'confirmado pela Receita' : v === false ? 'NCM NÃO vinculado ao cClassTrib' : 'não consultado ainda';
+            if (v === false && !l._parForn) { l.status = 'Corrigir'; l.obs = 'a Receita diz que este NCM não pode usar o cClassTrib ' + l.f_cclass + '; ' + l.obs; }
           });
         }).catch(function () { });
     });
   }
 
   function desenhar(c) {
-    var L = CAD.linhas, cont = { OK: 0, 'Revisar': 0, 'Sem classificação hoje': 0 }, icmsAl = 0, red = 0, forn = 0;
-    L.forEach(function (l) { cont[l.status]++; if (l.icms_alerta) icmsAl++; if (Number(l.red_sug) > 0) red++; if (l.fornecedor) forn++; });
-    var vis = L.filter(function (l) { return CAD.filtro === 'todos' || l.status === CAD.filtro || (CAD.filtro === 'icms' && l.icms_alerta); });
+    var L = CAD.linhas, cont = { OK: 0, 'Corrigir': 0, 'Conferir': 0, 'NCM inválido': 0 }, porCampo = {};
+    CAMPOS.forEach(function (k) { porCampo[k[0]] = 0; });
+    L.forEach(function (l) { cont[l.status]++; l._erros.forEach(function (e) { porCampo[e]++; }); });
+    var vis = L.filter(function (l) {
+      var f = CAD.filtro;
+      return f === 'todos' || (f === 'erro' && l._erros.length) || l.status === f || (porCampo[f] !== undefined && l._erros.indexOf(f) >= 0);
+    });
+    var cel = function (l, k, fk) { var e = l[k] !== l[fk]; return '<td class="m' + (e ? ' x' : '') + '">' + (e ? '<span class="de">' + esc(l[k] || '—') + '</span><b>' + esc(l[fk] || '—') + '</b>' : esc(l[k] || '—')) + '</td>'; };
     c.innerHTML =
-      '<div class="card"><div class="ch"><h2>Cadastro de produtos para 2027</h2><div class="ferr"><button class="btn" type="button" id="cadXlsx">Baixar planilha (Excel)</button><button class="btn sec" type="button" id="cadCsv">Baixar em CSV</button><button class="btn sec" type="button" id="cadRefazer">Montar de novo</button></div></div>' +
-      '<p class="nota" style="margin:0">' + int(L.length) + ' produtos vendidos em ' + CAD.meses.map(nomeMes).join(', ') + ' · ' + int(CAD.nDocs) + ' notas lidas · ' + int(forn) + ' produtos com referência na nota do fornecedor' +
-      (CAD.tab ? ' · tabela oficial ' + esc(CAD.tab.versao || '') : ' · <b>tabela oficial da Receita indisponível agora</b> (as reduções ficam em branco; monte de novo mais tarde)') + '.</p></div>' +
+      '<div class="card"><div class="ch"><h2>Análise fiscal dos produtos</h2><div class="ferr"><button class="btn" type="button" id="cadXlsx">Baixar planilha com a correção (Excel)</button><button class="btn sec" type="button" id="cadXlsxTudo">Excel com todos</button><button class="btn sec" type="button" id="cadCsv">CSV</button><button class="btn sec" type="button" id="cadRefazer">Analisar de novo</button></div></div>' +
+      '<p class="nota" style="margin:0">' + int(L.length) + ' produtos vendidos em ' + CAD.meses.map(nomeMes).join(', ') + ' · ' + int(CAD.nDocs) + ' notas lidas · regras: ' + (CAD.regime === 'SN' ? 'Simples Nacional' : CAD.regime === 'REAL' ? 'Lucro Real (pelas do Presumido)' : 'Lucro Presumido') + ' (' + esc(CAD.motor) + ')' +
+      (CAD.tab ? ' · tabela da Receita ' + esc(CAD.tab.versao || '') : ' · tabela da Receita indisponível agora (reduções em branco)') + '.</p></div>' +
       '<div class="kpis kpis4">' +
-        kpi2('Prontos (OK)', int(cont.OK), 'cadastro já coerente', null, 'ok') +
-        kpi2('Para revisar', int(cont['Revisar']), 'diferente do fornecedor ou da tabela', null, cont['Revisar'] ? 'warn' : 'muted') +
-        kpi2('Sem IBS/CBS hoje', int(cont['Sem classificação hoje']), 'precisam de CST e cClassTrib até 2027', null, cont['Sem classificação hoje'] ? 'bad' : 'muted') +
-        kpi2('Alertas de ICMS', int(icmsAl), 'mesmo produto com CST diferentes', null, icmsAl ? 'warn' : 'muted') +
+        kpi2('Precisam de correção', int(cont['Corrigir'] + cont['NCM inválido']), int(cont['NCM inválido']) + ' com NCM que não existe', null, cont['Corrigir'] + cont['NCM inválido'] ? 'bad' : 'ok') +
+        kpi2('Para conferir', int(cont['Conferir']), 'certos pelas regras, com algum aviso', null, cont['Conferir'] ? 'warn' : 'muted') +
+        kpi2('Corretos', int(cont.OK), 'nada a mudar', null, 'ok') +
+        kpi2('Campos a corrigir', int(Object.keys(porCampo).reduce(function (a, k) { return a + porCampo[k]; }, 0)), CAMPOS.filter(function (k) { return porCampo[k[0]]; }).map(function (k) { return k[1].split(' ')[0] + ' ' + porCampo[k[0]]; }).join(' · ') || 'nenhum', null, 'muted') +
       '</div>' +
-      '<section class="card"><div class="cad-f">' + [['todos', 'Todos'], ['Revisar', 'Revisar'], ['Sem classificação hoje', 'Sem IBS/CBS hoje'], ['OK', 'OK'], ['icms', 'Alertas de ICMS']].map(function (f) {
-        return '<button class="btn sec' + (CAD.filtro === f[0] ? ' on' : '') + '" type="button" data-fl="' + esc(f[0]) + '">' + f[1] + '</button>'; }).join('') +
-        '<span class="sub">mostrando ' + Math.min(200, vis.length) + ' de ' + int(vis.length) + ' · a planilha leva todos</span></div>' +
-        '<div class="tbl"><table class="cad-t"><thead><tr><th>Código</th><th>Produto</th><th>NCM</th><th>ICMS</th><th>PIS/COF</th><th>IBS/CBS hoje</th><th>Sugerido 2027</th><th>Origem</th><th>Status</th></tr></thead><tbody>' +
+      '<section class="card"><div class="cad-f">' + [['erro', 'Com erro'], ['Conferir', 'Para conferir'], ['OK', 'Corretos'], ['todos', 'Todos']].concat(CAMPOS.filter(function (k) { return porCampo[k[0]]; }).map(function (k) { return [k[0], k[1] + ' (' + porCampo[k[0]] + ')']; })).map(function (f) {
+        return '<button class="btn sec' + (CAD.filtro === f[0] ? ' on' : '') + '" type="button" data-fl="' + esc(f[0]) + '">' + esc(f[1]) + '</button>'; }).join('') +
+        '<span class="sub">mostrando ' + Math.min(200, vis.length) + ' de ' + int(vis.length) + ' · riscado = como está · em destaque = como deve ficar</span></div>' +
+        '<div class="tbl"><table class="cad-t"><thead><tr><th>Código</th><th>Produto</th><th>NCM</th><th>CEST</th><th>' + (CAD.regime === 'SN' ? 'CSOSN' : 'CST ICMS') + '</th><th>CFOP</th><th>PIS</th><th>COFINS</th><th>CST IBS/CBS</th><th>cClassTrib</th><th>Status</th></tr></thead><tbody>' +
         vis.slice(0, 200).map(function (l) {
-          return '<tr><td class="m">' + esc(l.codigo) + '</td><td class="w" title="' + esc(l.descricao) + '">' + esc(l.descricao) + '</td><td class="m">' + esc(l.ncm) + '</td><td class="m">' + esc(l.icms_cst) + (l.icms_aliq ? ' · ' + aliq(l.icms_aliq) : '') + (l.icms_alerta ? ' <span class="pill warn" title="' + esc(l.icms_alerta) + '">!</span>' : '') + '</td>' +
-            '<td class="m">' + esc(l.pis_cst) + '/' + esc(l.cofins_cst) + '</td><td class="m">' + (l.cclass ? esc(l.ibs_cst + ' · ' + l.cclass) : '<span class="sub">—</span>') + '</td>' +
-            '<td class="m"><b>' + esc(l.ibs_cst_sug + ' · ' + l.cclass_sug) + '</b>' + (Number(l.red_sug) ? ' <span class="sub">−' + l.red_sug + '%</span>' : '') + '</td><td class="sub" title="' + esc(l.origem + (l.fornecedor ? ' · ' + l.fornecedor : '')) + '">' + esc(/barras/.test(l.origem) ? 'fornecedor (cód. barras)' : /mesmo NCM/.test(l.origem) ? 'fornecedor (mesmo NCM)' : /vendas/.test(l.origem) ? 'vendas do cliente' : 'regra geral') + '</td>' +
-            '<td><span class="pill ' + (l.status === 'OK' ? '' : l.status === 'Revisar' ? 'warn' : 'bad') + '" title="' + esc(l.obs || '') + '">' + esc(l.status) + '</span></td></tr>';
-        }).join('') + '</tbody></table></div></section>' +
-      '<section class="card"><h2>Como usar</h2><ul class="lst">' +
-        '<li><b>Baixar planilha (Excel)</b> gera o arquivo <i>Cadastro 2027</i> com três abas: <b>Produtos</b> (uma linha por produto, colunas fixas no padrão Farol), <b>Resumo</b> e <b>Legenda</b> (o que é cada coluna).</li>' +
-        '<li>A contabilidade revisa as linhas <b>Revisar</b> e <b>Sem IBS/CBS hoje</b>; as colunas <i>_atual</i> mostram como o produto sai hoje e as colunas <i>_sugerido</i> o enquadramento de IBS/CBS proposto para 2027.</li>' +
-        '<li>Depois, a planilha é convertida para o layout de importação do sistema do cliente (os nomes das colunas não mudam, para o conversor funcionar sempre).</li>' +
-        '<li>PIS e COFINS deixam de existir em 2027 (substituídos pela CBS); as colunas deles servem para conferir dezembro. O ICMS continua até 2033.</li></ul></section>';
+          var icmsAtual = CAD.regime === 'SN' ? l.icms_cst : l.icms_cst.slice(-2), x = { a: icmsAtual, f: l.f_icms };
+          return '<tr title="' + esc(l.obs || '') + '"><td class="m">' + esc(l.codigo) + '</td><td class="w" title="' + esc(l.descricao) + '">' + esc(l.descricao) + '</td>' +
+            cel(l, 'ncm', 'f_ncm') + cel(l, 'cest', 'f_cest') + cel(x, 'a', 'f') + cel(l, 'cfop', 'f_cfop') + cel(l, 'pis_cst', 'f_pis') + cel(l, 'cofins_cst', 'f_cofins') + cel(l, 'ibs_cst', 'f_ibs') + cel(l, 'cclass', 'f_cclass') +
+            '<td><span class="pill ' + (l.status === 'OK' ? '' : l.status === 'Conferir' ? 'warn' : 'bad') + '">' + esc(l.status) + '</span></td></tr>';
+        }).join('') + '</tbody></table></div><p class="nota">Passe o mouse na linha para ver o motivo. Na planilha o motivo vem na coluna <i>observacao</i>.</p></section>' +
+      '<section class="card"><h2>Como usar a planilha</h2><ul class="lst">' +
+        '<li><b>Baixar planilha com a correção</b> leva só os produtos que precisam mudar; <b>Excel com todos</b> leva o cadastro inteiro que saiu nas notas. Abas: <b>Produtos</b>, <b>Resumo</b> e <b>Legenda</b>.</li>' +
+        '<li>As colunas <i>_atual</i> mostram como o produto saiu na nota; as colunas <i>_final</i> já trazem o valor certo. A contabilidade confere, marca <b>S</b> na coluna <i>aprovado</i> e só as linhas aprovadas vão para o sistema do cliente.</li>' +
+        '<li>Os nomes das colunas nunca mudam: o conversor para o layout de cada sistema funciona sempre.</li>' +
+        '<li>As regras são as mesmas das calculadoras SN e LP (RICMS/AC, ST e MVA por segmento, monofásicos, cesta básica do Acre, cClassTrib da LC 214/2025). Casos especiais (produção do Acre, benefícios, regimes especiais) ficam na observação para a contabilidade decidir.</li></ul></section>';
     c.querySelectorAll('[data-fl]').forEach(function (b) { b.onclick = function () { CAD.filtro = b.dataset.fl; desenhar(c); }; });
     $('cadRefazer').onclick = function () { CAD = null; telaCadastro(c); };
-    $('cadCsv').onclick = function () { csv(COLS.map(function (k) { return [k[0], k[1], k[2]]; }), CAD.linhas, nomeArq('csv')); };
-    $('cadXlsx').onclick = function () { baixarXlsx(); };
+    $('cadCsv').onclick = function () { csv(COLS.map(function (k) { return [k[0], k[1], k[2]]; }), CAD.linhas, nomeArq('csv', true)); };
+    $('cadXlsx').onclick = function () { baixarXlsx(false); };
+    $('cadXlsxTudo').onclick = function () { baixarXlsx(true); };
   }
-  function nomeArq(ext) { return ('Cadastro 2027 - ' + rotuloUnid(ATUAL.u) + ' - ' + CAD.meses[CAD.meses.length - 1] + ' a ' + CAD.meses[0] + '.' + ext).replace(/[\\/:*?"<>|]/g, '-'); }
+  function nomeArq(ext, tudo) { return ('Produtos ' + (tudo ? 'analise completa' : 'correcao') + ' - ' + rotuloUnid(ATUAL.u) + ' - ' + CAD.meses[CAD.meses.length - 1] + ' a ' + CAD.meses[0] + '.' + ext).replace(/[\\/:*?"<>|]/g, '-'); }
   function carregarXlsx() {
     if (window.XLSX) return Promise.resolve(window.XLSX);
     return new Promise(function (ok, erro) { var s = document.createElement('script'); s.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js'; s.onload = function () { ok(window.XLSX); }; s.onerror = function () { erro(new Error('sem acesso à biblioteca do Excel')); }; document.head.appendChild(s); });
   }
-  function baixarXlsx() {
-    var bt = $('cadXlsx'); bt.disabled = true; bt.textContent = 'Gerando…';
+  function baixarXlsx(tudo) {
+    var bt = $(tudo ? 'cadXlsxTudo' : 'cadXlsx'), txt = bt.textContent; bt.disabled = true; bt.textContent = 'Gerando…';
     carregarXlsx().then(function (X) {
+      var base = tudo ? CAD.linhas : CAD.linhas.filter(function (l) { return l._erros.length || l.status === 'NCM inválido'; });
       var cab = COLS.map(function (k) { return k[1]; });
-      var linhas = CAD.linhas.map(function (l) { return COLS.map(function (k) { var v = l[k[0]]; return v == null ? '' : (k[2] === 'm' ? String(v) : v); }); });
+      var linhas = base.map(function (l) { return COLS.map(function (k) { var v = k[0] === 'icms_cst' && CAD.regime !== 'SN' ? l.icms_cst.slice(-2) : l[k[0]]; return v == null ? '' : (k[2] === 'm' ? String(v) : v); }); });
       var ws = X.utils.aoa_to_sheet([cab].concat(linhas));
-      ws['!cols'] = COLS.map(function (k) { return { wch: k[0] === 'descricao' || k[0] === 'obs' || k[0] === 'desc_sug' || k[0] === 'origem' ? 40 : 16 }; });
+      COLS.forEach(function (k, ci) { if (k[2] !== 'm') return; for (var r = 1; r <= linhas.length; r++) { var a = X.utils.encode_cell({ r: r, c: ci }); if (ws[a]) { ws[a].t = 's'; ws[a].z = '@'; } } });
+      ws['!cols'] = COLS.map(function (k) { return { wch: /descricao|obs|enquadramento|fornecedor/.test(k[0]) ? 42 : k[0] === 'erros' ? 30 : 15 }; });
       ws['!autofilter'] = { ref: X.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: linhas.length, c: COLS.length - 1 } }) };
-      ws['!freeze'] = { xSplit: 3, ySplit: 1 };
       var cont = {}; CAD.linhas.forEach(function (l) { cont[l.status] = (cont[l.status] || 0) + 1; });
-      var res = X.utils.aoa_to_sheet([['Farol Contábil · Cadastro de produtos para 2027'], [], ['Cliente', rotuloUnid(ATUAL.u)], ['Contabilidade', ATUAL.u.contabilidade], ['CNPJ', RESUMO && RESUMO.cnpj || ''],
-        ['Meses usados', CAD.meses.map(nomeMes).join(', ')], ['Notas lidas', CAD.nDocs], ['Produtos', CAD.linhas.length], ['OK', cont['OK'] || 0], ['Revisar', cont['Revisar'] || 0], ['Sem IBS/CBS hoje', cont['Sem classificação hoje'] || 0],
-        ['Tabela oficial', CAD.tab ? 'Calculadora de Tributos da Receita ' + (CAD.tab.versao || '') : 'indisponível na geração'], ['Gerado em', new Date().toLocaleString('pt-BR')]]);
-      res['!cols'] = [{ wch: 18 }, { wch: 60 }];
-      var LEG = [['coluna', 'o que é'], ['codigo / ean / descricao / ncm / cest / unidade', 'identificação do produto como aparece nas notas de venda (o valor mais frequente)'], ['notas_de_venda / ultima_venda', 'em quantas notas o produto saiu no período e a data da última'],
-        ['icms_*_atual / cfop_mais_usado', 'como o ICMS sai hoje (CST com origem, ou CSOSN no Simples)'], ['icms_alerta', 'o mesmo produto saindo com tributação de ICMS diferente: revisar o cadastro'],
-        ['pis_* / cofins_*', 'situação atual; PIS e COFINS acabam em 2027 (CBS)'], ['ibscbs_cst_atual / cclasstrib_atual', 'o grupo IBS/CBS que o sistema do cliente já preenche hoje (vazio = não preenche)'],
-        ['ibscbs_cst_sugerido / cclasstrib_sugerido', 'enquadramento proposto para 2027'], ['reducao_ibscbs_pct / tratamento_tributario / descricao_cclasstrib', 'o que a tabela oficial da Receita diz sobre o cClassTrib sugerido'],
-        ['origem_da_sugestao', 'de onde veio a sugestão: nota de compra do fornecedor (mesmo código de barras), o que o cliente já usa, ou a regra geral (000 / 000001)'],
-        ['ncm_x_cclasstrib_receita', 'resposta da Receita se o NCM pode usar o cClassTrib (para reduções e isenções)'], ['status', 'OK = coerente · Revisar = há diferença ou alerta · Sem classificação hoje = o sistema ainda não preenche IBS/CBS'], ['observacao', 'o motivo do status']];
-      var leg = X.utils.aoa_to_sheet(LEG); leg['!cols'] = [{ wch: 55 }, { wch: 110 }];
+      var res = X.utils.aoa_to_sheet([['Farol Contábil · CPUSIS — Análise fiscal dos produtos'], [], ['Cliente', rotuloUnid(ATUAL.u)], ['Contabilidade', ATUAL.u.contabilidade], ['CNPJ', RESUMO && RESUMO.cnpj || ''],
+        ['Regime / regras', CAD.regime === 'SN' ? 'Simples Nacional' : CAD.regime === 'REAL' ? 'Lucro Real (regras do Lucro Presumido)' : 'Lucro Presumido'], ['Meses usados', CAD.meses.map(nomeMes).join(', ')], ['Notas lidas', CAD.nDocs], ['Produtos analisados', CAD.linhas.length],
+        ['Precisam de correção', (cont['Corrigir'] || 0) + (cont['NCM inválido'] || 0)], ['Para conferir', cont['Conferir'] || 0], ['Corretos', cont['OK'] || 0], ['Linhas nesta planilha', linhas.length],
+        ['Regras', 'Calculadoras CPUSIS ' + CAD.motor + ' · base NCM ' + (CAD.base || '')], ['Tabela da Receita', CAD.tab ? 'Calculadora de Tributos ' + (CAD.tab.versao || '') : 'indisponível na geração'], ['Gerado em', new Date().toLocaleString('pt-BR')]]);
+      res['!cols'] = [{ wch: 22 }, { wch: 70 }];
+      var LEG = [['coluna', 'o que é'],
+        ['codigo / ean / descricao / unidade', 'identificação do produto como aparece nas notas de venda (o valor mais frequente no período)'],
+        ['*_atual', 'como o produto saiu nas notas de venda'], ['*_final', 'o valor certo pelas regras (é o que vai para o sistema do cliente depois de aprovado)'],
+        ['icms_cst_csosn_final', 'Simples: CSOSN (102, 500, 400…); demais: CST de 2 dígitos (00, 60, 41…). A origem fica em icms_origem'],
+        ['cfop_final', 'só é mexido nas vendas dentro do estado (5102 / 5405)'], ['cest_final', 'obrigatório quando o produto tem ST; quando falta, vem o que o fornecedor usa (se houver)'],
+        ['pis_cst_final / cofins_cst_final', 'Simples: 04 (monofásico) ou 49; Presumido: 04 (monofásico) ou 01'],
+        ['ibscbs_cst_final / cclasstrib_final', 'enquadramento de IBS/CBS (LC 214/2025): regra das calculadoras; vale o do fornecedor quando a Receita confirma o NCM'],
+        ['segmento_st_acre / mva_referencia / monofasico / cesta_basica_acre', 'o que a base fiscal diz sobre o NCM (RICMS/AC, SPED)'],
+        ['campos_corrigidos', 'quais campos mudam'], ['status', 'NCM inválido · Corrigir · Conferir (certo, com aviso) · OK'], ['observacao', 'o motivo de cada mudança e os avisos'],
+        ['aprovado', 'a contabilidade marca S nas linhas que podem ir para o sistema']];
+      var leg = X.utils.aoa_to_sheet(LEG); leg['!cols'] = [{ wch: 58 }, { wch: 110 }];
       var wb = X.utils.book_new(); X.utils.book_append_sheet(wb, ws, 'Produtos'); X.utils.book_append_sheet(wb, res, 'Resumo'); X.utils.book_append_sheet(wb, leg, 'Legenda');
-      X.writeFile(wb, nomeArq('xlsx'));
-    }).catch(function (e) { alert('Não consegui gerar o Excel (' + e.message + '). Use "Baixar em CSV", que abre no Excel do mesmo jeito.'); })
-      .then(function () { bt.disabled = false; bt.textContent = 'Baixar planilha (Excel)'; });
+      X.writeFile(wb, nomeArq('xlsx', tudo));
+    }).catch(function (e) { alert('Não consegui gerar o Excel (' + e.message + '). Use "CSV", que abre no Excel do mesmo jeito.'); })
+      .then(function () { bt.disabled = false; bt.textContent = txt; });
   }
 })();
 </script>

@@ -1,0 +1,3052 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Farol Contábil · Consulta NCM · Lucro Presumido · Acre</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.mini.min.js"></script>
+<style>
+  :root{
+    --ink:#182437;
+    --ink-soft:#3c4a5e;
+    --paper:#f4f1ea;
+    --paper-raised:#ffffff;
+    --line:#d8d2c4;
+    --gold:#a97a2f;
+    --gold-soft:#f0e3c8;
+    --green:#3f6650;
+    --green-soft:#e3ece5;
+    --red:#8c3b2e;
+    --red-soft:#f3e2dd;
+    --page-gutter:clamp(16px, 2vw, 40px);
+    --mono: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+    --serif: Georgia, 'Iowan Old Style', 'Times New Roman', serif;
+    --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:var(--paper); color:var(--ink);
+    font-family:var(--sans); font-size:14px; line-height:1.5;
+    padding:0 0 60px 0;
+  }
+  .masthead{
+    background:var(--ink); color:var(--paper);
+    padding:28px 24px 22px; border-bottom:4px solid var(--gold);
+  }
+  .masthead .eyebrow{
+    font-family:var(--mono); font-size:11px; letter-spacing:.14em; text-transform:uppercase;
+    color:var(--gold-soft); opacity:.85; margin-bottom:6px;
+  }
+  .masthead h1{
+    font-family:var(--serif); font-weight:700; font-size:28px; margin:0 0 4px;
+  }
+  .masthead p{margin:0; color:#c7cedb; font-size:13px; max-width:640px;}
+  /* Usa toda a largura disponível sem encostar o conteúdo nas bordas. */
+  .wrap{width:100%; max-width:none; margin:0; padding:0 var(--page-gutter);}
+  .search-block{
+    background:var(--paper-raised); border:1px solid var(--line); border-radius:4px;
+    margin-top:-16px; padding:20px; box-shadow:0 6px 18px rgba(24,36,55,.08);
+  }
+  .search-row{display:flex; gap:10px; flex-wrap:wrap;}
+  .search-row input[type=text]{
+    flex:1 1 260px; font-family:var(--mono); font-size:16px; padding:12px 14px;
+    border:1.5px solid var(--ink); border-radius:3px; background:#fff; color:var(--ink);
+    letter-spacing:.02em;
+  }
+  .search-row input[type=text]:focus{outline:2px solid var(--gold); outline-offset:1px;}
+  button{
+    font-family:var(--sans); font-weight:600; font-size:13.5px; cursor:pointer;
+    border-radius:3px; border:1.5px solid var(--ink); background:var(--ink); color:#fff;
+    padding:12px 18px;
+  }
+  button:hover{background:#0f1926;}
+  button.ghost{background:transparent; color:var(--ink); border-color:var(--line);}
+  button.ghost:hover{border-color:var(--ink); background:#f0ede4;}
+  button.small{padding:7px 12px; font-size:12.5px;}
+  .hint{font-size:12px; color:var(--ink-soft); margin-top:8px;}
+  .suggestions{margin-top:10px; display:flex; flex-wrap:wrap; gap:6px;}
+  .suggestions button{background:var(--gold-soft); color:#5c3f14; border:1px solid #d8bd85; font-family:var(--mono); font-size:12px; padding:5px 10px;}
+  .suggestions button:hover{background:#e6d3a4;}
+
+  .not-found{
+    margin-top:18px; padding:16px; background:var(--red-soft); border:1px solid #d9b6ab; border-radius:4px; color:var(--red);
+  }
+  .not-found b{display:block; margin-bottom:4px;}
+
+  .result{margin-top:22px;}
+  .result-head{display:flex; justify-content:space-between; align-items:flex-start; gap:16px; flex-wrap:wrap;}
+  .ncm-code{font-family:var(--mono); font-size:22px; font-weight:700; letter-spacing:.02em;}
+  .desc{font-family:var(--serif); font-size:17px; margin:6px 0 2px; max-width:640px;}
+  .tags{display:flex; gap:8px; margin-top:8px; flex-wrap:wrap;}
+  .tag{font-family:var(--mono); font-size:11px; padding:4px 9px; border-radius:20px; letter-spacing:.03em;}
+  .tag.cest-yes{background:var(--red-soft); color:var(--red); border:1px solid #d9b6ab;}
+  .tag.cest-no{background:var(--green-soft); color:var(--green); border:1px solid #b9d0c0;}
+  .tag.cat{background:#eae6da; color:var(--ink-soft); border:1px solid var(--line);}
+
+  .grid{display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:20px;}
+  @media(max-width:720px){.grid{grid-template-columns:1fr;}}
+
+  .panel{background:var(--paper-raised); border:1px solid var(--line); border-radius:4px; padding:18px;}
+  .panel h3{
+    font-family:var(--mono); font-size:11px; text-transform:uppercase; letter-spacing:.1em;
+    color:var(--ink-soft); margin:0 0 12px; padding-bottom:8px; border-bottom:1px solid var(--line);
+  }
+  .field{margin-bottom:12px;}
+  .field label{display:block; font-size:12px; color:var(--ink-soft); margin-bottom:4px; font-weight:600;}
+  select, input[type=number]{
+    width:100%; font-family:var(--sans); font-size:14px; padding:9px 10px;
+    border:1px solid var(--line); border-radius:3px; background:#fdfcf9; color:var(--ink);
+  }
+  select:focus, input[type=number]:focus{outline:2px solid var(--gold); outline-offset:1px; border-color:var(--gold);}
+
+  .outcome{margin-top:6px;}
+  .row{display:flex; justify-content:space-between; align-items:baseline; padding:9px 0; border-bottom:1px dashed var(--line); gap:12px;}
+  .row:last-child{border-bottom:none;}
+  .row .k{font-size:12.5px; color:var(--ink-soft);}
+  .row .v{font-family:var(--mono); font-size:14.5px; font-weight:700; text-align:right;}
+  .row .v.small{font-size:12.5px; font-weight:600;}
+  .badge-code{
+    font-family:var(--mono); background:var(--ink); color:#fff; padding:2px 8px; border-radius:3px; font-size:13px;
+  }
+  .note{
+    margin-top:12px; font-size:11.5px; color:var(--ink-soft); background:#f0ede4; border-left:3px solid var(--gold);
+    padding:8px 10px; border-radius:2px;
+  }
+  .total-box{
+    margin-top:14px; background:var(--ink); color:#fff; border-radius:4px; padding:14px 16px;
+    display:flex; justify-content:space-between; align-items:center;
+  }
+  .total-box .k{font-family:var(--mono); font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:#c7cedb;}
+  .total-box .v{font-family:var(--serif); font-size:22px; font-weight:700;}
+
+  .browse{margin-top:34px;}
+  .browse h2{font-family:var(--serif); font-size:18px; margin-bottom:10px;}
+  table{width:100%; border-collapse:collapse; background:var(--paper-raised); border:1px solid var(--line); border-radius:4px; overflow:hidden;}
+  th, td{text-align:left; padding:9px 12px; font-size:12.5px; border-bottom:1px solid var(--line);}
+  th{background:#eae6da; font-family:var(--mono); font-size:10.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--ink-soft);}
+  tr.data-row{cursor:pointer;}
+  tr.data-row:hover{background:#f7f2e6;}
+  td.ncm-cell{font-family:var(--mono); font-weight:700; white-space:nowrap;}
+
+  .manage{margin-top:36px; border-top:2px solid var(--ink); padding-top:22px;}
+  .manage h2{font-family:var(--serif); font-size:18px; margin:0 0 4px;}
+  .manage p.sub{font-size:12.5px; color:var(--ink-soft); margin:0 0 16px;}
+  .form-grid{display:grid; grid-template-columns:1fr 1fr; gap:12px;}
+  .form-grid .full{grid-column:1/-1;}
+  @media(max-width:640px){.form-grid{grid-template-columns:1fr;}}
+  .form-grid label{display:block; font-size:12px; font-weight:600; color:var(--ink-soft); margin-bottom:4px;}
+  .form-grid input, .form-grid select{width:100%;}
+  .form-actions{margin-top:14px; display:flex; gap:10px; align-items:center;}
+  .save-msg{font-size:12.5px; color:var(--green); font-weight:600;}
+
+  .footer-note{margin-top:30px; font-size:11.5px; color:var(--ink-soft); text-align:center;}
+  .disclaimer{
+    margin-top:20px; background:var(--gold-soft); border:1px solid #d8bd85; color:#5c3f14;
+    padding:12px 14px; border-radius:4px; font-size:12px; line-height:1.55;
+  }
+
+  .xml-section{margin-top:40px; border-top:2px solid var(--ink); padding-top:22px;}
+  /* ---------- Abas ---------- */
+  .tabs{display:flex; gap:0; margin-top:-16px; margin-bottom:0; position:relative; z-index:2;}
+  .tabs button{
+    background:var(--paper-raised); color:var(--ink-soft); border:1px solid var(--line); border-bottom:none;
+    border-radius:6px 6px 0 0; padding:11px 22px; font-size:13.5px; font-weight:600; cursor:pointer;
+  }
+  .tabs button.active{background:var(--ink); color:#fff; border-color:var(--ink);}
+  .tabs button:not(.active):hover{background:#f0ede4; color:var(--ink);}
+  .tab-page{display:none;}
+  .tab-page.active{display:block;}
+  /* ---------- Custo Operacional ---------- */
+  .op-grid{display:grid; grid-template-columns:1.4fr 1fr; gap:16px; margin-top:16px;}
+  @media(max-width:820px){.op-grid{grid-template-columns:1fr;}}
+  .desp-row{display:flex; gap:8px; align-items:center; margin-bottom:7px;}
+  .desp-row input.desp-nome{flex:1; font-family:var(--sans); font-size:13px; padding:8px 10px; border:1px solid var(--line); border-radius:3px; background:#fdfcf9;}
+  .desp-row input.desp-valor{width:130px; font-family:var(--mono); font-size:13px; padding:8px 10px; border:1px solid var(--line); border-radius:3px; text-align:right; background:#fdfcf9;}
+  .desp-row button.rm{background:transparent; border:1px solid var(--line); color:var(--red); border-radius:3px; padding:6px 10px; font-size:13px; line-height:1;}
+  .desp-row button.rm:hover{background:var(--red-soft); border-color:#d9b6ab;}
+  .op-result{background:var(--ink); color:#fff; border-radius:4px; padding:20px; text-align:center; margin-top:16px;}
+  .op-result .k{font-family:var(--mono); font-size:11px; text-transform:uppercase; letter-spacing:.1em; color:#c7cedb;}
+  .op-result .v{font-family:var(--serif); font-size:40px; font-weight:700; margin-top:4px;}
+  .op-result .sub{font-size:12px; color:#c7cedb; margin-top:6px;}
+  .op-summary{display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px dashed var(--line); font-size:13px;}
+  .op-summary .v{font-family:var(--mono); font-weight:700;}
+  .xml-section h2{font-family:var(--serif); font-size:20px; margin:0 0 6px;}
+  .xml-archive{margin:18px 0 24px; padding:16px; border:1px solid var(--line); border-radius:6px;}
+  .xml-archive h3{font-size:16px; margin:0 0 8px;}
+  .archive-toolbar{display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin:12px 0;}
+  .archive-toolbar input{flex:1; min-width:180px; padding:9px;}
+  .archive-scroll{overflow-x:auto;}
+  .archive-table{width:100%; border-collapse:collapse; font-size:12px; text-align:left;}
+  .archive-table td,.archive-table th{padding:10px 8px; border-bottom:1px solid var(--line); overflow-wrap:anywhere;}
+  .archive-table td:last-child{min-width:175px;}
+  .archive-table button{margin:2px 4px 2px 0;}
+  .archive-error{color:var(--red);}
+  #lpArchiveReceipt{font-size:13px; margin:8px 0;}
+  @media print{.xml-archive,#lpArchiveReceipt{display:none!important;}}
+  .xml-section p.sub{font-size:12.5px; color:var(--ink-soft); margin:0 0 16px; max-width:640px;}
+  .upload-row{display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-bottom:16px;}
+  .upload-row input[type=file]{font-size:13px; font-family:var(--sans);}
+  .xml-error{background:var(--red-soft); border:1px solid #d9b6ab; color:var(--red); padding:12px 14px; border-radius:4px; font-size:13px; margin-bottom:16px;}
+  .emit-info{font-size:12.5px; color:var(--ink-soft); margin-bottom:14px; background:var(--paper-raised); border:1px solid var(--line); border-radius:4px; padding:10px 14px;}
+  .emit-info b{color:var(--ink);}
+  .settings-row{
+    display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:12px;
+    background:var(--paper-raised); border:1px solid var(--line); border-radius:4px; padding:14px; margin-bottom:16px;
+  }
+  .settings-row .field{margin-bottom:0;}
+  .items-table-wrap{overflow-x:auto; border:1px solid var(--line); border-radius:4px;}
+  table.items{width:100%; border-collapse:collapse; table-layout:auto; background:var(--paper-raised);}
+  table.items th{
+    background:#eae6da; font-family:var(--mono); font-size:9px; text-transform:uppercase; letter-spacing:.03em;
+    color:var(--ink-soft); padding:5px 7px; text-align:left; white-space:nowrap; border-bottom:1px solid var(--line);
+    border-right:1px solid rgba(24,36,55,.06);
+  }
+  table.items th:last-child{border-right:none;}
+  table.items td{padding:3px 7px; font-size:11.5px; line-height:1.15; border-bottom:1px solid var(--line); vertical-align:middle; border-right:1px solid rgba(24,36,55,.05);}
+  table.items td:last-child{border-right:none;}
+  table.items td.num{font-family:var(--mono); text-align:right; white-space:nowrap;}
+  table.items .prod-name{font-weight:600; max-width:190px; white-space:normal; font-family:var(--sans); line-height:1.1;}
+  table.items input.cell-input{
+    width:54px; font-family:var(--mono); font-size:11px; padding:2px 4px;
+    border:1px solid var(--line); border-radius:3px; text-align:right; background:#fdfcf9;
+  }
+  table.items input.price-input{width:74px; font-weight:700; border-color:var(--gold); background:#fffaf0;}
+  table.items input.cell-input:focus{outline:2px solid var(--gold); outline-offset:0;}
+  table.items .badge-mini{font-family:var(--mono); font-size:8.5px; padding:0 5px; line-height:1.5; border-radius:8px; display:inline-block; margin-top:1px;}
+  table.items .badge-mini.st{background:var(--red-soft); color:var(--red);}
+  table.items .badge-mini.normal{background:var(--green-soft); color:var(--green);}
+  table.items .badge-mini.deson{background:var(--gold-soft); color:#5c3f14;}
+  table.items .hint{font-size:9px; line-height:1.15; margin:1px 0 0;}
+  .totals-bar{display:flex; gap:26px; flex-wrap:wrap; margin-top:14px; background:var(--ink); color:#fff; border-radius:4px; padding:14px 18px;}
+  .totals-bar div{font-family:var(--mono); font-size:10.5px; color:#c7cedb; text-transform:uppercase; letter-spacing:.05em;}
+  .totals-bar strong{display:block; font-family:var(--serif); font-size:19px; font-weight:700; color:#fff; margin-top:3px;}
+  /* ---------- Relatório de nota / Impressão ---------- */
+  .report-actions{display:flex; gap:8px; margin:16px 0 0; flex-wrap:wrap;}
+  .report-actions button{
+    background:var(--paper-raised); color:var(--ink); border:1px solid var(--line); border-radius:3px;
+    padding:9px 16px; font-size:13px; font-weight:600; cursor:pointer;
+  }
+  .report-actions button:hover{background:var(--ink); color:#fff; border-color:var(--ink);}
+  .report-actions button svg{vertical-align:middle; margin-right:6px;}
+  @media print {
+    body{background:#fff; color:#000;}
+    .masthead, .tabs, .search-block, .upload-row, .settings-row, .report-actions,
+    #xmlEmitInfo, #lpXmlEmitInfo, #rbt12Info, #lpIrpjInfo, .footer-note, .disclaimer,
+    #searchInput, #searchBtn, #clearBtn, #xmlFile, #clearXmlBtn, #lpXmlFile, #lpClearXmlBtn,
+    #lpSearchInput, #lpSearchBtn, #lpClearBtn, .cell-input,
+    .tab-page:not(.active) { display: none !important; }
+    .xml-section{border-top:none; padding-top:0; margin-top:0;}
+    .xml-section h2{font-size:14px;}
+    .xml-section p.sub{display:none;}
+    .items-table-wrap{border:1px solid #ccc;}
+    table.items{font-size:9px; page-break-inside:auto;}
+    table.items thead{display:table-header-group;}
+    table.items tr{page-break-inside:avoid;}
+    table.items .prod-name{max-width:none;}
+    /* Nas colunas com input, mostrar o valor final também no impresso */
+    .cell-input{border:none; background:transparent; font-family:var(--mono); font-size:9px;}
+    .totals-bar{page-break-inside:avoid;}
+    .note{font-size:10px;}
+    /* Cabeçalho do relatório impresso — só aparece na impressão */
+    .print-header{display:block !important;}
+  }
+  .print-header{display:none;}
+  .print-header h1{font-family:var(--serif); font-size:20px; margin:0 0 4px;}
+  .print-header .print-meta{font-size:11px; color:var(--ink-soft); font-family:var(--mono);}
+
+  /* ---------- Auditoria de cadastro ---------- */
+  .chart-wrap{padding:10px 6px; text-align:center;}
+  .chart-wrap svg{max-width:280px; width:100%; height:auto;}
+  .chart-legend{display:flex; flex-direction:column; gap:6px; margin-top:12px; font-size:11px;}
+  .chart-legend .li{display:flex; align-items:center; gap:8px; justify-content:space-between;}
+  .chart-legend .li .label{display:flex; align-items:center; gap:8px; flex:1;}
+  .chart-legend .li .swatch{width:12px; height:12px; border-radius:2px; display:inline-block;}
+  .chart-legend .li .cnt{font-family:var(--mono); color:var(--ink-soft);}
+  #auditItemsBody .badge-mini.audit-ok{background:#e2f0d9; color:#2f6f2f;}
+  #auditItemsBody .badge-mini.audit-fix{background:#fff2cc; color:#8b6a12;}
+  #auditItemsBody .badge-mini.audit-err{background:#fbe1de; color:#a03a2c;}
+  #auditItemsBody td.diff{background:#fff8e1;}
+  #auditItemsBody td.diff::after{content:' ✎'; color:#c48b1a; font-weight:bold;}
+
+  /* ---------- Autenticação ---------- */
+  [hidden]{display:none !important;}
+  body.auth-locked #appRoot{display:none;}
+  body.auth-ready #authGate{display:none;}
+  #authGate{
+    position:fixed; inset:0; z-index:9000; overflow-y:auto;
+    background:var(--ink);
+    background-image:
+      radial-gradient(circle at 15% -10%, rgba(169,122,47,.28), transparent 55%),
+      radial-gradient(circle at 90% 110%, rgba(63,102,80,.25), transparent 55%);
+    display:flex; align-items:flex-start; justify-content:center;
+    padding:40px 20px;
+  }
+  .auth-card{
+    width:100%; max-width:430px; margin:auto;
+    background:var(--paper-raised); border:1px solid var(--line);
+    border-top:4px solid var(--gold); border-radius:4px;
+    box-shadow:0 18px 48px rgba(0,0,0,.35);
+    padding:26px 26px 22px;
+  }
+  .auth-brand{margin-bottom:20px;}
+  .auth-brand .eyebrow{
+    font-family:var(--mono); font-size:10.5px; letter-spacing:.14em; text-transform:uppercase;
+    color:var(--gold); margin-bottom:6px;
+  }
+  .auth-brand h1{font-family:var(--serif); font-size:22px; font-weight:700; margin:0 0 6px; line-height:1.25;}
+  .auth-brand p{margin:0; font-size:12.5px; color:var(--ink-soft);}
+
+  .auth-tabs{display:flex; gap:0; border-bottom:1px solid var(--line); margin-bottom:18px;}
+  .auth-tabs button{
+    flex:1; background:transparent; color:var(--ink-soft); border:none;
+    border-bottom:2px solid transparent; border-radius:0;
+    font-size:13.5px; font-weight:600; padding:10px 8px;
+  }
+  .auth-tabs button:hover{background:#f0ede4; color:var(--ink);}
+  .auth-tabs button.active{color:var(--ink); border-bottom-color:var(--gold); background:transparent;}
+
+  .auth-field{margin-bottom:13px;}
+  .auth-field label{display:block; font-size:12px; color:var(--ink-soft); margin-bottom:4px; font-weight:600;}
+  .auth-field .opcional{font-weight:400; color:#8a8578;}
+  .auth-field input{
+    width:100%; font-family:var(--sans); font-size:14px; padding:10px 11px;
+    border:1px solid var(--line); border-radius:3px; background:#fdfcf9; color:var(--ink);
+  }
+  .auth-field input:focus{outline:2px solid var(--gold); outline-offset:1px; border-color:var(--gold);}
+  .auth-field .dica{font-size:11.5px; color:var(--ink-soft); margin-top:4px;}
+
+  .auth-submit{width:100%; padding:12px; font-size:14px; margin-top:4px;}
+  .auth-submit[disabled]{opacity:.6; cursor:progress;}
+  .auth-link{
+    display:block; width:100%; margin-top:12px; padding:6px; background:transparent;
+    border:none; color:var(--ink-soft); font-size:12.5px; font-weight:500;
+    text-decoration:underline; text-underline-offset:2px;
+  }
+  .auth-link:hover{background:transparent; color:var(--gold);}
+
+  .auth-msg{
+    padding:11px 13px; border-radius:3px; font-size:12.5px; margin-bottom:16px;
+    border:1px solid; line-height:1.45;
+  }
+  .auth-msg.erro{background:var(--red-soft); border-color:#d9b6ab; color:var(--red);}
+  .auth-msg.ok{background:var(--green-soft); border-color:#b9d0c0; color:var(--green);}
+  .auth-msg.info{background:var(--gold-soft); border-color:#d8bd85; color:#5c3f14;}
+
+  .auth-carregando{
+    text-align:center; padding:14px 0 4px; font-family:var(--mono);
+    font-size:12px; letter-spacing:.06em; color:var(--ink-soft);
+  }
+
+  .user-bar{
+    background:#0f1926; color:#c7cedb;
+    border-bottom:1px solid rgba(255,255,255,.09);
+    font-size:12.5px;
+  }
+  .user-bar .wrap{
+    display:flex; align-items:center; justify-content:space-between; gap:12px;
+    padding-top:8px; padding-bottom:8px; flex-wrap:wrap;
+  }
+  .user-bar .quem{display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; min-width:0;}
+  .user-bar .nome{color:var(--paper); font-weight:600;}
+  .user-bar .email{font-family:var(--mono); font-size:11.5px; opacity:.75; overflow-wrap:anywhere;}
+  .user-bar button{
+    background:transparent; border:1px solid rgba(255,255,255,.28); color:#dfe4ec;
+    padding:5px 12px; font-size:12px; flex:none;
+  }
+  .user-bar button:hover{background:rgba(255,255,255,.1); border-color:rgba(255,255,255,.5);}
+  @media print{ .user-bar{display:none;} }
+
+  /* ---------- Situação da conta (não aprovada / bloqueada / limite) ---------- */
+  body.sem-acesso .tabs,
+  body.sem-acesso .tab-page,
+  body.sem-acesso .footer-note{display:none !important;}
+  #telaSituacao{
+    background:var(--paper-raised); border:1px solid var(--line); border-top:4px solid var(--gold);
+    border-radius:4px; margin-top:-16px; padding:28px 24px; text-align:center;
+    box-shadow:0 6px 18px rgba(24,36,55,.08);
+  }
+  #telaSituacao .icone{font-size:34px; line-height:1; margin-bottom:10px;}
+  #telaSituacao h2{font-family:var(--serif); font-size:22px; margin:0 0 8px;}
+  #telaSituacao p{font-size:13.5px; color:var(--ink-soft); margin:0 auto 8px; max-width:520px; line-height:1.6;}
+  #telaSituacao .quem-avisar{
+    font-size:12px; color:var(--ink-soft); margin-top:16px; padding-top:14px;
+    border-top:1px solid var(--line);
+  }
+
+  /* ---------- Administração ---------- */
+  .adm-subtabs{display:flex; gap:0; border-bottom:1px solid var(--line); margin-bottom:16px;}
+  .adm-subtabs button{
+    background:transparent; color:var(--ink-soft); border:none; border-bottom:2px solid transparent;
+    border-radius:0; padding:9px 16px; font-size:13px; font-weight:600;
+  }
+  .adm-subtabs button:hover{background:transparent; color:var(--ink);}
+  .adm-subtabs button.active{color:var(--ink); border-bottom-color:var(--gold);}
+  .adm-cartoes{display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:10px; margin-bottom:16px;}
+  .adm-cartao{
+    background:var(--paper-raised); border:1px solid var(--line); border-radius:4px; padding:12px 14px;
+  }
+  .adm-cartao .rotulo{
+    font-family:var(--mono); font-size:10.5px; letter-spacing:.1em; text-transform:uppercase;
+    color:var(--ink-soft); margin-bottom:4px;
+  }
+  .adm-cartao .valor{font-family:var(--serif); font-size:24px; font-weight:700;}
+  .adm-cartao.ok .valor{color:var(--green);}
+  .adm-cartao.pend .valor{color:var(--gold);}
+  .adm-cartao.no .valor{color:var(--red);}
+  .adm-filtros{display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:12px;}
+  .adm-filtros input[type=text]{
+    flex:1 1 240px; font-size:13.5px; padding:9px 12px;
+    border:1.5px solid var(--line); border-radius:3px; background:#fff; color:var(--ink);
+  }
+  .adm-filtros input[type=text]:focus{outline:2px solid var(--gold); outline-offset:1px;}
+  .adm-filtros select{
+    font-size:13.5px; padding:9px 10px; border:1.5px solid var(--line);
+    border-radius:3px; background:#fff; color:var(--ink);
+  }
+  .adm-tabela-wrap{
+    background:var(--paper-raised); border:1px solid var(--line); border-radius:4px;
+    overflow-x:auto; max-height:520px; overflow-y:auto;
+  }
+  .adm-tabela{border-collapse:collapse; width:100%; font-size:12.5px; min-width:860px;}
+  .adm-tabela th{
+    position:sticky; top:0; z-index:1; background:var(--ink); color:var(--paper);
+    text-align:left; padding:9px 10px; font-size:11px; letter-spacing:.06em; text-transform:uppercase;
+    font-family:var(--mono); font-weight:600; cursor:pointer; white-space:nowrap;
+  }
+  .adm-tabela th:hover{background:#0f1926;}
+  .adm-tabela th .seta{opacity:.5; font-size:9px; margin-left:3px;}
+  .adm-tabela td{padding:8px 10px; border-bottom:1px solid var(--line); vertical-align:middle;}
+  .adm-tabela tbody tr{cursor:pointer;}
+  .adm-tabela tbody tr:hover{background:var(--gold-soft);}
+  .adm-tabela tbody tr.sel{background:var(--gold-soft); box-shadow:inset 3px 0 0 var(--gold);}
+  .adm-tabela .num{text-align:right; font-family:var(--mono);}
+  .adm-vazio{padding:22px; text-align:center; color:var(--ink-soft); font-size:13px;}
+  .pill{
+    display:inline-block; font-size:10.5px; font-weight:600; padding:2px 8px; border-radius:10px;
+    white-space:nowrap; letter-spacing:.02em;
+  }
+  .pill.ok{background:var(--green-soft); color:var(--green);}
+  .pill.pend{background:var(--gold-soft); color:var(--gold);}
+  .pill.no{background:var(--red-soft); color:var(--red);}
+  .pill.adm{background:#e2e8f5; color:#31456b;}
+  .adm-detalhe{
+    background:var(--paper-raised); border:1px solid var(--line); border-radius:4px;
+    margin-top:14px; padding:18px 20px;
+  }
+  .adm-detalhe h3{font-family:var(--serif); font-size:18px; margin:0 0 2px;}
+  .adm-detalhe .sub{font-family:var(--mono); font-size:11.5px; color:var(--ink-soft); margin-bottom:14px; overflow-wrap:anywhere;}
+  .adm-dados{
+    display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:10px 16px; margin-bottom:16px;
+  }
+  .adm-dados .d .k{
+    font-family:var(--mono); font-size:10px; letter-spacing:.08em; text-transform:uppercase;
+    color:var(--ink-soft);
+  }
+  .adm-dados .d .v{font-size:13px;}
+  .adm-acoes{display:flex; gap:8px; flex-wrap:wrap; align-items:center; padding-top:14px; border-top:1px solid var(--line);}
+  .adm-acoes input[type=number]{
+    width:64px; font-size:13px; padding:7px 8px; border:1.5px solid var(--line); border-radius:3px;
+  }
+  .adm-lista{margin-top:16px; padding-top:14px; border-top:1px solid var(--line);}
+  .adm-lista h4{
+    font-family:var(--mono); font-size:11px; letter-spacing:.08em; text-transform:uppercase;
+    color:var(--ink-soft); margin:0 0 8px;
+  }
+  .adm-item{
+    display:flex; justify-content:space-between; align-items:center; gap:10px;
+    padding:8px 0; border-bottom:1px solid var(--line); font-size:12.5px;
+  }
+  .adm-item:last-child{border-bottom:none;}
+  .adm-item .quando{font-family:var(--mono); font-size:11.5px; color:var(--ink-soft); white-space:nowrap;}
+  .adm-item.excedente{background:var(--red-soft); margin:0 -8px; padding:8px; border-radius:3px;}
+  .adm-msg{font-size:12.5px; padding:9px 12px; border-radius:3px; margin-top:12px; display:none;}
+  .adm-msg.show{display:block;}
+  .adm-msg.ok{background:var(--green-soft); color:var(--green); border:1px solid #bfd3c6;}
+  .adm-msg.err{background:var(--red-soft); color:var(--red); border:1px solid #e0bdb5;}
+  .adm-api h4{font-family:var(--serif); font-size:15px; margin:18px 0 6px;}
+  .adm-api code, .adm-api pre{font-family:var(--mono); font-size:11.5px;}
+  .adm-api pre{
+    background:var(--ink); color:#e8edf5; padding:12px 14px; border-radius:3px;
+    overflow-x:auto; margin:6px 0 0;
+  }
+  .adm-api .rota{
+    display:flex; gap:8px; align-items:baseline; padding:7px 0; border-bottom:1px solid var(--line);
+    font-size:12.5px; flex-wrap:wrap;
+  }
+  .adm-api .rota .metodo{
+    font-family:var(--mono); font-size:10.5px; font-weight:700; padding:2px 7px; border-radius:3px;
+    background:var(--ink); color:#fff;
+  }
+  .adm-api .rota .metodo.post{background:var(--green);}
+  .adm-api .rota .metodo.patch{background:var(--gold);}
+  .adm-api .rota .metodo.del{background:var(--red);}
+</style>
+</head>
+<body class="auth-locked">
+
+<div id="authGate">
+  <div class="auth-card">
+    <div class="auth-brand">
+      <div class="eyebrow">CPUSIS · Módulo Fiscal · Lucro Presumido</div>
+      <h1>Consulta NCM — Lucro Presumido (Acre)</h1>
+      <p>Acesso restrito. Entre com sua conta ou cadastre-se para usar a ferramenta.</p>
+    </div>
+
+    <div id="authCarregando" class="auth-carregando">Verificando acesso…</div>
+
+    <div id="authConteudo" hidden>
+      <div class="auth-tabs">
+        <button type="button" id="authTabLogin" class="active">Entrar</button>
+        <button type="button" id="authTabSignup">Criar conta</button>
+      </div>
+
+      <div class="auth-msg" id="authMsg" role="status" hidden></div>
+
+      <form id="authForm" autocomplete="on">
+        <div class="auth-field signup-only" style="display:none;">
+          <label for="authNome">Nome completo</label>
+          <input type="text" id="authNome" autocomplete="name" placeholder="Seu nome">
+        </div>
+        <div class="auth-field signup-only" style="display:none;">
+          <label for="authEmpresa">Empresa <span class="opcional">(opcional)</span></label>
+          <input type="text" id="authEmpresa" autocomplete="organization" placeholder="Razão social ou nome fantasia">
+        </div>
+        <div class="auth-field">
+          <label for="authEmail">E-mail</label>
+          <input type="email" id="authEmail" autocomplete="email" required placeholder="voce@empresa.com.br">
+        </div>
+        <div class="auth-field">
+          <label for="authSenha">Senha</label>
+          <input type="password" id="authSenha" autocomplete="current-password" required minlength="8" placeholder="Mínimo de 8 caracteres">
+          <div class="dica signup-only" style="display:none;">Use pelo menos 8 caracteres.</div>
+        </div>
+        <div class="auth-field signup-only" style="display:none;">
+          <label for="authSenha2">Confirmar senha</label>
+          <input type="password" id="authSenha2" autocomplete="new-password" minlength="8" placeholder="Repita a senha">
+        </div>
+        <button type="submit" id="authSubmit" class="auth-submit">Entrar</button>
+        <button type="button" id="authReset" class="auth-link">Esqueci minha senha</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div id="appRoot">
+
+<div id="userBar" class="user-bar">
+  <div class="wrap">
+    <div class="quem">
+      <span class="nome" id="userBarNome">—</span>
+      <span class="email" id="userBarEmail"></span>
+    </div>
+    <button type="button" id="logoutBtn" class="small">Sair</button>
+  </div>
+</div>
+
+<div class="masthead">
+  <div class="wrap">
+    <div class="eyebrow">CPUSIS · Módulo Fiscal · Lucro Presumido</div>
+    <h1>Consulta NCM — Lucro Presumido (Acre)</h1>
+    <p>Ferramenta exclusiva para empresas do <b>Lucro Presumido</b> no comércio: ICMS com débito/crédito, PIS/COFINS cumulativo (0,65% + 3%) ou não cumulativo, IRPJ e CSLL de presunção, e regras do RICMS/AC para compras interestaduais e cesta básica.</p>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <div id="telaSituacao" hidden>
+    <div class="icone" id="situacaoIcone">⏳</div>
+    <h2 id="situacaoTitulo">Cadastro em análise</h2>
+    <p id="situacaoTexto"></p>
+    <div class="quem-avisar">Dúvidas sobre o acesso? Fale com o administrador da sua empresa.</div>
+  </div>
+
+  <div class="tabs">
+    <button id="tabBtnLP" class="active">Consulta NCM &amp; XML</button>
+    <button id="tabBtnAudit">Auditoria de Cadastro</button>
+    <button id="tabBtnCustoOp">Custo Operacional</button>
+    <button id="tabBtnAdmin" hidden>Administração</button>
+  </div>
+
+
+  <div id="pageCustoOp" class="tab-page">
+    <div class="search-block" style="margin-top:0;">
+      <h2 style="font-family:var(--serif); font-size:20px; margin:0 0 6px;">Custo Operacional da Empresa</h2>
+      <p style="font-size:12.5px; color:var(--ink-soft); margin:0;">Preencha as despesas fixas mensais e o faturamento dos últimos 3 meses. O percentual calculado é aplicado automaticamente como "% custo operacional" na importação de XML. Os dados ficam salvos.</p>
+    </div>
+
+    <div class="op-grid">
+      <div class="panel">
+        <h3>Despesas fixas mensais</h3>
+        <div id="despList"></div>
+        <button class="ghost small" id="addDespBtn" style="margin-top:8px;">+ Adicionar despesa</button>
+        <div class="op-summary" style="margin-top:14px; border-top:1px solid var(--line); padding-top:12px;">
+          <span>Total de despesas fixas / mês</span>
+          <span class="v" id="despTotal">R$ 0,00</span>
+        </div>
+      </div>
+
+      <div>
+        <div class="panel">
+          <h3>Faturamento dos últimos 3 meses</h3>
+          <div class="field">
+            <label>Mês 1 (mais recente)</label>
+            <input type="text" inputmode="decimal" class="fat-input" id="fat1" placeholder="0,00">
+          </div>
+          <div class="field">
+            <label>Mês 2</label>
+            <input type="text" inputmode="decimal" class="fat-input" id="fat2" placeholder="0,00">
+          </div>
+          <div class="field">
+            <label>Mês 3</label>
+            <input type="text" inputmode="decimal" class="fat-input" id="fat3" placeholder="0,00">
+          </div>
+          <div class="op-summary">
+            <span>Média mensal de faturamento</span>
+            <span class="v" id="fatMedia">R$ 0,00</span>
+          </div>
+        </div>
+
+        <div class="op-result">
+          <div class="k">Custo operacional</div>
+          <div class="v" id="opPct">—</div>
+          <div class="sub" id="opSub">Preencha despesas e faturamento</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="note" style="margin-top:16px;">Cálculo: <b>total de despesas fixas mensais ÷ média mensal de faturamento × 100</b>. Esse percentual representa quanto de cada real vendido é consumido pela estrutura fixa da empresa — por isso ele entra no custo de cada produto na precificação. Ao importar um XML na outra aba, o campo "% custo operacional" já vem preenchido com esse valor (você ainda pode ajustar por item, se quiser).</div>
+  </div><!-- /pageCustoOp -->
+
+  <!-- ============================================================ -->
+  <!--                    LUCRO PRESUMIDO                            -->
+  <!-- ============================================================ -->
+  <div id="pageLP" class="tab-page active">
+    <div class="search-block" style="margin-top:0;">
+      <h2 style="font-family:var(--serif); font-size:20px; margin:0 0 6px;">Lucro Presumido — Comércio (Acre)</h2>
+      <p style="font-size:12.5px; color:var(--ink-soft); margin:0 0 12px; max-width:720px;">Motor fiscal para empresas do <b>Lucro Presumido</b> no comércio: PIS/COFINS cumulativo (0,65% + 3%), IRPJ 8% e CSLL 12% de presunção sobre a receita, ICMS de 19% com débito e crédito. Regras interestaduais e cesta básica do Acre aplicadas do mesmo jeito da aba Simples Nacional.</p>
+      <div class="search-row">
+        <input type="text" id="lpSearchInput" placeholder="Digite o NCM — ex: 2202.10.00 ou 22021000" autocomplete="off">
+        <button id="lpSearchBtn">Buscar</button>
+        <button class="ghost" id="lpClearBtn">Limpar</button>
+      </div>
+      <div class="hint">Aceita busca por descrição também (ex: "cerveja", "pneu").</div>
+      <div class="hint" id="liveStatus" style="margin-top:6px;">Base fiscal ainda não carregada.</div>
+    </div>
+
+    <div id="lpResult"></div>
+
+    <!-- Importação de XML no LP -->
+    <div class="xml-section">
+      <h2>Importação de XML de nota fiscal (Lucro Presumido)</h2>
+      <p class="sub">Faça upload do XML da NF-e de compra. A ferramenta calcula ICMS de entrada, crédito de ICMS aproveitável, débito de ICMS na venda, PIS/COFINS cumulativos, IRPJ+CSLL de presunção e sugere o preço de venda considerando todos os tributos do LP.</p>
+      <div class="upload-row">
+        <input type="file" id="lpXmlFile" accept=".xml">
+        <button class="ghost" id="lpClearXmlBtn">Limpar</button>
+      </div>
+      <p class="hint">XMLs de até 5 MB são guardados automaticamente na sua conta. “Limpar” fecha a nota atual e mantém o histórico.</p>
+      <div id="lpArchiveReceipt" role="status" aria-live="polite"></div>
+      <section class="xml-archive" aria-labelledby="lpArchiveTitle">
+        <h3 id="lpArchiveTitle">XMLs guardados</h3>
+        <p class="hint" id="lpArchiveStatus" role="status" aria-live="polite">Entre na sua conta para consultar os XMLs.</p>
+        <div class="archive-toolbar">
+          <label for="lpArchiveSearch">Buscar XML</label>
+          <input id="lpArchiveSearch" type="search" placeholder="Arquivo, fornecedor, número ou chave da nota" maxlength="100">
+          <button type="button" class="ghost small" id="lpArchiveRefresh">Atualizar histórico</button>
+        </div>
+        <div class="archive-scroll">
+          <table class="archive-table" aria-label="Histórico de XMLs guardados">
+            <thead><tr><th scope="col">Arquivo</th><th scope="col">Fornecedor</th><th scope="col">Nota</th><th scope="col">Enviado em</th><th scope="col">Total</th><th scope="col">Ações</th></tr></thead>
+            <tbody id="lpArchiveBody"></tbody>
+          </table>
+        </div>
+        <p class="hint" id="lpArchiveEmpty">Nenhum XML guardado. Importe uma nota para começar.</p>
+        <div class="archive-toolbar">
+          <span class="hint" id="lpArchiveCount">0 XML(s) · página 1</span>
+          <button type="button" class="ghost small" id="lpArchivePrev" disabled>Anterior</button>
+          <button type="button" class="ghost small" id="lpArchiveNext" disabled>Próxima</button>
+        </div>
+      </section>
+      <div id="lpXmlErrorArea"></div>
+      <div id="lpXmlEmitInfo" class="emit-info" style="display:none;"></div>
+
+      <div id="lpXmlSettings" class="settings-row" style="display:none;">
+        <div class="field">
+          <label>Regime</label>
+          <div style="padding:9px 0;"><span class="badge-code">Lucro Presumido — Comércio</span></div>
+        </div>
+        <div class="field">
+          <label>Receita bruta do trimestre (p/ IRPJ)</label>
+          <input type="text" inputmode="decimal" id="lpReceitaTrimestre" placeholder="0,00">
+        </div>
+        <div class="field">
+          <label>PIS/COFINS</label>
+          <select id="lpRegimePisCofins">
+            <option value="cumulativo" selected>Cumulativo (0,65% + 3%)</option>
+            <option value="nao-cumulativo">Não cumulativo (1,65% + 7,6%)</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Método de precificação</label>
+          <select id="lpMethod">
+            <option value="margem">Margem sobre o preço de venda</option>
+            <option value="markup">Markup sobre o custo</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>% custo operacional (padrão)</label>
+          <input type="number" id="lpCustoOp" value="15" step="0.1">
+        </div>
+        <div class="field">
+          <label>% lucro desejado (padrão)</label>
+          <input type="number" id="lpLucro" value="30" step="0.1">
+        </div>
+        <div class="field">
+          <label>Frete pago à parte (R$) <span class="hint" style="margin:0;">soma ao frete do XML se houver</span></label>
+          <input type="text" inputmode="decimal" id="lpFreteManual" placeholder="0,00">
+        </div>
+        <div class="field" style="display:flex; align-items:flex-end;">
+          <button class="small" id="lpApplyDefaultsBtn">Aplicar a todos os itens</button>
+        </div>
+      </div>
+
+      <div id="lpIrpjInfo" class="emit-info" style="display:none;"></div>
+
+      <div id="lpXmlTableWrap" class="items-table-wrap" style="display:none;">
+        <table class="items">
+          <thead>
+            <tr>
+              <th>Produto</th>
+              <th>NCM</th>
+              <th>Qtd</th>
+              <th>Un/emb.</th>
+              <th>Valor XML unit.</th>
+              <th>Desconto</th>
+              <th>Frete</th>
+              <th>ICMS entrada</th>
+              <th>Crédito ICMS</th>
+              <th>Custo</th>
+              <th>Tributos venda</th>
+              <th>CMV</th>
+              <th>Venda</th>
+              <th>PIS/COFINS</th>
+              <th>% lucro</th>
+              <th>Preço venda</th>
+              <th>Lucro/un.</th>
+            </tr>
+          </thead>
+          <tbody id="lpXmlItemsBody"></tbody>
+        </table>
+      </div>
+      <div id="lpXmlTotals" class="totals-bar" style="display:none;"></div>
+
+      <div class="print-header">
+        <h1>Relatório de Nota Fiscal — Lucro Presumido</h1>
+        <div class="print-meta" id="lpXmlPrintMeta"></div>
+      </div>
+
+      <div class="report-actions" id="lpXmlReportActions" style="display:none;">
+        <button id="lpXmlPrintBtn" title="Imprimir relatório">🖨 Imprimir</button>
+        <button id="lpXmlPdfBtn" title="Baixar em PDF">⬇ Baixar PDF</button>
+      </div>
+      <div class="note" id="lpXmlNote" style="display:none; margin-top:14px;">"Custo" = valor XML − desconto − ICMS desonerado + frete (XML e/ou pago à parte) + ICMS de entrada + custo operacional (o ICMS de entrada é <b>abatido</b> como crédito na apuração, mas continua entrando no custo de aquisição pra fins de precificação). "Tributos venda" = ICMS 19% (débito) + PIS 0,65% + COFINS 3% + IRPJ 1,08% + CSLL 1,08% da receita — apurados por fora do CMV mensalmente. "CMV" = Custo + Tributos venda − Crédito de ICMS (efeito líquido). Se o transporte foi pago à parte, digite o valor total em <b>"Frete pago à parte"</b> e o sistema rateia proporcional ao vProd. Itens com <span class="badge-mini deson" style="margin:0;">Desonerado</span> tiveram ICMS abatido na nota (ex.: SUFRAMA/ZFM/ALC) — esse valor é <b>deduzido do custo</b>. O código de venda no LP é sempre <b>CST</b> (não CSOSN). Produtos com ST usam CST 60 (ICMS já retido). Editar "% lucro" recalcula o preço; editar o preço recalcula o "%".</div>
+    </div>
+  </div><!-- /pageLP -->
+
+  <!-- ============================================================ -->
+  <!--                    AUDITORIA DE CADASTRO                     -->
+  <!-- ============================================================ -->
+  <div id="pageAudit" class="tab-page">
+    <div class="search-block" style="margin-top:0;">
+      <h2 style="font-family:var(--serif); font-size:20px; margin:0 0 6px;">Auditoria de cadastro de produtos</h2>
+      <p style="font-size:12.5px; color:var(--ink-soft); margin:0 0 12px; max-width:820px;">Importe seu cadastro em <b>Excel (.xlsx)</b> ou <b>CSV</b>. A ferramenta detecta as colunas automaticamente, valida NCM, tenta sugerir NCM correto quando o nome não bate, e preenche todos os campos fiscais (CST/CSOSN, CFOP, CEST, cClassTrib, CST PIS/COFINS). Ao final você baixa o cadastro corrigido.</p>
+      <div class="upload-row">
+        <input type="file" id="auditFile" accept=".xlsx,.xls,.csv">
+        <button class="ghost" id="auditClearBtn">Limpar</button>
+        <a href="#" id="auditTemplateBtn" style="margin-left:12px; font-size:12px; color:var(--ink-soft);">↓ baixar modelo CSV de exemplo</a>
+      </div>
+      <div id="auditErrorArea"></div>
+      <div id="auditColumnsInfo" class="emit-info" style="display:none;"></div>
+    </div>
+
+    <!-- Resumo com gráficos -->
+    <div id="auditSummary" style="display:none;">
+      <div class="grid" style="margin-top:16px;">
+        <div class="panel">
+          <h3>Panorama geral</h3>
+          <div class="chart-wrap" id="chartGeral"></div>
+        </div>
+        <div class="panel">
+          <h3>Distribuição por ICMS</h3>
+          <div class="chart-wrap" id="chartIcms"></div>
+        </div>
+      </div>
+      <div class="grid" style="margin-top:16px;">
+        <div class="panel">
+          <h3>Distribuição por PIS/COFINS</h3>
+          <div class="chart-wrap" id="chartPisCofins"></div>
+        </div>
+        <div class="panel">
+          <h3>Ações rápidas</h3>
+          <div style="display:flex; flex-direction:column; gap:8px; padding:8px 0;">
+            <button id="auditExportXlsxBtn">⬇ Baixar corrigido em Excel (.xlsx)</button>
+            <button id="auditExportCsvBtn" class="ghost">⬇ Baixar corrigido em CSV</button>
+            <button id="auditFilterAllBtn" class="ghost">Ver todos os itens</button>
+            <button id="auditFilterErrBtn" class="ghost">Ver só divergências corrigidas</button>
+            <button id="auditFilterOkBtn" class="ghost">Ver só itens já OK</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tabela de itens auditados -->
+    <div id="auditTableWrap" class="items-table-wrap" style="display:none;">
+      <table class="items">
+        <thead>
+          <tr>
+            <th>Status</th>
+            <th>Nome do produto</th>
+            <th>NCM original</th>
+            <th>NCM sugerido</th>
+            <th>CFOP</th>
+            <th>CST/CSOSN</th>
+            <th>CEST</th>
+            <th>CST PIS</th>
+            <th>CST COFINS</th>
+            <th>cClassTrib</th>
+            <th>Observação</th>
+          </tr>
+        </thead>
+        <tbody id="auditItemsBody"></tbody>
+      </table>
+    </div>
+  </div><!-- /pageAudit -->
+
+
+  <!-- ============================================================ -->
+  <!--                     ADMINISTRAÇÃO                             -->
+  <!-- ============================================================ -->
+  <div id="pageAdmin" class="tab-page">
+    <div class="search-block" style="margin-top:0;">
+      <h2 style="font-family:var(--serif); font-size:20px; margin:0 0 6px;">Administração de acessos</h2>
+      <p style="font-size:12.5px; color:var(--ink-soft); margin:0;">Quem pode usar a ferramenta, de quantos aparelhos e com que frequência. A aprovação vale no banco: sem ela o servidor recusa a base fiscal, não é só aviso na tela.</p>
+    </div>
+
+    <div class="adm-subtabs" style="margin-top:16px;">
+      <button type="button" id="admSubUsuarios" class="active">Usuários</button>
+      <button type="button" id="admSubApi">API</button>
+    </div>
+
+    <div id="admPainelUsuarios">
+      <div class="adm-cartoes">
+        <div class="adm-cartao"><div class="rotulo">Total</div><div class="valor" id="admTotal">—</div></div>
+        <div class="adm-cartao ok"><div class="rotulo">Aprovados</div><div class="valor" id="admAprovados">—</div></div>
+        <div class="adm-cartao pend"><div class="rotulo">Aguardando</div><div class="valor" id="admAguardando">—</div></div>
+        <div class="adm-cartao no"><div class="rotulo">Bloqueados</div><div class="valor" id="admBloqueados">—</div></div>
+        <div class="adm-cartao"><div class="rotulo">Administradores</div><div class="valor" id="admAdmins">—</div></div>
+      </div>
+
+      <div class="adm-filtros">
+        <input type="text" id="admBusca" placeholder="Buscar por nome, e-mail ou empresa…" autocomplete="off">
+        <select id="admFiltro">
+          <option value="todos">Todas as situações</option>
+          <option value="aprovados">Aprovados</option>
+          <option value="aguardando">Aguardando aprovação</option>
+          <option value="bloqueados">Bloqueados</option>
+          <option value="admins">Administradores</option>
+          <option value="excedentes">Acima do limite de aparelhos</option>
+        </select>
+        <button type="button" class="ghost small" id="admRecarregar">Recarregar</button>
+        <button type="button" class="ghost small" id="admExportar">⬇ CSV</button>
+      </div>
+
+      <div class="adm-tabela-wrap">
+        <table class="adm-tabela">
+          <thead>
+            <tr>
+              <th data-col="nome">Nome</th>
+              <th data-col="email">E-mail</th>
+              <th data-col="empresa">Empresa</th>
+              <th data-col="situacao">Situação</th>
+              <th data-col="total_dispositivos" class="num">Aparelhos</th>
+              <th data-col="total_acessos" class="num">Acessos</th>
+              <th data-col="ultimo_login">Último login</th>
+              <th data-col="criado_em">Cadastro</th>
+            </tr>
+          </thead>
+          <tbody id="admCorpo"></tbody>
+        </table>
+        <div class="adm-vazio" id="admVazio" hidden>Nenhum usuário encontrado com esses filtros.</div>
+      </div>
+
+      <div id="admDetalhe"></div>
+    </div>
+
+    <div id="admPainelApi" hidden>
+      <div class="adm-detalhe">
+        <h3>API REST</h3>
+        <div class="sub">Os endpoints abaixo já são expostos pelo PostgREST do Supabase. Todos exigem o cabeçalho <code>apikey</code> com a chave publicável e o <code>Authorization: Bearer &lt;access_token&gt;</code> da sessão. O RLS e as funções aplicam as mesmas regras do painel — chamar por fora não dá mais poder a ninguém.</div>
+
+        <h4>Base fiscal</h4>
+        <div class="rota"><span class="metodo">GET</span><code>/rest/v1/ncm?select=ncm,descricao,segmento,mva,monofasico&amp;order=ncm&amp;offset=0&amp;limit=1000</code></div>
+        <div class="rota"><span class="metodo">GET</span><code>/rest/v1/ncm?ncm=eq.22030000</code></div>
+        <div class="rota"><span class="metodo">GET</span><code>/rest/v1/ncm_versao?select=versao,total,atualizado_em</code></div>
+        <p style="font-size:12px; color:var(--ink-soft); margin:8px 0 0;">Só respondem para conta aprovada e não bloqueada; caso contrário voltam zero linhas.</p>
+
+        <h4>Perfil</h4>
+        <div class="rota"><span class="metodo">GET</span><code>/rest/v1/profiles?select=*</code></div>
+        <div class="rota"><span class="metodo patch">PATCH</span><code>/rest/v1/profiles?id=eq.&lt;uuid&gt;</code></div>
+        <p style="font-size:12px; color:var(--ink-soft); margin:8px 0 0;">Usuário comum enxerga e altera só o próprio registro, e nunca os campos <code>aprovado</code>, <code>bloqueado</code>, <code>limite_dispositivos</code> e <code>observacao</code> — um trigger recusa. Administrador enxerga e altera todos.</p>
+
+        <h4>Aparelhos e acessos</h4>
+        <div class="rota"><span class="metodo">GET</span><code>/rest/v1/dispositivos?user_id=eq.&lt;uuid&gt;</code></div>
+        <div class="rota"><span class="metodo post">POST</span><code>/rest/v1/dispositivos</code></div>
+        <div class="rota"><span class="metodo del">DELETE</span><code>/rest/v1/dispositivos?id=eq.&lt;uuid&gt;</code></div>
+        <div class="rota"><span class="metodo">GET</span><code>/rest/v1/acessos?user_id=eq.&lt;uuid&gt;&amp;order=quando.desc</code></div>
+        <p style="font-size:12px; color:var(--ink-soft); margin:8px 0 0;">O POST passa pelo trigger de limite de aparelhos e volta <code>42501</code> quando estoura. Remover aparelho é ação de administrador.</p>
+
+        <h4>Funções do painel</h4>
+        <div class="rota"><span class="metodo post">POST</span><code>/rest/v1/rpc/listar_usuarios</code></div>
+        <div class="rota"><span class="metodo post">POST</span><code>/rest/v1/rpc/promover_admin</code> <span style="color:var(--ink-soft);">corpo: <code>{"p_email":"pessoa@empresa.com"}</code></span></div>
+        <div class="rota"><span class="metodo post">POST</span><code>/rest/v1/rpc/rebaixar_admin</code> <span style="color:var(--ink-soft);">corpo: <code>{"p_id":"&lt;uuid&gt;"}</code></span></div>
+        <p style="font-size:12px; color:var(--ink-soft); margin:8px 0 0;">As três checam administrador na primeira linha e devolvem <code>42501</code> para qualquer outro chamador.</p>
+
+        <h4>Exemplo</h4>
+        <pre id="admExemplo">carregando…</pre>
+      </div>
+    </div>
+  </div><!-- /pageAdmin -->
+
+
+  <div class="footer-note">Alíquota interna geral do Acre: 19% (Art. 17, I, RICMS/AC) · Ferramenta de apoio — validar com contador antes de aplicar em documentos fiscais.</div>
+</div>
+
+</div><!-- /appRoot -->
+
+<script>window.lpXmlArchive={maxBytes:5*1024*1024,getUserId:function(){return "farol";},setUser:function(){},save:function(){return Promise.resolve("Nota lida. No Farol o XML não é guardado na calculadora: ele fica na pasta do cliente.");},refresh:function(){}};</script>
+<!-- login do guia removido: no Farol vale o login do portal -->
+
+<script>
+// ---------- Base fiscal: NCM + ST(Acre) + Monofásico ----------
+// Fontes: RICMS/AC (Dec. 008/98 atualizado até Dec. 11.900 de 06/2026, Anexo I),
+// Tabelas SPED 4.3.10/4.3.11/4.3.12 (PIS/COFINS monofásico/ST, versões 2026),
+// Relação de NCMs (10.687 códigos de mercadorias).
+//
+// A base não fica mais embutida neste arquivo: é servida pela tabela public.ncm
+// do Supabase, baixada uma vez após o login e guardada no localStorage. A partir
+// daí a ferramenta abre com a cópia local, mesmo sem internet, e só volta ao
+// servidor quando a versão da base muda. Ver sincronizarBase() no script de acesso.
+let dbByCode = {};
+let dbList = [];
+let baseCarregada = false;
+
+// Preenche as estruturas que o resto do app consome (dbByCode e dbList) a partir
+// das linhas de public.ncm — venham elas do servidor ou do cache do navegador.
+function aplicarBaseNcm(registros){
+  dbByCode = {};
+  dbList = [];
+  (registros || []).forEach(function(r){
+    const rec = {
+      ncm: r.ncm,
+      desc: r.descricao,
+      seg: r.segmento || null,
+      mva: (r.mva === null || r.mva === undefined || r.mva === '') ? null : parseFloat(r.mva),
+      mono: r.monofasico || null,
+    };
+    dbByCode[rec.ncm] = rec;
+    dbList.push(rec);
+  });
+  baseCarregada = dbList.length > 0;
+  atualizarStatusBase();
+}
+
+function resumoBase(){
+  return 'Base fiscal: ' + dbList.length.toLocaleString('pt-BR') + ' NCMs · ST/AC: ' +
+    dbList.filter(r=>r.seg).length.toLocaleString('pt-BR') + ' · Monofásicos: ' +
+    dbList.filter(r=>r.mono).length.toLocaleString('pt-BR');
+}
+
+// Com texto, mostra a mensagem crua (sincronizando, erro). Sem texto, monta o
+// resumo da base que está carregada no momento.
+function atualizarStatusBase(texto){
+  const el = document.getElementById('liveStatus');
+  if(!el) return;
+  if(texto){ el.textContent = texto; return; }
+  el.textContent = baseCarregada ? resumoBase() : 'Base fiscal ainda não carregada.';
+}
+
+function findByNcm(digits){
+  const rec = dbByCode[digits];
+  if(!rec) return null;
+  return {
+    ncm: digits,
+    desc: rec.desc,
+    cat: rec.seg || (rec.mono ? rec.mono : ''),
+    hasCest: !!rec.seg,           // tem ST/ICMS no Acre
+    cest: rec.seg || '',           // usamos o campo p/ mostrar o segmento
+    mva: rec.mva || 0,
+    mono: !!rec.mono,
+    monoCat: rec.mono || '',
+    inOfficialTable: true,
+    hasLocalLayer: true,
+  };
+}
+
+// ---------- Constantes de cálculo (Acre + Simples Nacional) ----------
+const REGIONS = {
+  'AC':{name:'Acre', group:'norte'},
+  'AL':{name:'Alagoas', group:'nordeste'},
+  'AP':{name:'Amapá', group:'norte'},
+  'AM':{name:'Amazonas', group:'norte'},
+  'BA':{name:'Bahia', group:'nordeste'},
+  'CE':{name:'Ceará', group:'nordeste'},
+  'DF':{name:'Distrito Federal', group:'centro-oeste'},
+  'ES':{name:'Espírito Santo', group:'sudeste-es'},
+  'GO':{name:'Goiás', group:'centro-oeste'},
+  'MA':{name:'Maranhão', group:'nordeste'},
+  'MT':{name:'Mato Grosso', group:'centro-oeste'},
+  'MS':{name:'Mato Grosso do Sul', group:'centro-oeste'},
+  'MG':{name:'Minas Gerais', group:'sul-sudeste'},
+  'PA':{name:'Pará', group:'norte'},
+  'PB':{name:'Paraíba', group:'nordeste'},
+  'PR':{name:'Paraná', group:'sul-sudeste'},
+  'PE':{name:'Pernambuco', group:'nordeste'},
+  'PI':{name:'Piauí', group:'nordeste'},
+  'RJ':{name:'Rio de Janeiro', group:'sul-sudeste'},
+  'RN':{name:'Rio Grande do Norte', group:'nordeste'},
+  'RS':{name:'Rio Grande do Sul', group:'sul-sudeste'},
+  'RO':{name:'Rondônia', group:'norte'},
+  'RR':{name:'Roraima', group:'norte'},
+  'SC':{name:'Santa Catarina', group:'sul-sudeste'},
+  'SP':{name:'São Paulo', group:'sul-sudeste'},
+  'SE':{name:'Sergipe', group:'nordeste'},
+  'TO':{name:'Tocantins', group:'norte'},
+  'EXT':{name:'Exterior (importado)', group:'exterior'},
+};
+
+const ALIQ_INTERNA_AC = 19;
+
+// alíquota interestadual + % antecipação conforme região de origem (destino: Acre)
+function interRates(group){
+  if(group === 'exterior') return {inter:4, antecip:17};
+  if(group === 'sul-sudeste') return {inter:7, antecip:14};
+  // norte, nordeste, centro-oeste, sudeste-es
+  return {inter:12, antecip:9};
+}
+
+// Simples Nacional — Anexo I (Comércio), LC 123/2006
+const FAIXAS_ANEXO_I = [
+  {max: 180000,   aliq: 4.00,  pd: 0,        cofins: 12.74, pis: 2.76, icms: 34.00},
+  {max: 360000,   aliq: 7.30,  pd: 5940,     cofins: 12.74, pis: 2.76, icms: 34.00},
+  {max: 720000,   aliq: 9.50,  pd: 13860,    cofins: 12.74, pis: 2.76, icms: 33.50},
+  {max: 1800000,  aliq: 10.70, pd: 22500,    cofins: 12.74, pis: 2.76, icms: 33.50},
+  {max: 3600000,  aliq: 14.30, pd: 87300,    cofins: 12.74, pis: 2.76, icms: 33.50},
+  {max: 4800000,  aliq: 19.00, pd: 378000,   cofins: 28.27, pis: 6.13, icms: null},
+];
+
+function getFaixaAnexoI(rbt12){
+  for(let i=0;i<FAIXAS_ANEXO_I.length;i++){
+    if(rbt12 <= FAIXAS_ANEXO_I[i].max) return {faixa: FAIXAS_ANEXO_I[i], numero: i+1};
+  }
+  return {faixa: FAIXAS_ANEXO_I[FAIXAS_ANEXO_I.length-1], numero: FAIXAS_ANEXO_I.length};
+}
+
+function aliquotaEfetivaAnexoI(rbt12){
+  if(!rbt12 || rbt12 <= 0) return null;
+  const {faixa, numero} = getFaixaAnexoI(rbt12);
+  const efetiva = ((rbt12 * faixa.aliq/100) - faixa.pd) / rbt12 * 100;
+  return {efetiva: Math.max(efetiva, 0), nominal: faixa.aliq, numero, faixa};
+}
+
+function normalize(str){
+  return (str||'').replace(/\D/g,'');
+}
+
+function formatNcm(digits){
+  if(digits.length !== 8) return digits;
+  return digits.slice(0,4)+'.'+digits.slice(4,6)+'.'+digits.slice(6,8);
+}
+
+function brl(n){
+  return 'R$ ' + n.toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2});
+}
+
+// ---------- (bloco SN removido nesta versão LP) ----------
+
+function rateStamp(uf, rates, tipo){
+  // linha discreta com as alíquotas em jogo — sutil, mas legível
+  let parts = ['interna AC <b>' + ALIQ_INTERNA_AC + '%</b>'];
+  if(rates){
+    parts.unshift('interestadual <b>' + rates.inter + '%</b>');
+    if(tipo === 'antecipacao') parts.push('antecipação <b>' + rates.antecip + '%</b>');
+  }
+  return '<div style="margin-top:12px; font-family:var(--mono); font-size:11px; color:var(--ink-soft); background:#f0ede4; border-radius:3px; padding:6px 10px; text-align:right; letter-spacing:.03em;">Alíquotas aplicadas: ' + parts.join(' · ') + '</div>';
+}
+
+
+// ============================================================
+// CESTA BÁSICA DO ACRE — Arts. 184-G e 184-H do RICMS/AC
+// Entrada interestadual: apenas DIFAL (alíq. interna da cesta = 17%), com
+// ENCERRAMENTO da tributação. Venda interna: vedado destaque de ICMS →
+// CSOSN 400 (Simples) / CST 41 (regime normal). Itens marcados interna:true
+// só valem para produção interna do Acre (fora do estado, seguem regra normal).
+// ============================================================
+const ALIQ_CESTA_AC = 17;
+const CESTA_AC = [
+  {pref:'1006', nome:'Arroz', interna:false},
+  {pref:'07133', nome:'Feijão', interna:false},
+  {pref:'0201', nome:'Carne bovina', interna:true},
+  {pref:'0202', nome:'Carne bovina congelada', interna:true},
+  {pref:'0203', nome:'Carne suína', interna:true},
+  {pref:'0204', nome:'Carne caprina/ovina', interna:true},
+  {pref:'02061000', nome:'Miudezas bovinas', interna:true},
+  {pref:'02062', nome:'Miudezas bovinas congeladas', interna:true},
+  {pref:'02071100', nome:'Frango inteiro fresco', interna:true},
+  {pref:'02071200', nome:'Frango inteiro congelado', interna:true},
+  {pref:'040210', nome:'Leite em pó', interna:false},
+  {pref:'04022110', nome:'Leite em pó integral', interna:false},
+  {pref:'04022120', nome:'Leite em pó desnatado', interna:false},
+  {pref:'19011010', nome:'Composto lácteo', interna:false},
+  {pref:'19019090', nome:'Composto lácteo', interna:false},
+  {pref:'1905', nome:'Pão, bolacha e biscoito', interna:true},
+  {pref:'09012', nome:'Café', interna:true},
+  {pref:'1701', nome:'Açúcar de cana comum', interna:false, exc:'exclui confeiteiro, orgânico, demerara, mascavo e light'},
+  {pref:'11062000', nome:'Farinha de mandioca', interna:true},
+  {pref:'15079011', nome:'Óleo de soja', interna:false},
+  {pref:'04072100', nome:'Ovos de galinha', interna:true},
+  {pref:'19021100', nome:'Macarrão espaguete', interna:false},
+  {pref:'19021900', nome:'Macarrão espaguete', interna:false},
+  {pref:'25010020', nome:'Sal de cozinha', interna:false},
+  {pref:'0302', nome:'Peixes frescos', interna:true},
+  {pref:'0303', nome:'Peixes congelados', interna:true},
+  {pref:'07', nome:'Hortícolas in natura', interna:false},
+  {pref:'08', nome:'Frutas in natura', interna:false},
+  {pref:'0401', nome:'Lácteos', interna:true},
+  {pref:'0402', nome:'Lácteos', interna:true},
+  {pref:'0403', nome:'Lácteos', interna:true},
+  {pref:'0404', nome:'Lácteos', interna:true},
+  {pref:'0405', nome:'Lácteos', interna:true},
+  {pref:'0406', nome:'Queijos', interna:true},
+  {pref:'11010010', nome:'Farinha de trigo 25/50kg', interna:false},
+  {pref:'19012000', nome:'Pré-mistura p/ pão francês', interna:false},
+  {pref:'48202000', nome:'Caderno escolar', interna:false},
+  {pref:'96081000', nome:'Caneta esferográfica', interna:false},
+  {pref:'96091000', nome:'Lápis escolar', interna:false},
+  {pref:'40169200', nome:'Borracha de apagar', interna:false},
+  {pref:'30049045', nome:'Paracetamol', interna:false},
+];
+// mais específico vence; interna:false vence interna:true no mesmo comprimento
+function qualifyCestaAC(ncm8, origemAC){
+  let best=null, bestLen=0;
+  for(const item of CESTA_AC){
+    if(ncm8.startsWith(item.pref)){
+      if(item.pref.length>bestLen || (item.pref.length===bestLen && !item.interna)){
+        bestLen=item.pref.length; best=item;
+      }
+    }
+  }
+  if(!best) return null;
+  if(best.interna && !origemAC) return {qualifica:false, item:best};
+  return {qualifica:true, item:best};
+}
+
+// ============================================================
+// Classificação oficial cClassTrib por NCM — venda a consumidor final
+// Fonte: Tabela de Classificação Tributária IT 2025.002 (Portal Conformidade Fácil/SVRS)
+// + Anexos I, VII, VIII, XIV, XV da LC 214/2025
+// ============================================================
+const RT_RULES = [
+  // Cesta básica nacional (Anexo I — alíquota zero) → 200003
+  {pref:['1006','0401','0402','190110','040510','151710','07133','0901','110620','1903','1101','1102','170114','170199','19021','100590','110412','0201','0202','0203','0204','0206','0207','0209','0210','0302','0303','0304','0406','2501','0903'],
+   cst:'200', ct:'200003', label:'Cesta básica — alíquota zero (Anexo I, LC 214/2025)',
+   caveat:'o Anexo I tem exceções pontuais dentro dessas posições (ex.: foie gras, salmão, ovas, queijos finos importados) — se o produto for uma dessas exceções, usar 200034 (red. 60%) ou 000001.'},
+  // Hortícolas, frutas e ovos (Anexo XV — alíquota zero) → 200014
+  {pref:['07','08','0407'],
+   cst:'200', ct:'200014', label:'Hortícolas, frutas e ovos — alíquota zero (Anexo XV)',
+   caveat:'vale para produtos in natura; se industrializado/processado, verificar enquadramento no Anexo VII (200034, red. 60%).'},
+  // Alimentos gerais (Anexo VII — redução 60%) → 200034
+  {pref:['1507','1508','1512','1514','1515','0403','0409','1103','1108','2002','2009','0306','1902'],
+   cst:'200', ct:'200034', label:'Alimentos p/ consumo humano — redução de 60% (Anexo VII)',
+   caveat:'conferir o NCM exato na lista do Anexo VII; itens fora dela vão para 000001.'},
+  // Higiene pessoal e limpeza popular (Anexo VIII — redução 60%) → 200035
+  {pref:['340111','330610','960321','481810','282890','340119'],
+   cst:'200', ct:'200035', label:'Higiene pessoal e limpeza — redução de 60% (Anexo VIII)', caveat:null},
+  // Absorventes e tampões (alíquota zero) → 200013 | fraldas (mesma posição 9619) → 200035
+  {pref:['9619'],
+   cst:'200', ct:'200013', label:'Absorventes/tampões higiênicos — alíquota zero',
+   caveat:'a posição 9619 também abriga fraldas — para fraldas o código é 200035 (higiene, red. 60%), não 200013.'},
+  // Medicamentos (registro Anvisa — red. 60% padrão; lista Anexo XIV = zero) → 200032 / 200009
+  {pref:['3003','3004'],
+   cst:'200', ct:'200032', label:'Medicamentos c/ registro Anvisa — redução de 60%',
+   caveat:'se o princípio ativo constar na lista do Anexo XIV (LC 214/2025), o código passa a ser 200009 (alíquota zero); soros e vacinas usam 200053.'},
+  // Dispositivos médicos (Anexo XII — red. 60%) → 200004
+  {pref:['9018','9019','9021','300510','300590','300610'],
+   cst:'200', ct:'200004', label:'Dispositivos médicos — redução de 60% (Anexo XII)',
+   caveat:'confirmar presença do NCM no Anexo XII; fora dele, 000001.'},
+  // Livros, jornais, periódicos (imunidade) → 410008
+  {pref:['4901','4902','4903','4904','4905'],
+   cst:'410', ct:'410008', label:'Livros, jornais e periódicos — imunidade constitucional', caveat:null},
+  // Combustíveis (monofásico) → 620001
+  {pref:['2710','2711','382600','382700','220710'],
+   cst:'620', ct:'620001', label:'Combustíveis — tributação monofásica', caveat:null},
+];
+
+function classifyRT(ncm8){
+  let best = null, bestLen = 0;
+  for(const rule of RT_RULES){
+    for(const p of rule.pref){
+      if(ncm8.startsWith(p) && p.length > bestLen){
+        bestLen = p.length;
+        best = rule;
+      }
+    }
+  }
+  if(best) return {cst: best.cst, ct: best.ct, label: best.label, caveat: best.caveat};
+  return {cst:'000', ct:'000001', label:'Tributação integral (padrão)', caveat:null};
+}
+
+function row(k,v,small){
+  return `<div class="row"><span class="k">${k}</span><span class="v ${small?'small':''}">${v}</span></div>`;
+}
+function code(c){
+  return `<span class="badge-code">${c}</span>`;
+}
+function totalBox(label, value){
+  return `<div class="total-box"><span class="k">${label}</span><span class="v">${value}</span></div>`;
+}
+
+// ---------- XML import & pricing ----------
+
+function escapeHtml(s){
+  return (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+// ---------- Máscara de moeda (BRL) para o campo RBT12 ----------
+function formatBRLInput(el){
+  let digits = el.value.replace(/\D/g,'');
+  digits = digits.replace(/^0+(?=\d)/,'');
+  if(!digits) digits = '0';
+  while(digits.length < 3) digits = '0' + digits;
+  const intPart = digits.slice(0, -2).replace(/^0+(?=\d)/,'') || '0';
+  const centPart = digits.slice(-2);
+  const intFormatted = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  el.value = intFormatted + ',' + centPart;
+}
+function parseBRLInput(el){
+  if(!el || !el.value) return 0;
+  return parseFloat(el.value.replace(/\./g,'').replace(',','.')) || 0;
+}
+
+
+function parseIcmsGroup(det){
+  const impostoEls = det.getElementsByTagName('imposto');
+  if(!impostoEls.length) return {vICMSDeson:0, motDesICMS:'', vIBS:0, vCBS:0};
+  const imposto = impostoEls[0];
+  const getV = (tag)=>{ const els = imposto.getElementsByTagName(tag); return els.length ? parseFloat((els[0].textContent||'').trim())||0 : 0; };
+  const vIBS = getV('vIBS');
+  const vCBS = getV('vCBS');
+  const icmsEls = imposto.getElementsByTagName('ICMS');
+  if(!icmsEls.length) return {vICMSDeson:0, motDesICMS:'', vIBS, vCBS};
+  const icmsNode = icmsEls[0];
+  let group = null;
+  for(let i=0;i<icmsNode.childNodes.length;i++){
+    if(icmsNode.childNodes[i].nodeType === 1){ group = icmsNode.childNodes[i]; break; }
+  }
+  if(!group) return {vICMSDeson:0, motDesICMS:'', vIBS, vCBS};
+  const getVal = (tag)=>{ const els = group.getElementsByTagName(tag); return els.length ? (els[0].textContent||'').trim() : ''; };
+  // IPI destacado no item (integra a base do ICMS-ST para comerciante)
+  let vIPI = 0;
+  const ipiEls = imposto.getElementsByTagName('IPI');
+  if(ipiEls.length){
+    const vIPIEls = ipiEls[0].getElementsByTagName('vIPI');
+    if(vIPIEls.length) vIPI = parseFloat((vIPIEls[0].textContent||'').trim()) || 0;
+  }
+  return {
+    vICMSDeson: parseFloat(getVal('vICMSDeson')) || 0,
+    motDesICMS: getVal('motDesICMS'),
+    orig: getVal('orig'),
+    vICMS: parseFloat(getVal('vICMS')) || 0,
+    vIPI,
+    vIBS, vCBS,
+  };
+}
+
+const MOTIVOS_DESONERACAO = {
+  '1':'Táxi', '3':'Produtor Agropecuário', '4':'Frotista/Locadora', '5':'Diplomático/Consular',
+  '6':'Utilitários/Áreas de Livre Comércio (Amazônia)', '7':'SUFRAMA (ZFM/ALC)', '8':'Órgão Público',
+  '9':'Outros', '10':'Deficiente Condutor', '11':'Deficiente Não Condutor', '12':'Órgão de fomento agropecuário',
+};
+
+function parseNFeXML(text){
+  if(/<!DOCTYPE|<!ENTITY/i.test(text)) throw new Error('XML com DTD ou entidades externas não é aceito.');
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(text, 'application/xml');
+  if(doc.getElementsByTagName('parsererror').length){
+    throw new Error('XML inválido — não foi possível interpretar o arquivo.');
+  }
+  const getFirst = (tag, ctx) => {
+    const els = (ctx||doc).getElementsByTagName(tag);
+    return els.length ? (els[0].textContent||'').trim() : '';
+  };
+  const infNFeEls = doc.getElementsByTagName('infNFe');
+  if(!infNFeEls.length) throw new Error('Não encontrei a tag <infNFe> — confirme que este é um XML de NF-e.');
+  const infNFe = infNFeEls[0];
+
+  const emitEls = infNFe.getElementsByTagName('emit');
+  const emit = emitEls.length ? emitEls[0] : null;
+  const emitName = emit ? getFirst('xNome', emit) : '';
+  const enderEmitEls = emit ? emit.getElementsByTagName('enderEmit') : [];
+  const emitUF = (enderEmitEls.length ? getFirst('UF', enderEmitEls[0]) : '').toUpperCase();
+  const emitCRT = emitEls.length ? getFirst('CRT', emitEls[0]) : '';
+
+  const detEls = infNFe.getElementsByTagName('det');
+  if(!detEls.length) throw new Error('Nenhum item (<det>) encontrado no XML.');
+
+  const items = [];
+  for(let i=0;i<detEls.length;i++){
+    const det = detEls[i];
+    const prodEls = det.getElementsByTagName('prod');
+    if(!prodEls.length) continue;
+    const prod = prodEls[0];
+    const icmsInfo = parseIcmsGroup(det);
+    items.push({
+      nItem: det.getAttribute('nItem') || String(i+1),
+      cProd: getFirst('cProd', prod),
+      xProd: getFirst('xProd', prod),
+      ncm: getFirst('NCM', prod),
+      cfop: getFirst('CFOP', prod),
+      uCom: getFirst('uCom', prod),
+      qCom: parseFloat(getFirst('qCom', prod)) || 1,
+      vUnCom: parseFloat(getFirst('vUnCom', prod)) || 0,
+      vProd: parseFloat(getFirst('vProd', prod)) || 0,
+      vDesc: parseFloat(getFirst('vDesc', prod)) || 0,
+      vFrete: parseFloat(getFirst('vFrete', prod)) || 0,
+      vSeg: parseFloat(getFirst('vSeg', prod)) || 0,
+      vOutro: parseFloat(getFirst('vOutro', prod)) || 0,
+      vICMSDeson: icmsInfo.vICMSDeson,
+      motDesICMS: icmsInfo.motDesICMS,
+      orig: icmsInfo.orig,
+      vICMS: icmsInfo.vICMS,
+      vIPI: icmsInfo.vIPI,
+      vIBS: icmsInfo.vIBS,
+      vCBS: icmsInfo.vCBS,
+    });
+  }
+  if(!items.length) throw new Error('Não consegui ler nenhum produto válido dentro dos itens do XML.');
+
+  // Totais da nota — usados para ratear desconto/frete quando não vêm por item
+  const totalEls = infNFe.getElementsByTagName('total');
+  const icmsTotEls = totalEls.length ? totalEls[0].getElementsByTagName('ICMSTot') : [];
+  const globalVFrete = icmsTotEls.length ? (parseFloat(getFirst('vFrete', icmsTotEls[0])) || 0) : 0;
+  const globalVDesc = icmsTotEls.length ? (parseFloat(getFirst('vDesc', icmsTotEls[0])) || 0) : 0;
+  const globalVDeson = icmsTotEls.length ? (parseFloat(getFirst('vICMSDeson', icmsTotEls[0])) || 0) : 0;
+
+  const sumVProd = items.reduce((s,it)=>s+it.vProd, 0) || 1;
+  const sumItemDesc = items.reduce((s,it)=>s+it.vDesc, 0);
+  const sumItemFrete = items.reduce((s,it)=>s+it.vFrete, 0);
+  if(sumItemDesc <= 0 && globalVDesc > 0){
+    items.forEach(it => { it.vDesc = globalVDesc * (it.vProd/sumVProd); });
+  }
+  if(sumItemFrete <= 0 && globalVFrete > 0){
+    items.forEach(it => { it.vFrete = globalVFrete * (it.vProd/sumVProd); });
+  }
+  // Desoneração informada só no total (ICMSTot) sem detalhe por item: rateia proporcional
+  const sumItemDeson = items.reduce((a,it)=>a+(it.vICMSDeson||0), 0);
+  if(sumItemDeson <= 0 && globalVDeson > 0){
+    items.forEach(it => { it.vICMSDeson = globalVDeson * (it.vProd/sumVProd); if(!it.motDesICMS) it.motDesICMS = '9'; });
+  }
+
+  const ide = infNFe.getElementsByTagName('ide')[0];
+  const rawKey = (infNFe.getAttribute('Id') || '').replace(/^NFe/, '');
+  const chaveNfe = /^\d{44}$/.test(rawKey) ? rawKey : '';
+  const numeroNota = ide ? getFirst('nNF', ide) : '';
+  const valorTotal = icmsTotEls.length ? (parseFloat(getFirst('vNF', icmsTotEls[0])) || 0) : items.reduce((sum, item) => sum + item.vProd, 0);
+  return {emitUF, emitName, emitCRT, items, globalVFrete, globalVDesc, globalVDeson, chaveNfe, numeroNota, valorTotal};
+}
+
+// (função legada computeIcmsEntradaXml removida — cálculo unificado em computeIcmsEntradaLP)
+
+// ---------- Abas ----------
+document.getElementById('tabBtnLP').addEventListener('click', ()=>switchTab('lp'));
+document.getElementById('tabBtnAudit').addEventListener('click', ()=>switchTab('audit'));
+document.getElementById('tabBtnCustoOp').addEventListener('click', ()=>switchTab('custoop'));
+document.getElementById('tabBtnAdmin').addEventListener('click', ()=>switchTab('admin'));
+function switchTab(t){
+  document.getElementById('tabBtnLP').classList.toggle('active', t==='lp');
+  document.getElementById('tabBtnAudit').classList.toggle('active', t==='audit');
+  document.getElementById('tabBtnCustoOp').classList.toggle('active', t==='custoop');
+  document.getElementById('tabBtnAdmin').classList.toggle('active', t==='admin');
+  document.getElementById('pageLP').classList.toggle('active', t==='lp');
+  document.getElementById('pageAudit').classList.toggle('active', t==='audit');
+  document.getElementById('pageCustoOp').classList.toggle('active', t==='custoop');
+  document.getElementById('pageAdmin').classList.toggle('active', t==='admin');
+}
+
+// ---------- Custo Operacional ----------
+const DESP_PADRAO = [
+  'Aluguel', 'Energia elétrica', 'Água', 'Internet/telefone', 'Salários + encargos',
+  'Pró-labore', 'Contador', 'Sistema/software', 'Manutenção', 'Material de expediente'
+];
+let opState = { despesas: [], fat: [0,0,0] };
+let custoOpCalculado = null; // % aplicado automaticamente na importação
+
+function opDefaultState(){
+  return { despesas: DESP_PADRAO.map(n=>({nome:n, valor:0})), fat:[0,0,0] };
+}
+
+async function loadOpState(){
+  try{
+    const res = await window.storage.get('custo-operacional', false);
+    if(res && res.value){ opState = JSON.parse(res.value); }
+    else { opState = opDefaultState(); }
+  }catch(e){ opState = opDefaultState(); }
+  if(!opState.despesas || !opState.despesas.length) opState.despesas = opDefaultState().despesas;
+  if(!opState.fat || opState.fat.length!==3) opState.fat = [0,0,0];
+  renderOpPage();
+}
+
+async function saveOpState(){
+  try{ await window.storage.set('custo-operacional', JSON.stringify(opState), false); }
+  catch(e){ console.error('storage', e); }
+}
+
+function fmtBRLValue(v){
+  return v ? v.toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2}) : '';
+}
+
+function renderOpPage(){
+  const list = document.getElementById('despList');
+  list.innerHTML = '';
+  opState.despesas.forEach((d, i)=>{
+    const div = document.createElement('div');
+    div.className = 'desp-row';
+    div.innerHTML =
+      '<input type="text" class="desp-nome" data-i="'+i+'" value="'+escapeHtml(d.nome)+'" placeholder="Nome da despesa">' +
+      '<input type="text" inputmode="decimal" class="desp-valor" data-i="'+i+'" value="'+fmtBRLValue(d.valor)+'" placeholder="0,00">' +
+      '<button class="rm" data-i="'+i+'" title="Remover">×</button>';
+    list.appendChild(div);
+  });
+  document.getElementById('fat1').value = fmtBRLValue(opState.fat[0]);
+  document.getElementById('fat2').value = fmtBRLValue(opState.fat[1]);
+  document.getElementById('fat3').value = fmtBRLValue(opState.fat[2]);
+  recalcOp();
+}
+
+function recalcOp(){
+  const totalDesp = opState.despesas.reduce((s,d)=>s+(d.valor||0), 0);
+  const fatValidos = opState.fat.filter(v=>v>0);
+  const media = fatValidos.length ? fatValidos.reduce((s,v)=>s+v,0)/fatValidos.length : 0;
+  document.getElementById('despTotal').textContent = brl(totalDesp);
+  document.getElementById('fatMedia').textContent = brl(media);
+  const pctEl = document.getElementById('opPct');
+  const subEl = document.getElementById('opSub');
+  if(totalDesp > 0 && media > 0){
+    custoOpCalculado = totalDesp/media*100;
+    pctEl.textContent = custoOpCalculado.toFixed(2).replace('.',',') + '%';
+    subEl.textContent = brl(totalDesp) + ' de despesas ÷ ' + brl(media) + ' de faturamento médio';
+    // aplica como padrão nos campos das importações de XML (SN e LP)
+    const snField = document.getElementById('xmlCustoOp');
+    if(snField) snField.value = custoOpCalculado.toFixed(2);
+    const lpField = document.getElementById('lpCustoOp');
+    if(lpField) lpField.value = custoOpCalculado.toFixed(2);
+    // se já existem itens de LP carregados, aplica o novo custo operacional e recalcula a tabela
+    if(typeof lpXmlItemsState !== 'undefined' && lpXmlItemsState.length){
+      lpXmlItemsState.forEach(r => { r.custoOpPct = custoOpCalculado; });
+      if(typeof lpRenderXmlTable === 'function') lpRenderXmlTable();
+    }
+  } else {
+    custoOpCalculado = null;
+    pctEl.textContent = '—';
+    subEl.textContent = 'Preencha despesas e faturamento';
+  }
+}
+
+document.getElementById('despList').addEventListener('input', function(e){
+  const i = parseInt(e.target.getAttribute('data-i'));
+  if(isNaN(i) || !opState.despesas[i]) return;
+  if(e.target.classList.contains('desp-nome')){
+    opState.despesas[i].nome = e.target.value;
+  } else if(e.target.classList.contains('desp-valor')){
+    formatBRLInput(e.target);
+    opState.despesas[i].valor = parseBRLInput(e.target);
+    recalcOp();
+  }
+});
+document.getElementById('despList').addEventListener('change', function(){ saveOpState(); });
+document.getElementById('despList').addEventListener('click', function(e){
+  if(e.target.classList.contains('rm')){
+    const i = parseInt(e.target.getAttribute('data-i'));
+    opState.despesas.splice(i,1);
+    saveOpState();
+    renderOpPage();
+  }
+});
+document.getElementById('addDespBtn').addEventListener('click', function(){
+  opState.despesas.push({nome:'', valor:0});
+  saveOpState();
+  renderOpPage();
+  const inputs = document.querySelectorAll('#despList .desp-nome');
+  if(inputs.length) inputs[inputs.length-1].focus();
+});
+['fat1','fat2','fat3'].forEach((id, idx)=>{
+  const el = document.getElementById(id);
+  el.addEventListener('input', function(){
+    formatBRLInput(el);
+    opState.fat[idx] = parseBRLInput(el);
+    recalcOp();
+  });
+  el.addEventListener('change', saveOpState);
+});
+
+loadOpState();
+
+// ============================================================
+//                    LUCRO PRESUMIDO — Motor
+// Fontes: RIR/2018 (Dec. 9.580) arts. 587-596 (presunção IRPJ);
+//         Lei 9.249/1995 art. 15 (comércio: base 8% IRPJ / 12% CSLL);
+//         Lei 9.718/1998 (PIS/COFINS cumulativo);
+//         Leis 10.637/2002 e 10.833/2003 (não cumulativo);
+//         RICMS/AC 008/98 (ICMS 19% interna, débito e crédito na venda).
+// ============================================================
+const LP_RATES = {
+  cumulativo: { pis: 0.65, cofins: 3.00 },
+  'nao-cumulativo': { pis: 1.65, cofins: 7.60 },
+};
+// Comércio: presunção 8% IRPJ + adicional 10% acima de R$60k/trim (aqui simplificado ao alíquota base)
+// IRPJ = 15% × 8% = 1,20% da receita | CSLL = 9% × 12% = 1,08% da receita
+// Total IRPJ+CSLL sobre receita bruta = ~2,28%
+const LP_IRPJ_PCT = 1.20;
+const LP_CSLL_PCT = 1.08;
+
+// IRPJ trimestral no Lucro Presumido — Comércio:
+//   Base presumida = 8% da receita bruta do trimestre
+//   IRPJ = 15% da base + 10% adicional sobre (base − R$ 60.000/trim)
+// Retorna a alíquota EFETIVA de IRPJ sobre a receita bruta (a CSLL fica sempre 1,08%).
+function calcIrpjEffective(receitaTrimestre){
+  if(!receitaTrimestre || receitaTrimestre <= 0) return {efetiva: LP_IRPJ_PCT, adicional: 0, base: 0};
+  const base = receitaTrimestre * 0.08;
+  const irpjBase = base * 0.15;
+  const excesso = Math.max(base - 60000, 0);
+  const irpjAdicional = excesso * 0.10;
+  const irpjTotal = irpjBase + irpjAdicional;
+  const efetiva = irpjTotal / receitaTrimestre * 100;
+  return {efetiva, adicional: irpjAdicional, base, irpjTotal};
+}
+
+// ---------- ICMS de entrada específico do Lucro Presumido ----------
+// LP não paga antecipação parcial (regra do Art. 96 do RICMS/AC é EXCLUSIVA do Simples Nacional).
+// Regime normal: só paga ICMS-ST quando o produto está sujeito a ST, ou DIFAL de cesta básica
+// (Arts. 184-G/H), ou nada (produto normal comprado de fora — ICMS é destacado na nota mas não gera
+// obrigação de recolhimento na entrada).
+// Alíquotas por tipo de operação: mercadoria IMPORTADA (orig 1/2/3/8) usa 4%
+// interestadual (Resolução Senado 13/2012), independente do estado de origem.
+function ratesForItem(item, emitUF){
+  const orig = ((item && item.orig) || '').trim();
+  const importada = orig === '1' || orig === '2' || orig === '3' || orig === '8';
+  if(importada) return {rates: interRates('exterior'), importada: true};
+  const regionInfo = REGIONS[emitUF];
+  return {rates: interRates(regionInfo ? regionInfo.group : 'norte'), importada: false};
+}
+
+function computeIcmsEntradaLP(item, emitUF, emitCRT){
+  const digits = normalize(item.ncm);
+  const rec = dbByCode[digits];
+  const hasST = rec ? !!rec.seg : false;
+  const mono = rec ? !!rec.mono : false;
+
+  // Base da operação = vProd − vDesc + frete + seguro + outras despesas
+  const baseOper = Math.max(
+    (item.vProd||0) - (item.vDesc||0) + (item.vFrete||0) + (item.vSeg||0) + (item.vOutro||0), 0);
+
+  // Cesta básica AC (Arts. 184-G/H): DIFAL com encerramento
+  const cesta = qualifyCestaAC(digits, emitUF === 'AC');
+  if(cesta && cesta.qualifica){
+    if(emitUF === 'AC') return {tipo:'cesta', icms:0, hasST, mono, cesta:true, aliqLabel:''};
+    const {rates, importada} = ratesForItem(item, emitUF);
+    const difalPct = ALIQ_CESTA_AC - rates.inter;
+    return {tipo:'cesta', icms:baseOper * difalPct/100, hasST, mono, cesta:true,
+            aliqLabel:'DIFAL cesta ' + difalPct + '%' + (importada ? ' · importado 4%' : '') + ' (encerra)'};
+  }
+
+  // Compra dentro do estado — nada a recolher
+  if(emitUF === 'AC') return {tipo:'interna', icms:0, hasST, mono, aliqLabel:''};
+
+  const {rates, importada} = ratesForItem(item, emitUF);
+
+  // Produto com ST: ICMS-ST devido na entrada (com encerramento)
+  if(hasST){
+    // Convênio ICMS 35/2011: remetente optante do Simples Nacional (CRT 1 ou 2)
+    // usa a MVA ORIGINAL, sem ajuste.
+    const remetenteSN = emitCRT === '1' || emitCRT === '2';
+    const mvaAplicada = remetenteSN
+      ? (rec.mva||0)
+      : ((1+(rec.mva||0)/100)*(1-rates.inter/100)/(1-ALIQ_INTERNA_AC/100)-1)*100;
+    // Base do ST inclui também o IPI destacado (comprador comerciante)
+    const baseST = (baseOper + (item.vIPI||0)) * (1+mvaAplicada/100);
+    // ICMS próprio a deduzir:
+    // - vICMS destacado na NF quando houver;
+    // - operação DESONERADA (SUFRAMA/isenção: vICMSDeson > 0 sem destaque) → nada a
+    //   deduzir, pois nenhum ICMS foi cobrado na origem;
+    // - senão, teórico (base × alíq. interestadual).
+    const desonerada = (item.vICMSDeson||0) > 0 && !(item.vICMS||0);
+    const icmsProprio = (item.vICMS||0) > 0 ? item.vICMS
+                      : desonerada ? 0
+                      : baseOper * rates.inter/100;
+    const icmsST = Math.max(baseST*ALIQ_INTERNA_AC/100 - icmsProprio, 0);
+    const label = 'ST ' + ALIQ_INTERNA_AC + '% · MVA ' + (remetenteSN ? 'orig. (remet. SN) ' : 'aj. ') + mvaAplicada.toFixed(1) + '%' + (importada ? ' · importado 4%' : '');
+    return {tipo:'st', icms:icmsST, hasST, mono, aliqLabel: label};
+  }
+
+  // Produto normal comprado de fora: antecipação parcial (RICMS/AC).
+  // Vira crédito na apuração — abate do débito de ICMS na venda.
+  return {tipo:'antecipacao', icms: baseOper * rates.antecip/100, hasST, mono,
+          aliqLabel:'antecip. ' + rates.antecip + '%' + (importada ? ' (importado)' : '')};
+}
+
+// ---------- Consulta individual LP ----------
+let lpCurrentRecord = null;
+let lpCurrentValor = null;
+
+document.getElementById('lpSearchBtn').addEventListener('click', doLpSearch);
+document.getElementById('lpSearchInput').addEventListener('keypress', (e)=>{ if(e.key==='Enter') doLpSearch(); });
+document.getElementById('lpClearBtn').addEventListener('click', ()=>{
+  document.getElementById('lpSearchInput').value = '';
+  document.getElementById('lpResult').innerHTML = '';
+  lpCurrentRecord = null;
+});
+
+function doLpSearch(){
+  const term = document.getElementById('lpSearchInput').value.trim();
+  if(!term) return;
+  // Sem esta guarda, pesquisar durante a sincronização devolveria "nenhum NCM
+  // encontrado", que é mentira — a base é que ainda não chegou.
+  if(!baseCarregada){
+    document.getElementById('lpResult').innerHTML =
+      '<div class="panel" style="margin-top:16px;"><b>A base fiscal ainda está sendo carregada.</b> Aguarde alguns instantes e busque de novo.</div>';
+    return;
+  }
+  const digits = normalize(term);
+  let matches = [];
+  if(digits.length >= 4){
+    matches = dbList.filter(r => r.ncm.startsWith(digits)).slice(0,30).map(r => findByNcm(r.ncm));
+  } else {
+    const termUp = term.toUpperCase();
+    matches = dbList.filter(r => r.desc.toUpperCase().includes(termUp)).slice(0,30).map(r => findByNcm(r.ncm));
+  }
+  const area = document.getElementById('lpResult');
+  if(!matches.length){
+    area.innerHTML = '<div class="panel" style="margin-top:16px;"><b>Nenhum NCM encontrado.</b> Confira o código ou tente por descrição.</div>';
+    return;
+  }
+  if(matches.length > 1){
+    let html = '<div class="panel" style="margin-top:16px;"><h3>' + matches.length + ' resultados</h3>';
+    matches.forEach(m => {
+      html += '<div style="padding:8px 0; border-bottom:1px solid var(--line); cursor:pointer;" onclick="lpPickResult(\'' + m.ncm + '\')"><b>' + formatNcm(m.ncm) + '</b> — ' + escapeHtml(m.desc) + '</div>';
+    });
+    html += '</div>';
+    area.innerHTML = html;
+    return;
+  }
+  lpRenderResult(matches[0]);
+}
+window.lpPickResult = function(ncm){
+  const rec = findByNcm(ncm);
+  document.getElementById('lpSearchInput').value = ncm;
+  lpRenderResult(rec);
+};
+
+function lpRenderResult(rec){
+  lpCurrentRecord = rec;
+  const html = `
+    <div class="header-block">
+      <div class="ncm-code">${formatNcm(rec.ncm)}</div>
+      <div class="ncm-desc">${escapeHtml(rec.desc)}</div>
+      <div class="tags">
+        <span class="tag ${rec.hasCest?'cest-yes':'cest-no'}">${rec.hasCest ? 'ST no Acre — ' + rec.cest : 'Sem ST no Acre'}</span>
+        ${rec.mono ? '<span class="tag cest-yes">PIS/COFINS Monofásico</span>' : '<span class="tag cest-no">PIS/COFINS normal</span>'}
+      </div>
+    </div>
+
+    <div class="settings-row">
+      <div class="field">
+        <label>Estado de origem do fornecedor</label>
+        <select id="lpUfSelect"></select>
+      </div>
+      <div class="field">
+        <label>Regime PIS/COFINS</label>
+        <select id="lpRegimeSelect">
+          <option value="cumulativo" selected>Cumulativo (0,65% + 3%)</option>
+          <option value="nao-cumulativo">Não cumulativo (1,65% + 7,6%)</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Valor da mercadoria (opcional, p/ calcular R$)</label>
+        <input type="number" id="lpValorInput" placeholder="Ex: 1000.00" step="0.01">
+      </div>
+    </div>
+
+    <div class="grid">
+      <div class="panel"><h3>ICMS na entrada (Acre)</h3><div class="outcome" id="lpEntradaOutcome"></div></div>
+      <div class="panel"><h3>ICMS na venda (débito × crédito)</h3><div class="outcome" id="lpVendaIcmsOutcome"></div></div>
+    </div>
+
+    <div class="grid">
+      <div class="panel"><h3>Códigos para venda ao consumidor final</h3><div class="outcome" id="lpVendaOutcome"></div></div>
+      <div class="panel"><h3>PIS / COFINS / IRPJ / CSLL</h3><div class="outcome" id="lpTribsFedOutcome"></div></div>
+    </div>
+
+    <div class="panel" style="margin-top:16px;">
+      <h3>Reforma Tributária — CBS / IBS / cClassTrib</h3>
+      <div class="outcome" id="lpRtOutcome"></div>
+    </div>
+  `;
+  document.getElementById('lpResult').innerHTML = html;
+
+  const ufSel = document.getElementById('lpUfSelect');
+  Object.keys(REGIONS).forEach(uf => {
+    const opt = document.createElement('option');
+    opt.value = uf; opt.textContent = uf + ' — ' + REGIONS[uf].name;
+    if(uf==='AC') opt.textContent += ' (compra dentro do estado)';
+    if(uf==='SP') opt.selected = true;
+    ufSel.appendChild(opt);
+  });
+  document.getElementById('lpValorInput').addEventListener('input', e=>{
+    lpCurrentValor = parseFloat(e.target.value) || null;
+    lpUpdateOutcomes();
+  });
+  ufSel.addEventListener('change', lpUpdateOutcomes);
+  document.getElementById('lpRegimeSelect').addEventListener('change', lpUpdateOutcomes);
+  lpUpdateOutcomes();
+}
+
+function lpUpdateOutcomes(){
+  const rec = lpCurrentRecord;
+  if(!rec) return;
+  const uf = document.getElementById('lpUfSelect').value;
+  const valor = lpCurrentValor;
+  const regime = document.getElementById('lpRegimeSelect').value;
+  const rates = LP_RATES[regime];
+  const cestaAC = qualifyCestaAC(rec.ncm, uf === 'AC');
+
+  // ---- ICMS na ENTRADA ----
+  let entradaHtml = '';
+  let icmsEntradaValor = 0;
+
+  if(cestaAC && cestaAC.qualifica){
+    entradaHtml += row('Regime', '<span class="badge-code" style="background:var(--green);">Cesta Básica AC — ' + cestaAC.item.nome + '</span>');
+    if(uf === 'AC'){
+      entradaHtml += row('Situação', 'Produção interna — carga 7% (red. BC 58,82%)');
+      entradaHtml += `<div class="note">Fornecedor acreano da cesta básica já recolheu os 7% (Art. 184-H, §6º). Crédito de ICMS aproveitável na sua entrada: 7%, mas com <b>estorno proporcional</b> na venda (que sairá sem destaque). Efeito líquido: neutro.</div>`;
+    } else {
+      const rInter = interRates(REGIONS[uf].group);
+      const difalPct = ALIQ_CESTA_AC - rInter.inter;
+      entradaHtml += row('DIFAL a recolher na entrada', '<b>' + difalPct + '%</b> (com encerramento)');
+      if(valor){
+        icmsEntradaValor = valor * difalPct/100;
+        entradaHtml += totalBox('DIFAL cesta a recolher', brl(icmsEntradaValor));
+      }
+      entradaHtml += `<div class="note">Recolhimento encerra a tributação (Art. 184-H, §2º). No LP: na venda interna não há destaque, mas há <b>estorno proporcional do crédito da entrada</b> (Art. 21, LC 87/96), então o crédito líquido tende a zero.</div>`;
+    }
+  } else if(uf === 'AC'){
+    entradaHtml += row('Tipo de operação', '<span class="badge-code">Interna (dentro do Acre)</span>');
+    if(rec.hasCest){
+      entradaHtml += row('Situação', 'ICMS-ST já retido pelo fornecedor');
+      entradaHtml += `<div class="note">No LP com ST, o ICMS retido já é a última incidência da cadeia. Na venda usa CST 60, sem novo débito.</div>`;
+    } else {
+      entradaHtml += row('Situação', 'Tributação normal');
+      entradaHtml += `<div class="note">Compra dentro do Acre no LP: o ICMS já está embutido no preço cobrado pelo fornecedor. Na venda haverá débito de 19% (CST 00), sem aproveitamento do ICMS da entrada como crédito nesta modelagem.</div>`;
+    }
+  } else {
+    const rInter = interRates(REGIONS[uf].group);
+    entradaHtml += row('Alíquota interestadual (origem)', rInter.inter + '%');
+    if(rec.hasCest){
+      const mvaOriginal = rec.mva || 0;
+      const mvaAjustada = ((1+mvaOriginal/100)*(1-rInter.inter/100)/(1-ALIQ_INTERNA_AC/100)-1)*100;
+      entradaHtml += row('Regime', '<span class="badge-code">Substituição Tributária</span>');
+      entradaHtml += row('MVA original (referência)', mvaOriginal.toFixed(2) + '%');
+      entradaHtml += row('MVA ajustada', mvaAjustada.toFixed(2) + '%');
+      if(valor){
+        const icmsProprio = valor * rInter.inter/100;
+        const baseST = valor * (1+mvaAjustada/100);
+        const icmsST = Math.max(baseST*ALIQ_INTERNA_AC/100 - icmsProprio, 0);
+        icmsEntradaValor = icmsST;
+        entradaHtml += totalBox('ICMS-ST a recolher na entrada', brl(icmsST));
+      }
+      entradaHtml += `<div class="note">No LP com ST: o ICMS-ST retido encerra a cadeia. Venda usa CST 60 (sem novo débito, sem aproveitamento de crédito).</div>`;
+    } else {
+      entradaHtml += row('Regime', '<span class="badge-code">Tributação normal (nada a recolher na entrada)</span>');
+      entradaHtml += `<div class="note">Compra interestadual no LP com produto sem ST: <b>nada é recolhido na entrada</b> (a antecipação parcial do Art. 96 do RICMS/AC é exclusiva do Simples Nacional). O ICMS destacado pelo fornecedor não é aproveitado como crédito na venda nesta modelagem — na venda haverá débito de 19% (CST 00) integral.</div>`;
+    }
+  }
+  document.getElementById('lpEntradaOutcome').innerHTML = entradaHtml + rateStamp(uf, uf!=='AC' ? interRates(REGIONS[uf].group) : null, null);
+
+  // ---- ICMS na VENDA (débito × crédito) ----
+  let vicmsHtml = '';
+  if(cestaAC && cestaAC.qualifica){
+    vicmsHtml += row('Alíquota interna (cesta)', ALIQ_CESTA_AC + '%');
+    vicmsHtml += row('Débito na venda', '<b>R$ 0,00</b> — sem destaque (Art. 184-H, §3º)');
+    vicmsHtml += `<div class="note">Cesta básica no LP: vedado destaque do ICMS na venda interna. O crédito da entrada deve ser <b>estornado</b> proporcionalmente (Art. 21, LC 87/96). CST na venda: <b>41</b> (não tributada).</div>`;
+  } else if(rec.hasCest){
+    vicmsHtml += row('ICMS-ST', 'Já retido na entrada');
+    vicmsHtml += row('Débito na venda', '<b>R$ 0,00</b> — ST encerra a cadeia');
+    vicmsHtml += `<div class="note">Produto com ST no LP: CST <b>60</b> (ICMS cobrado anteriormente por ST). Não gera novo débito nem crédito.</div>`;
+  } else {
+    vicmsHtml += row('Alíquota interna do Acre', ALIQ_INTERNA_AC + '%');
+    if(valor){
+      const debito = valor * ALIQ_INTERNA_AC/100;
+      vicmsHtml += totalBox('Débito de ICMS na venda (19%)', brl(debito));
+    }
+    vicmsHtml += `<div class="note">Simulação por item considerando o mesmo valor da compra como valor da venda. Nesta modelagem o ICMS da entrada não é aproveitado como crédito — todo débito de 19% da venda vai integralmente para a apuração. CST na venda: <b>00</b> (tributada integralmente).</div>`;
+  }
+  document.getElementById('lpVendaIcmsOutcome').innerHTML = vicmsHtml;
+
+  // ---- Códigos de venda (CST ICMS, CFOP) ----
+  let vendaHtml = '';
+  if(cestaAC && cestaAC.qualifica){
+    vendaHtml += row('CST ICMS', code('41'));
+    vendaHtml += row('Situação', 'Não tributada — cesta básica');
+    vendaHtml += row('CFOP', code('5.102'));
+  } else if(rec.hasCest){
+    vendaHtml += row('CST ICMS', code('60'));
+    vendaHtml += row('Situação', 'ICMS cobrado anteriormente por ST');
+    vendaHtml += row('CFOP', code('5.405'));
+  } else {
+    vendaHtml += row('CST ICMS', code('00'));
+    vendaHtml += row('Situação', 'Tributada integralmente (19%)');
+    vendaHtml += row('CFOP', code('5.102'));
+  }
+  vendaHtml += `<div class="note">Empresas do LP usam <b>CST</b> (não CSOSN). Se cliente PF → NFC-e; se PJ → NF-e modelo 55.</div>`;
+  document.getElementById('lpVendaOutcome').innerHTML = vendaHtml;
+
+  // ---- Tributos federais (PIS/COFINS/IRPJ/CSLL) ----
+  let ftHtml = '';
+  ftHtml += row('Regime PIS/COFINS', regime === 'cumulativo' ? 'Cumulativo' : 'Não cumulativo');
+  if(rec.mono){
+    ftHtml += row('CST PIS', code('04'));
+    ftHtml += row('CST COFINS', code('04'));
+    ftHtml += row('Situação', 'Monofásico — tributado na indústria/importador');
+  } else {
+    const cstNorm = regime === 'cumulativo' ? '01' : '50';
+    ftHtml += row('CST PIS', code(cstNorm));
+    ftHtml += row('CST COFINS', code(cstNorm));
+    ftHtml += row('Alíquota PIS', rates.pis.toFixed(2) + '%');
+    ftHtml += row('Alíquota COFINS', rates.cofins.toFixed(2) + '%');
+  }
+  ftHtml += row('IRPJ (presunção 8% × 15%)', LP_IRPJ_PCT.toFixed(2) + '% da receita');
+  ftHtml += row('CSLL (presunção 12% × 9%)', LP_CSLL_PCT.toFixed(2) + '% da receita');
+  ftHtml += `<div class="note">${regime === 'cumulativo' ? 'Cumulativo: sem direito a crédito. Base = receita bruta.' : 'Não cumulativo: pode aproveitar créditos sobre insumos, energia, aluguel etc. — CST 50 na venda.'} IRPJ tem adicional de 10% sobre a parcela do lucro presumido trimestral que exceder R$ 60.000. Os valores em R$ do IRPJ/CSLL sobre esta venda só são calculados na importação de XML, onde compõem o CMV do produto.</div>`;
+  document.getElementById('lpTribsFedOutcome').innerHTML = ftHtml;
+
+  // ---- Reforma Tributária ----
+  const rt = classifyRT(rec.ncm);
+  let rtHtml = '';
+  rtHtml += row('Situação hoje (2026)', '<span class="badge-code" style="background:var(--gold);">Obrigatório informar em teste</span>');
+  rtHtml += row('CST IBS/CBS p/ cadastro', code(rt.cst));
+  rtHtml += row('cClassTrib p/ cadastro', code(rt.ct));
+  rtHtml += row('Enquadramento', rt.label);
+  rtHtml += row('Alíquotas de teste 2026', 'CBS <b>0,9%</b> · IBS <b>0,1%</b>');
+  let rtNote = 'Empresas do regime normal (CRT 3) <b>não estão dispensadas</b> em 2026 — devem informar CST e cClassTrib nos documentos fiscais e destacar CBS/IBS conforme as alíquotas de teste. Fonte: tabela IT 2025.002 (Portal Conformidade Fácil/SVRS).';
+  if(rt.caveat) rtNote += ' <b>Atenção:</b> ' + rt.caveat;
+  rtHtml += `<div class="note">${rtNote}</div>`;
+  document.getElementById('lpRtOutcome').innerHTML = rtHtml;
+}
+
+// ---------- LP: Importação de XML ----------
+let lpXmlItemsState = [];
+
+document.getElementById('lpXmlFile').addEventListener('change', async function(e){
+  const file = e.target.files[0];
+  if(!file) return;
+  const owner = window.lpXmlArchive.getUserId();
+  const receipt = document.getElementById('lpArchiveReceipt');
+  e.target.disabled = true;
+  receipt.textContent = 'Lendo e guardando XML…';
+  receipt.classList.remove('archive-error');
+  try {
+    if(!file.size || file.size > window.lpXmlArchive.maxBytes) throw new Error('Selecione um XML de até 5 MB.');
+    const text = await file.text();
+    const parsed = parseNFeXML(text);
+    if(window.lpXmlArchive.getUserId() !== owner) return;
+    try{ receipt.textContent = await window.lpXmlArchive.save(file, parsed); }
+    catch(error){
+      if(window.lpXmlArchive.getUserId() !== owner) return;
+      receipt.textContent = error.message; receipt.classList.add('archive-error');
+    }
+    if(window.lpXmlArchive.getUserId() !== owner) return;
+    if(baseCarregada) lpLoadXmlItems(parsed);
+    else showLpXmlError('A base fiscal ainda está sendo carregada. Para calcular os preços, aguarde a base e clique em “Abrir” no histórico.');
+  } catch(err){
+    if(window.lpXmlArchive.getUserId() === owner){
+      receipt.textContent = 'XML não guardado.'; receipt.classList.add('archive-error');
+      showLpXmlError('Erro ao ler o XML: ' + err.message);
+    }
+  }finally{ e.target.disabled = false; e.target.value = ''; }
+});
+window.lpOpenArchivedXml = async function(file, stillCurrent){
+  if(!baseCarregada) throw new Error('Aguarde o carregamento da base fiscal para abrir os cálculos desta nota.');
+  const text = await file.text();
+  if(!stillCurrent()) return;
+  lpLoadXmlItems(parseNFeXML(text));
+  document.getElementById('lpXmlEmitInfo').scrollIntoView({behavior:'smooth', block:'start'});
+};
+document.getElementById('lpClearXmlBtn').addEventListener('click', function(){
+  lpXmlItemsState = [];
+  document.getElementById('lpXmlFile').value = '';
+  document.getElementById('lpArchiveReceipt').textContent = '';
+  document.getElementById('lpXmlErrorArea').innerHTML = '';
+  document.getElementById('lpXmlEmitInfo').style.display='none';
+  var _irpjBar = document.getElementById('lpIrpjInfo'); if(_irpjBar) _irpjBar.style.display='none';
+  document.getElementById('lpXmlSettings').style.display='none';
+  document.getElementById('lpXmlTableWrap').style.display='none';
+  document.getElementById('lpXmlTotals').style.display='none';
+  document.getElementById('lpXmlNote').style.display='none';
+  var _lra = document.getElementById('lpXmlReportActions'); if(_lra) _lra.style.display='none';
+});
+
+function showLpXmlError(msg){
+  document.getElementById('lpXmlErrorArea').innerHTML = '<div class="xml-error">'+escapeHtml(msg)+'</div>';
+  document.getElementById('lpXmlEmitInfo').style.display='none';
+  var _irpjBar = document.getElementById('lpIrpjInfo'); if(_irpjBar) _irpjBar.style.display='none';
+  document.getElementById('lpXmlSettings').style.display='none';
+  document.getElementById('lpXmlTableWrap').style.display='none';
+  document.getElementById('lpXmlTotals').style.display='none';
+  document.getElementById('lpXmlNote').style.display='none';
+  var _lra = document.getElementById('lpXmlReportActions'); if(_lra) _lra.style.display='none';
+}
+
+function lpLoadXmlItems(parsed){
+  document.getElementById('lpXmlErrorArea').innerHTML = '';
+  const ufInfo = REGIONS[parsed.emitUF];
+  const emitInfoEl = document.getElementById('lpXmlEmitInfo');
+  emitInfoEl.style.display = 'block';
+  const totalIbsCbs = parsed.items.reduce((s,it)=>s+(it.vIBS||0)+(it.vCBS||0), 0);
+  const infoBase = 'Fornecedor: <b>' + escapeHtml(parsed.emitName||'—') + '</b> · Origem: <b>' +
+    escapeHtml(parsed.emitUF) + (ufInfo ? (' — ' + ufInfo.name) : '') + '</b> · ' + parsed.items.length + ' item(ns)' +
+    (parsed.globalVFrete ? ' · Frete: <b>' + brl(parsed.globalVFrete) + '</b>' : '') +
+    (parsed.globalVDesc ? ' · Desconto: <b>' + brl(parsed.globalVDesc) + '</b>' : '') +
+    (totalIbsCbs > 0 ? ' · CBS+IBS: <b>' + brl(totalIbsCbs) + '</b> (teste 2026)' : '');
+  emitInfoEl.setAttribute('data-info-base', infoBase);
+  refreshLpTaxRatesInfo();
+  document.getElementById('lpXmlSettings').style.display = 'grid';
+  document.getElementById('lpXmlTableWrap').style.display = 'block';
+  document.getElementById('lpXmlTotals').style.display = 'flex';
+  document.getElementById('lpXmlNote').style.display = 'block';
+  document.getElementById('lpXmlReportActions').style.display = 'flex';
+
+  const defaultCustoOp = parseFloat(document.getElementById('lpCustoOp').value) || 0;
+  const defaultLucro = parseFloat(document.getElementById('lpLucro').value) || 30;
+  lpXmlItemsState = parsed.items.map(item => ({
+    raw: item, emitUF: parsed.emitUF,
+    entrada: computeIcmsEntradaLP(item, parsed.emitUF, parsed.emitCRT),
+    emitCRT: parsed.emitCRT,
+    custoOpPct: defaultCustoOp, lucroPct: defaultLucro,
+    manualPrice: null, editMode: 'lucro',
+    unPorEmb: 1, // fracionamento — usuário edita direto na tabela
+  }));
+  lpRenderXmlTable();
+}
+
+document.getElementById('lpApplyDefaultsBtn').addEventListener('click', function(){
+  const defCusto = parseFloat(document.getElementById('lpCustoOp').value) || 0;
+  const defLucro = parseFloat(document.getElementById('lpLucro').value) || 30;
+  lpXmlItemsState.forEach(row => {
+    row.custoOpPct = defCusto; row.lucroPct = defLucro;
+    row.manualPrice = null; row.editMode = 'lucro';
+  });
+  lpRenderXmlTable();
+});
+function refreshLpTaxRatesInfo(){
+  const emitInfoEl = document.getElementById('lpXmlEmitInfo');
+  if(!emitInfoEl) return;
+  const base = emitInfoEl.getAttribute('data-info-base') || '';
+  if(!base) return;
+  const regime = document.getElementById('lpRegimePisCofins').value;
+  const rates = LP_RATES[regime];
+  const receitaTri = parseBRLInput(document.getElementById('lpReceitaTrimestre'));
+  const irpjInfo = calcIrpjEffective(receitaTri);
+  const irpjTxt = irpjInfo.adicional > 0
+    ? '<b>' + irpjInfo.efetiva.toFixed(3).replace('.', ',') + '%</b> <span style="opacity:.75;">(inclui adicional)</span>'
+    : '<b>' + LP_IRPJ_PCT.toFixed(2).replace('.', ',') + '%</b>';
+  const taxes = ' · PIS <b>' + rates.pis.toFixed(2).replace('.', ',') + '%</b>' +
+    ' · COFINS <b>' + rates.cofins.toFixed(2).replace('.', ',') + '%</b>' +
+    ' · IRPJ ' + irpjTxt +
+    ' · CSLL <b>' + LP_CSLL_PCT.toFixed(2).replace('.', ',') + '%</b>';
+  emitInfoEl.innerHTML = base + taxes;
+}
+
+document.getElementById('lpMethod').addEventListener('change', ()=>{ if(lpXmlItemsState.length) lpRenderXmlTable(); });
+document.getElementById('lpRegimePisCofins').addEventListener('change', ()=>{
+  refreshLpTaxRatesInfo();
+  if(lpXmlItemsState.length) lpRenderXmlTable();
+});
+document.getElementById('lpReceitaTrimestre').addEventListener('input', function(){
+  formatBRLInput(this);
+  refreshLpTaxRatesInfo();
+  if(lpXmlItemsState.length) lpRenderXmlTable();
+});
+document.getElementById('lpFreteManual').addEventListener('input', ()=>{ if(lpXmlItemsState.length) lpRenderXmlTable(); });
+document.getElementById('lpFreteManual').addEventListener('change', function(){
+  const v = parseBRLInput(this) || 0;
+  if(v > 0) this.value = brl(v).replace('R$ ','');
+  if(lpXmlItemsState.length) lpRenderXmlTable();
+});
+
+function lpComputeRow(row){
+  const item = row.raw;
+  const qtd = item.qCom || 1;
+  const unPorEmb = Math.max(row.unPorEmb||1, 1); // fracionamento: unidades dentro de cada embalagem
+  // Frete adicional pago à parte, rateado proporcional ao vProd
+  const freteManualTotal = parseBRLInput(document.getElementById('lpFreteManual')) || 0;
+  const sumVProd = lpXmlItemsState.reduce((s,r)=>s+(r.raw.vProd||0), 0) || 1;
+  const freteManualDoItem = freteManualTotal * ((item.vProd||0)/sumVProd);
+  // O frete pago à parte também integra a base do ICMS de entrada:
+  // recalcula a entrada somando o rateio ao vFrete do item.
+  const entradaCalc = freteManualDoItem > 0
+    ? computeIcmsEntradaLP(Object.assign({}, item, {vFrete:(item.vFrete||0)+freteManualDoItem}), row.emitUF, row.emitCRT)
+    : row.entrada;
+  // Valores por embalagem (o que veio no XML)
+  const valorEmbalagem = item.vUnCom;
+  const descEmbalagem = (item.vDesc||0) / qtd;
+  const freteXmlEmbalagem = (item.vFrete||0) / qtd;
+  const freteManualEmbalagem = freteManualDoItem / qtd;
+  const desonEmbalagem = (item.vICMSDeson||0) / qtd;
+  const icmsEntradaEmbalagem = entradaCalc.icms / qtd;
+  // Valores por unidade final de venda (embalagem ÷ unidades por embalagem)
+  const valorXmlUnit = valorEmbalagem / unPorEmb;
+  const descUnit = descEmbalagem / unPorEmb;
+  const freteUnit = (freteXmlEmbalagem + freteManualEmbalagem) / unPorEmb;
+  const desonUnit = desonEmbalagem / unPorEmb;
+  const icmsEntradaUnit = icmsEntradaEmbalagem / unPorEmb;
+  const emitUF = row.emitUF;
+
+  // Crédito de ICMS na venda:
+  // - Se produto normal veio de fora do AC, a ANTECIPAÇÃO PARCIAL paga na entrada abate
+  //   o débito de ICMS na venda (é crédito por definição no RICMS).
+  // - Se ST ou cesta com encerramento: a entrada já encerrou a cadeia (não gera crédito abatível
+  //   no débito da venda — a entrada compõe custo e a venda não tem débito).
+  // - Se interna (origem AC): não teve pagamento na entrada, não há crédito.
+  const creditoIcmsUnit = (row.entrada.tipo === 'antecipacao') ? icmsEntradaUnit : 0;
+
+  // Custo = XML − desconto − ICMS desonerado + frete (XML + manual rateado) + ICMS de entrada
+  // ATENÇÃO: no caso de antecipação, o ICMS de entrada entra no custo aqui, mas depois
+  // é abatido do débito da venda (evita dupla contagem no CMV — feito abaixo).
+  const custoAquisicaoUnit = valorXmlUnit - descUnit - desonUnit + freteUnit + icmsEntradaUnit;
+  const custoOperacionalValor = custoAquisicaoUnit * (row.custoOpPct||0)/100;
+  const custoComOperacional = custoAquisicaoUnit + custoOperacionalValor;
+
+  const regime = document.getElementById('lpRegimePisCofins').value;
+  const rates = LP_RATES[regime];
+  const method = document.getElementById('lpMethod').value;
+
+  // Taxas de venda como % do preço
+  const isST = row.entrada.hasST;
+  const isCesta = row.entrada.tipo === 'cesta';
+  const icmsVendaRate = (isST || isCesta) ? 0 : ALIQ_INTERNA_AC/100;
+  const pisCofinsRate = row.entrada.mono ? 0 : (rates.pis + rates.cofins)/100;
+  // IRPJ efetivo depende da receita bruta do trimestre (adicional 10% sobre lucro >R$60k/trim)
+  const receitaTri = parseBRLInput(document.getElementById('lpReceitaTrimestre'));
+  const irpjInfo = calcIrpjEffective(receitaTri);
+  const irpjCsllRate = (irpjInfo.efetiva + LP_CSLL_PCT)/100;
+  const totalRate = icmsVendaRate + pisCofinsRate + irpjCsllRate;
+  // Crédito de ICMS é fixo (proporcional à compra, não à venda) — abate como subtração fixa
+  const fixedSub = creditoIcmsUnit;
+
+  // Resolver preço
+  function resolverPreco(rate, fixed, pct){
+    if(method === 'markup'){
+      const k = pct/100;
+      const denom = 1 - rate*(1+k);
+      return denom > 0.01 ? ((1+k)*(custoComOperacional - fixed))/denom : custoComOperacional*(1+k);
+    }
+    const m = Math.min(Math.max(pct, -500), 99.5)/100;
+    const denom = (1-m) - rate;
+    return denom > 0.01 ? (custoComOperacional - fixed)/denom : custoComOperacional/(1-m);
+  }
+  let precoVenda;
+  if(row.editMode === 'price' && row.manualPrice !== null){
+    precoVenda = row.manualPrice;
+  } else {
+    // duas hipóteses de piso: ICMS-débito zerado ou não (mesmo raciocínio do Simples)
+    if(icmsVendaRate > 0 && fixedSub > 0){
+      const rateSemIcms = totalRate - icmsVendaRate;
+      const precoSePiso = resolverPreco(rateSemIcms, 0, row.lucroPct||0);
+      if(precoSePiso * icmsVendaRate <= fixedSub){
+        precoVenda = precoSePiso;
+      } else {
+        precoVenda = resolverPreco(totalRate, fixedSub, row.lucroPct||0);
+      }
+    } else {
+      precoVenda = resolverPreco(totalRate, fixedSub, row.lucroPct||0);
+    }
+  }
+  precoVenda = Math.max(precoVenda, 0);
+
+  // Recalcula tributos exatos
+  const icmsDebito = precoVenda * icmsVendaRate;
+  const icmsLiquido = Math.max(icmsDebito - creditoIcmsUnit, 0);
+  const pisCofinsVenda = precoVenda * pisCofinsRate;
+  const irpjCsll = precoVenda * irpjCsllRate;
+  const tributosVenda = icmsLiquido + pisCofinsVenda + irpjCsll;
+
+  const cmv = custoComOperacional + tributosVenda;
+  const lucroRS = precoVenda - cmv;
+  const lucroPctDisplay = method === 'markup'
+    ? (cmv ? lucroRS/cmv*100 : 0)
+    : (precoVenda ? lucroRS/precoVenda*100 : 0);
+
+  return {
+    valorXmlUnit, descUnit, freteUnit, desonUnit, icmsEntradaUnit, creditoIcmsUnit,
+    custoAquisicaoUnit, custoComOperacional, precoVenda, lucroRS, lucroPctDisplay,
+    icmsDebito, icmsLiquido, pisCofinsVenda, irpjCsll, tributosVenda, cmv,
+    isST, isCesta,
+  };
+}
+
+function lpRenderXmlTable(){
+  const tbody = document.getElementById('lpXmlItemsBody');
+  tbody.innerHTML = '';
+  let tCompra=0, tIcms=0, tCredito=0, tVenda=0, tLucro=0, tCMV=0, tTribs=0, tDesc=0, tDeson=0;
+
+  // Painel informativo do IRPJ trimestral
+  const receitaTri = parseBRLInput(document.getElementById('lpReceitaTrimestre'));
+  const irpjInfoBar = document.getElementById('lpIrpjInfo');
+  if(receitaTri > 0){
+    const info = calcIrpjEffective(receitaTri);
+    const hasAdicional = info.adicional > 0;
+    irpjInfoBar.style.display = 'block';
+    irpjInfoBar.innerHTML = 'IRPJ trimestral · Base presumida (8%): <b>' + brl(info.base) + '</b> · IRPJ 15%: ' + brl(info.base*0.15) +
+      (hasAdicional ? ' · <b style="color:#a03a2c;">+ Adicional 10% sobre R$ ' + brl(info.base-60000) + ' = ' + brl(info.adicional) + '</b>' : ' · Sem adicional (lucro presumido ≤ R$ 60.000)') +
+      ' · Total IRPJ: <b>' + brl(info.irpjTotal) + '</b> · Alíquota efetiva sobre a receita: <b>' + info.efetiva.toFixed(3) + '%</b>';
+  } else {
+    irpjInfoBar.style.display = 'none';
+  }
+
+  lpXmlItemsState.forEach((row, idx)=>{
+    const item = row.raw;
+    const c = lpComputeRow(row);
+    const qtd = item.qCom || 1;
+    const unPorEmb = Math.max(row.unPorEmb||1, 1);
+    const qtdTotalUn = qtd * unPorEmb; // total de unidades finais de venda
+    tCompra += item.vProd;
+    tDesc += item.vDesc||0;
+    tDeson += item.vICMSDeson||0;
+    tIcms += row.entrada.icms;
+    tCredito += c.creditoIcmsUnit * qtdTotalUn;
+    tVenda += c.precoVenda * qtdTotalUn;
+    tLucro += c.lucroRS * qtdTotalUn;
+    tCMV += c.cmv * qtdTotalUn;
+    tTribs += c.tributosVenda * qtdTotalUn;
+
+    // CST ICMS + PIS/COFINS
+    let cstIcms;
+    if(c.isCesta) cstIcms = '41';
+    else if(c.isST) cstIcms = '60';
+    else cstIcms = '00';
+    const regime = document.getElementById('lpRegimePisCofins').value;
+    const cstPis = row.entrada.mono ? '04' : (regime==='cumulativo' ? '01' : '50');
+
+    const badgeCls = c.isCesta ? 'deson' : (c.isST ? 'st' : 'normal');
+    const badgeTxt = c.isCesta ? 'Cesta' : (c.isST ? 'ST' : 'Normal');
+    const desonerado = (item.vICMSDeson||0) > 0;
+    const motivo = MOTIVOS_DESONERACAO[item.motDesICMS] || ('motivo ' + item.motDesICMS);
+    const custoOpInline = '<br><input type="number" class="cell-input lp-custoop-input" style="width:38px; padding:1px 3px; margin-top:1px;" data-idx="' + idx + '" value="' + row.custoOpPct + '" step="0.1">%';
+
+    const tr = document.createElement('tr');
+    tr.innerHTML =
+      '<td class="prod-name">' + escapeHtml(item.xProd) + '<br><span class="hint" style="margin:0;">Cód: ' + escapeHtml(item.cProd) + '</span></td>' +
+      '<td class="num">' + formatNcm(normalize(item.ncm)) + '<br><span class="badge-mini ' + badgeCls + '">' + badgeTxt + '</span>' +
+        (desonerado ? '<br><span class="badge-mini deson" title="ICMS desonerado — ' + escapeHtml(motivo) + '">Desonerado</span>' : '') + '</td>' +
+      '<td class="num">' + item.qCom + ' ' + escapeHtml(item.uCom||'') + '</td>' +
+      '<td class="num"><input type="number" class="cell-input lp-frac-input" style="width:44px;" data-idx="' + idx + '" value="' + (row.unPorEmb||1) + '" step="1" min="1" title="Unidades dentro de cada embalagem (se você vende avulso o que veio em caixa)"></td>' +
+      '<td class="num">' + brl(c.valorXmlUnit) + '</td>' +
+      '<td class="num">' + (c.descUnit ? brl(c.descUnit) : (c.desonUnit ? '' : '—')) +
+        (c.desonUnit ? '<span class="hint" style="margin:0; display:block;" title="ICMS desonerado abatido do valor de compra — ' + escapeHtml(motivo) + '">Deson: −' + brl(c.desonUnit) + '</span>' : '') + '</td>' +
+      '<td class="num">' + (c.freteUnit ? brl(c.freteUnit) : '—') + '</td>' +
+      '<td class="num">' + brl(row.entrada.icms) + '</td>' +
+      '<td class="num">' + (c.creditoIcmsUnit > 0 ? brl(c.creditoIcmsUnit) : '—') + '</td>' +
+      '<td class="num">' + brl(c.custoComOperacional) + custoOpInline + '</td>' +
+      '<td class="num">' + brl(c.tributosVenda) + '</td>' +
+      '<td class="num"><b>' + brl(c.cmv) + '</b></td>' +
+      '<td class="num">' + code(cstIcms) + '<br><span class="hint" style="margin:1px 0 0;">CST</span></td>' +
+      '<td class="num">' + code(cstPis) + '</td>' +
+      '<td class="num"><input type="number" class="cell-input lp-lucro-input" data-idx="' + idx + '" value="' + c.lucroPctDisplay.toFixed(2) + '" step="0.1"></td>' +
+      '<td class="num"><input type="number" class="cell-input lp-price-input" data-idx="' + idx + '" value="' + c.precoVenda.toFixed(2) + '" step="0.01"></td>' +
+      '<td class="num">' + brl(c.lucroRS) + '</td>';
+    tbody.appendChild(tr);
+  });
+
+  document.getElementById('lpXmlTotals').innerHTML =
+    '<div>Total da compra (XML)<strong>' + brl(tCompra) + '</strong></div>' +
+    (tDeson > 0 ? '<div>ICMS desonerado (abatido)<strong>−' + brl(tDeson) + '</strong></div>' : '') +
+    ((tDesc > 0 || tDeson > 0) ? '<div>Compra líquida (pago)<strong>' + brl(tCompra - tDesc - tDeson) + '</strong></div>' : '') +
+    '<div>ICMS entrada total<strong>' + brl(tIcms) + '</strong></div>' +
+    '<div>Crédito ICMS aproveitável<strong>' + brl(tCredito) + '</strong></div>' +
+    '<div>Tributos venda total<strong>' + brl(tTribs) + '</strong></div>' +
+    '<div>CMV total<strong>' + brl(tCMV) + '</strong></div>' +
+    '<div>Total de venda sugerido<strong>' + brl(tVenda) + '</strong></div>' +
+    '<div>Lucro total estimado<strong>' + brl(tLucro) + '</strong></div>';
+}
+
+// Handlers de edição inline na tabela LP — usa 'change' (dispara ao sair do campo/Tab/Enter)
+// em vez de 'input', para não re-renderizar a tabela a cada tecla (que interrompia a digitação
+// de números com múltiplos dígitos, ex: "50" virava "5" porque o re-render reescrevia o campo).
+document.getElementById('lpXmlItemsBody').addEventListener('change', function(e){
+  const idx = parseInt(e.target.getAttribute('data-idx'));
+  if(isNaN(idx) || !lpXmlItemsState[idx]) return;
+  const row = lpXmlItemsState[idx];
+  if(e.target.classList.contains('lp-lucro-input')){
+    row.lucroPct = parseFloat(e.target.value) || 0;
+    row.editMode = 'lucro'; row.manualPrice = null;
+    lpRenderXmlTable();
+  } else if(e.target.classList.contains('lp-price-input')){
+    row.manualPrice = parseFloat(e.target.value) || 0;
+    row.editMode = 'price';
+    lpRenderXmlTable();
+  } else if(e.target.classList.contains('lp-custoop-input')){
+    row.custoOpPct = parseFloat(e.target.value) || 0;
+    lpRenderXmlTable();
+  } else if(e.target.classList.contains('lp-frac-input')){
+    row.unPorEmb = Math.max(parseInt(e.target.value) || 1, 1);
+    // resetar precificação manual — o preço unitário passou a ser outro
+    row.manualPrice = null; row.editMode = 'lucro';
+    lpRenderXmlTable();
+  }
+});
+
+document.getElementById('lpXmlItemsBody').addEventListener('keydown', function(e){
+  if(e.key === 'Enter' && e.target.tagName === 'INPUT'){ e.target.blur(); }
+});
+
+
+// ============================================================
+// RELATÓRIO DE NOTA FISCAL — geração de relatório imprimível/PDF
+// ============================================================
+function buildReportHTML(config){
+  // config: {title, meta, rows, totals}
+  // rows: [{codigo, produto, ncm, qtd, unit, compra, custo, cmv, precoVenda, lucroPct, lucroTotal}]
+  let html = '<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"><title>' + config.title + '</title><style>' +
+    'body{font-family:Georgia,serif; color:#182437; margin:24px; font-size:11px;}' +
+    'h1{font-family:Georgia,serif; font-size:20px; margin:0 0 4px;}' +
+    '.meta{font-family:monospace; font-size:10px; color:#5a6478; margin-bottom:16px;}' +
+    'table{width:100%; border-collapse:collapse; margin-top:8px;}' +
+    'th{background:#eae6da; font-family:monospace; font-size:9px; text-transform:uppercase; letter-spacing:.04em; color:#5a6478; padding:6px 8px; text-align:left; border-bottom:1px solid #d5cfba; border-right:1px solid rgba(24,36,55,.06);}' +
+    'th:last-child{border-right:none;}' +
+    'td{padding:5px 8px; font-size:11px; border-bottom:1px solid #d5cfba; border-right:1px solid rgba(24,36,55,.05); vertical-align:middle;}' +
+    'td:last-child{border-right:none;}' +
+    'td.num{font-family:monospace; text-align:right; white-space:nowrap;}' +
+    'td.prod{max-width:220px;}' +
+    'td.prod b{font-weight:600;}' +
+    'td.prod .cod{font-size:9px; color:#5a6478; font-family:monospace;}' +
+    '.totals{margin-top:16px; display:flex; gap:24px; flex-wrap:wrap; padding:12px 16px; background:#eae6da; border-radius:4px;}' +
+    '.totals > div{display:flex; flex-direction:column; font-size:10px; color:#5a6478; text-transform:uppercase; letter-spacing:.05em;}' +
+    '.totals > div strong{font-family:monospace; font-size:14px; color:#182437; font-weight:700; text-transform:none; letter-spacing:0; margin-top:2px;}' +
+    '.footer{margin-top:20px; font-size:9px; color:#5a6478; text-align:center;}' +
+    '@media print{ body{margin:14mm;} }' +
+    '</style></head><body>';
+
+  html += '<h1>' + config.title + '</h1>';
+  html += '<div class="meta">' + config.meta + '</div>';
+
+  html += '<table><thead><tr>' +
+    '<th>Produto</th>' +
+    '<th>NCM</th>' +
+    '<th>Qtd</th>' +
+    '<th>V. compra un.</th>' +
+    '<th>Compra total</th>' +
+    '<th>Custo un.</th>' +
+    '<th>CMV un.</th>' +
+    '<th>Preço venda un.</th>' +
+    '<th>% Lucro</th>' +
+    '<th>Lucro total</th>' +
+    '</tr></thead><tbody>';
+
+  config.rows.forEach(r => {
+    html += '<tr>' +
+      '<td class="prod"><b>' + escapeHTMLReport(r.produto) + '</b><br><span class="cod">Cód: ' + escapeHTMLReport(r.codigo) + '</span></td>' +
+      '<td class="num">' + r.ncm + '</td>' +
+      '<td class="num">' + r.qtd + '</td>' +
+      '<td class="num">' + fmtReport(r.unit) + '</td>' +
+      '<td class="num">' + fmtReport(r.compra) + '</td>' +
+      '<td class="num">' + fmtReport(r.custo) + '</td>' +
+      '<td class="num"><b>' + fmtReport(r.cmv) + '</b></td>' +
+      '<td class="num"><b>' + fmtReport(r.precoVenda) + '</b></td>' +
+      '<td class="num">' + r.lucroPct.toFixed(2).replace('.', ',') + '%</td>' +
+      '<td class="num"><b>' + fmtReport(r.lucroTotal) + '</b></td>' +
+      '</tr>';
+  });
+  html += '</tbody></table>';
+
+  const t = config.totals;
+  html += '<div class="totals">' +
+    '<div>Total da compra<strong>' + fmtReport(t.compra) + '</strong></div>' +
+    '<div>CMV total<strong>' + fmtReport(t.cmv) + '</strong></div>' +
+    '<div>Total de venda<strong>' + fmtReport(t.venda) + '</strong></div>' +
+    '<div>Lucro total<strong>' + fmtReport(t.lucro) + '</strong></div>' +
+    '<div>Margem média<strong>' + (t.venda > 0 ? (t.lucro/t.venda*100).toFixed(2).replace('.', ',') + '%' : '—') + '</strong></div>' +
+    '</div>';
+
+  html += '<div class="footer">Gerado em ' + new Date().toLocaleString('pt-BR') + ' · CPUSIS · Módulo Fiscal</div>';
+  html += '</body></html>';
+  return html;
+}
+
+function fmtReport(n){
+  return 'R$ ' + (n||0).toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2});
+}
+function escapeHTMLReport(s){
+  return (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+// Abre uma nova janela com o relatório e chama o print dialog (o usuário salva como PDF)
+function openReportWindow(reportHTML){
+  const w = window.open('', '_blank');
+  if(!w){ alert('Bloqueio de pop-up impediu abrir o relatório. Permita pop-ups deste site e tente de novo.'); return; }
+  w.document.open();
+  w.document.write(reportHTML);
+  w.document.close();
+  // dá um tempinho pra renderizar antes de imprimir
+  setTimeout(()=>{ w.focus(); w.print(); }, 400);
+}
+
+
+// ---------- Init ----------
+
+// ---------- Relatório LP: coleta de dados + botões ----------
+function generateLPReport(){
+  const rows = [];
+  let tCompra=0, tCMV=0, tVenda=0, tLucro=0;
+  lpXmlItemsState.forEach(row => {
+    const item = row.raw;
+    const c = lpComputeRow(row);
+    const qtd = item.qCom || 1;
+    const unPorEmb = Math.max(row.unPorEmb||1, 1);
+    const qtdTotalUn = qtd * unPorEmb;
+    const compraTotal = item.vProd;
+    const lucroTotal = c.lucroRS * qtdTotalUn;
+    tCompra += compraTotal;
+    tCMV += c.cmv * qtdTotalUn;
+    tVenda += c.precoVenda * qtdTotalUn;
+    tLucro += lucroTotal;
+    const qtdLabel = unPorEmb > 1
+      ? qtd + ' ' + (item.uCom||'') + ' × ' + unPorEmb + ' = ' + qtdTotalUn + ' un.'
+      : qtd + ' ' + (item.uCom||'');
+    rows.push({
+      codigo: item.cProd,
+      produto: item.xProd,
+      ncm: formatNcm(normalize(item.ncm)),
+      qtd: qtdLabel,
+      unit: c.valorXmlUnit,
+      compra: compraTotal,
+      custo: c.custoComOperacional,
+      cmv: c.cmv,
+      precoVenda: c.precoVenda,
+      lucroPct: c.lucroPctDisplay,
+      lucroTotal: lucroTotal,
+    });
+  });
+  const emitInfo = document.getElementById('lpXmlEmitInfo').textContent.replace(/\s+/g, ' ').trim();
+  return buildReportHTML({
+    title: 'Relatório de Nota Fiscal — Lucro Presumido',
+    meta: emitInfo + ' · Emitido em ' + new Date().toLocaleString('pt-BR'),
+    rows: rows,
+    totals: {compra:tCompra, cmv:tCMV, venda:tVenda, lucro:tLucro},
+  });
+}
+document.getElementById('lpXmlPrintBtn').addEventListener('click', function(){
+  const meta = document.getElementById('lpXmlEmitInfo').textContent.replace(/\s+/g, ' ').trim();
+  document.getElementById('lpXmlPrintMeta').textContent = meta + ' · Emitido em ' + new Date().toLocaleString('pt-BR');
+  window.print();
+});
+document.getElementById('lpXmlPdfBtn').addEventListener('click', function(){
+  openReportWindow(generateLPReport());
+});
+
+// O resumo da base é escrito por atualizarStatusBase(), chamada sempre que a
+// base é aplicada (do cache ou do servidor).
+atualizarStatusBase();
+
+// ---------- auditRegimeInfo: LUCRO PRESUMIDO ----------
+function auditRegimeInfo(rec, cesta){
+  const isCesta = !!(cesta && cesta.qualifica);
+  const hasST = !!rec.seg;
+  const mono = !!rec.mono;
+  let cst, cfop, cst_pis;
+  if(isCesta){
+    cst = '41';    // CST 41 (não tributada) — cesta básica AC
+    cfop = '5102';
+  } else if(hasST){
+    cst = '60';    // CST 60 (ICMS cobrado por ST)
+    cfop = '5405';
+  } else {
+    cst = '00';    // CST 00 (tributada integralmente)
+    cfop = '5102';
+  }
+  // LP cumulativo por padrão: CST PIS/COFINS 01 (operação tributável cumulativa)
+  // Monofásico: CST 04
+  cst_pis = mono ? '04' : '01';
+  return {cst, cfop, cst_pis, cst_cofins: cst_pis};
+}
+
+// ============================================================
+//                    AUDITORIA DE CADASTRO
+// ============================================================
+
+// Estado global da auditoria
+let auditItems = []; // [{original:{nome, ncm, cfop, ...}, sugerido:{...}, status:'ok'|'fix'|'err', motivo}]
+let auditFilter = 'all'; // 'all' | 'fix' | 'ok'
+
+// ---------- CSV parser (RFC 4180 simples) ----------
+function parseCSV(text){
+  // Detect separator: comma or semicolon (comum no Brasil)
+  const firstLine = text.split(/\r?\n/)[0] || '';
+  const sep = (firstLine.split(';').length > firstLine.split(',').length) ? ';' : ',';
+  const rows = [];
+  let cur = ''; let row = []; let inQuote = false;
+  for(let i=0; i<text.length; i++){
+    const ch = text[i];
+    if(inQuote){
+      if(ch === '"' && text[i+1] === '"'){ cur += '"'; i++; }
+      else if(ch === '"'){ inQuote = false; }
+      else cur += ch;
+    } else {
+      if(ch === '"') inQuote = true;
+      else if(ch === sep){ row.push(cur); cur = ''; }
+      else if(ch === '\n'){ row.push(cur); rows.push(row); row = []; cur = ''; }
+      else if(ch === '\r'){ /* skip */ }
+      else cur += ch;
+    }
+  }
+  if(cur !== '' || row.length){ row.push(cur); rows.push(row); }
+  return rows.filter(r => r.some(c => c && c.trim() !== ''));
+}
+
+// ---------- Auto-detect de colunas ----------
+// Mapeia cabeçalhos possíveis para nomes canônicos
+const COLUMN_ALIASES = {
+  nome:       ['nome','descricao','descrição','desc','produto','descrprod','xprod','xProd','nomeproduto','item','descricaoproduto','descricao_produto'],
+  codigo:     ['codigo','código','cod','cprod','ref','referencia','sku','id','codproduto'],
+  ncm:        ['ncm','codncm','nbm','ncm8','codigo_ncm'],
+  cest:       ['cest','codcest'],
+  cfop:       ['cfop','codcfop'],
+  cst:        ['cst','cstsn','csosn','cst_icms','situacaotributaria','situacao_tributaria'],
+  cst_pis:    ['cstpis','cst_pis','cstPis','pis_cst','situacaopis'],
+  cst_cofins: ['cstcofins','cst_cofins','cofins_cst','situacaocofins'],
+  cclasstrib: ['cclasstrib','cClassTrib','classtrib','classificacaotributaria','cclastrib','cclas_trib'],
+  origem:     ['origem','orig','codorigem'],
+  unidade:    ['unidade','un','ucom','uCom','unid','unmed'],
+  preco:      ['preco','preço','precovenda','valor','vunit','valorunitario'],
+};
+
+function normalizeHeader(h){
+  return (h||'').toString().toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+    .replace(/[^a-z0-9]/g,'');
+}
+
+function detectColumns(headerRow){
+  const map = {}; // canonical -> col index
+  const meta = []; // per-column decision
+  headerRow.forEach((h, idx) => {
+    const key = normalizeHeader(h);
+    let matched = null;
+    for(const [canonical, aliases] of Object.entries(COLUMN_ALIASES)){
+      if(aliases.map(normalizeHeader).includes(key)){
+        matched = canonical;
+        if(!(canonical in map)) map[canonical] = idx;
+        break;
+      }
+    }
+    meta.push({header:h, detected:matched});
+  });
+  return {map, meta};
+}
+
+// ---------- Sugestão de NCM baseada no nome ----------
+// Dicionário de palavras-chave → NCM8 (busca no dbList por descrição, mais alta prioridade)
+const NCM_HINTS = [
+  // Bebidas
+  [/cerveja|chopp|chope|pilsen/i, '22030000'],
+  [/refrigerante|coca[- ]?cola|guarana|guaraná|pepsi|sprite|fanta/i, '22021000'],
+  [/agua mineral|água mineral/i, '22011000'],
+  [/vinho tinto|vinho branco/i, '22042100'],
+  [/whisky|vodka|cachaca|cachaça|pinga|rum/i, '22083090'],
+  [/suco|nectar/i, '20091200'],
+  [/energetic|red bull|monster/i, '22029900'],
+  [/cafe torrado|café torrado|cafe moido|café moído/i, '09012100'],
+  [/leite (uht|longa vida|integral)/i, '04012010'],
+  [/leite em po|leite em pó/i, '04022110'],
+  // Cigarros/tabaco
+  [/cigarro|marlboro|malboro|derby|carlton/i, '24022000'],
+  // Alimentos secos
+  [/arroz/i, '10063021'],
+  [/feijao|feijão/i, '07133399'],
+  [/acucar|açúcar/i, '17011400'],
+  [/farinha de trigo/i, '11010010'],
+  [/farinha de mandioca/i, '11062000'],
+  [/oleo de soja|óleo de soja/i, '15079011'],
+  [/macarrao|macarrão|espaguete|espaguetti/i, '19021900'],
+  [/sal (de cozinha|refinado)/i, '25010020'],
+  // Alimentos frescos
+  [/pao|pão(?! de acucar)/i, '19059090'],
+  [/biscoito|bolacha|cookie/i, '19053100'],
+  [/carne bovina|carne de boi|coxao|patinho|alcatra/i, '02013000'],
+  [/frango|coxa|sobrecoxa|peito de frango/i, '02071200'],
+  [/queijo/i, '04069010'],
+  [/ovos? de galinha/i, '04072100'],
+  // Higiene
+  [/xampu|shampoo/i, '33051000'],
+  [/sabonete/i, '34011190'],
+  [/creme dental|pasta de dente|dentifricio|dentifrício/i, '33061000'],
+  [/desodorante/i, '33072010'],
+  [/absorvente|proteste feminino/i, '96190000'],
+  [/fralda/i, '96190000'],
+  [/papel higienico|papel higiênico/i, '48181000'],
+  // Limpeza
+  [/detergente/i, '34029011'],
+  [/sabao em po|sabão em pó/i, '34023100'],
+  [/agua sanitaria|água sanitária/i, '28281000'],
+  [/desinfetante/i, '38089419'],
+  // Eletrônicos
+  [/smartphone|celular|iphone|samsung galaxy/i, '85171300'],
+  [/televisao|televisão|tv (led|lcd|smart)/i, '85287200'],
+  [/notebook|laptop/i, '84713012'],
+  [/geladeira|refrigerador/i, '84181000'],
+  [/fogao|fogão/i, '73211100'],
+  [/microondas|micro-ondas/i, '85165000'],
+  [/liquidificador/i, '85094010'],
+  // Vestuário
+  [/camiseta|camisa/i, '61091000'],
+  [/calca jeans|calça jeans/i, '62034200'],
+  [/tenis|tênis|sapato/i, '64029990'],
+  [/meia|meias/i, '61151014'],
+  // Farmácia
+  [/paracetamol|dipirona|ibuprofeno|remedio|remédio/i, '30049099'],
+  // Autopeças
+  [/pneu/i, '40111000'],
+  [/oleo lubrificante|óleo lubrificante/i, '27101999'],
+  [/bateria automotiva/i, '85071090'],
+  // Escritório
+  [/caderno/i, '48202000'],
+  [/caneta esferografica|caneta esferográfica|bic/i, '96081000'],
+  [/lapis|lápis/i, '96091000'],
+];
+
+function suggestNcmFromName(nome){
+  if(!nome) return null;
+  for(const [rx, ncm] of NCM_HINTS){
+    if(rx.test(nome)) return ncm;
+  }
+  return null;
+}
+
+// Validação: NCM existe na base?
+function ncmExiste(ncm){
+  const dig = normalize(ncm||'');
+  return !!(dig && dig.length === 8 && dbByCode[dig]);
+}
+
+// Nome do produto bate com NCM? Heurística: aplica NCM_HINTS ao nome e vê se coincide (ou prefixo de 4 dígitos)
+function nomeCasaNcm(nome, ncm){
+  const sug = suggestNcmFromName(nome);
+  if(!sug) return true; // sem hint, aceita
+  const digNcm = normalize(ncm||'');
+  const digSug = normalize(sug);
+  return digNcm.substring(0,4) === digSug.substring(0,4);
+}
+
+// ---------- Preenchimento de campos fiscais por NCM + regime ----------
+// Cada arquivo (SN vs LP) sobrescreve auditRegimeInfo() com sua lógica
+function auditFillFiscal(ncm){
+  const dig = normalize(ncm);
+  const rec = dbByCode[dig];
+  if(!rec) return null;
+  const rt = classifyRT(dig);
+  const cesta = qualifyCestaAC(dig, false); // por padrão fora do AC (para cadastro geral)
+  return {
+    ncm: dig,
+    desc: rec.desc,
+    hasST: !!rec.seg,
+    hasCest: !!rec.seg,
+    mono: !!rec.mono,
+    cest: rec.cest || '',
+    cesta: !!(cesta && cesta.qualifica),
+    cesta_produto_interno: !!(cesta && !cesta.qualifica && cesta.item), // qualifica só se produção interna do AC
+    rt_cst: rt.cst,
+    rt_ct: rt.ct,
+    rt_label: rt.label,
+    ...auditRegimeInfo(rec, cesta) // preenchido pelo arquivo (SN vs LP)
+  };
+}
+
+// ---------- Motor de auditoria ----------
+function auditRunItem(raw){
+  const nome = (raw.nome||'').trim();
+  const ncmOriginal = normalize(raw.ncm||'');
+  let ncmSugerido = ncmOriginal;
+  let status = 'ok'; // ok | fix | err
+  const motivos = [];
+
+  // Passo 1: NCM válido?
+  if(!ncmOriginal || ncmOriginal.length !== 8 || !ncmExiste(ncmOriginal)){
+    // Tenta sugerir pelo nome
+    const sug = suggestNcmFromName(nome);
+    if(sug){
+      ncmSugerido = sug;
+      status = 'fix';
+      motivos.push(ncmOriginal ? 'NCM inválido, sugerido pelo nome' : 'NCM ausente, sugerido pelo nome');
+    } else {
+      status = 'err';
+      motivos.push('NCM inválido e nome não reconhecido');
+    }
+  } else {
+    // Passo 2: nome bate com NCM?
+    if(nome && !nomeCasaNcm(nome, ncmOriginal)){
+      const sug = suggestNcmFromName(nome);
+      if(sug && sug !== ncmOriginal){
+        ncmSugerido = sug;
+        status = 'fix';
+        motivos.push('Nome sugere NCM diferente do cadastrado');
+      }
+    }
+  }
+
+  // Passo 3: preenche campos fiscais (se tem NCM válido)
+  const fiscal = ncmExiste(ncmSugerido) ? auditFillFiscal(ncmSugerido) : null;
+  const sugerido = fiscal ? {
+    nome: nome,
+    ncm: ncmSugerido,
+    cfop: fiscal.cfop,
+    cst: fiscal.cst,
+    cest: fiscal.cest,
+    cst_pis: fiscal.cst_pis,
+    cst_cofins: fiscal.cst_cofins,
+    cclasstrib: fiscal.rt_ct,
+    origem: raw.origem || '0',
+  } : null;
+
+  // Passo 4: compara campos originais com sugeridos (para marcar diffs)
+  const diffs = {};
+  if(sugerido){
+    ['ncm','cfop','cst','cest','cst_pis','cst_cofins','cclasstrib'].forEach(k => {
+      const orig = (raw[k]||'').toString().trim();
+      const sug = (sugerido[k]||'').toString().trim();
+      if(orig && orig !== sug){
+        diffs[k] = true;
+        if(status === 'ok') status = 'fix';
+      } else if(!orig && sug){
+        // campo vazio, será preenchido — não é fix se o resto está OK, mas conta como preenchimento
+        diffs[k] = 'fill';
+      }
+    });
+    // Se ncm sugerido != ncm original, isso já foi contabilizado acima
+    if(status === 'ok' && Object.values(diffs).some(v => v === true)) status = 'fix';
+  }
+
+  return {original:raw, sugerido, status, motivos, diffs, fiscal};
+}
+
+// ---------- Import: entry point ----------
+document.getElementById('auditFile').addEventListener('change', async function(e){
+  const file = e.target.files[0];
+  if(!file) return;
+  // Sem a base, ncmExiste() reprovaria todos os itens do arquivo.
+  if(!baseCarregada){
+    showAuditError('A base fiscal ainda está sendo carregada. Aguarde alguns instantes e importe a planilha de novo.');
+    return;
+  }
+  const ext = file.name.toLowerCase().split('.').pop();
+  try {
+    if(ext === 'csv' || ext === 'txt'){
+      const text = await file.text();
+      const rows = parseCSV(text);
+      auditProcessRows(rows);
+    } else if(ext === 'xlsx' || ext === 'xls'){
+      if(typeof XLSX === 'undefined'){
+        showAuditError('Para importar arquivos Excel é preciso estar online (a ferramenta baixa a biblioteca SheetJS na primeira carga). Se estiver offline, salve seu arquivo em CSV no próprio Excel (Salvar como → CSV UTF-8).');
+        return;
+      }
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, {type:'array'});
+      const sheet = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(sheet, {header:1, defval:''});
+      auditProcessRows(rows);
+    } else {
+      showAuditError('Formato não suportado. Use .xlsx, .xls ou .csv');
+    }
+  } catch(err){
+    showAuditError('Erro ao ler o arquivo: ' + err.message);
+  }
+});
+document.getElementById('auditClearBtn').addEventListener('click', function(){
+  auditItems = [];
+  document.getElementById('auditFile').value = '';
+  document.getElementById('auditErrorArea').innerHTML = '';
+  document.getElementById('auditColumnsInfo').style.display = 'none';
+  document.getElementById('auditSummary').style.display = 'none';
+  document.getElementById('auditTableWrap').style.display = 'none';
+});
+
+function showAuditError(msg){
+  document.getElementById('auditErrorArea').innerHTML = '<div class="xml-error">'+escapeHtml(msg)+'</div>';
+  document.getElementById('auditColumnsInfo').style.display = 'none';
+  document.getElementById('auditSummary').style.display = 'none';
+  document.getElementById('auditTableWrap').style.display = 'none';
+}
+
+function auditProcessRows(rows){
+  if(rows.length < 2){
+    showAuditError('Arquivo vazio ou sem cabeçalho.');
+    return;
+  }
+  document.getElementById('auditErrorArea').innerHTML = '';
+  const header = rows[0];
+  const {map, meta} = detectColumns(header);
+
+  if(!('nome' in map) && !('ncm' in map)){
+    showAuditError('Não foi possível identificar coluna de nome nem de NCM. Cabeçalhos detectados: ' + header.join(' · '));
+    return;
+  }
+
+  // Mostrar quais colunas foram detectadas
+  const detectedList = meta
+    .filter(m => m.detected)
+    .map(m => escapeHtml(m.header) + ' → <b>' + m.detected + '</b>')
+    .join(' · ');
+  const unrecList = meta
+    .filter(m => !m.detected)
+    .map(m => escapeHtml(m.header))
+    .join(', ');
+  document.getElementById('auditColumnsInfo').style.display = 'block';
+  document.getElementById('auditColumnsInfo').innerHTML =
+    'Colunas reconhecidas: ' + (detectedList || '<i>nenhuma</i>') +
+    (unrecList ? ' · <span style="opacity:.75;">Ignoradas: ' + unrecList + '</span>' : '') +
+    ' · ' + (rows.length-1) + ' item(ns)';
+
+  // Constrói registros crus
+  const items = [];
+  for(let i=1; i<rows.length; i++){
+    const r = rows[i];
+    if(!r.some(c => c && c.toString().trim())) continue; // pula linhas vazias
+    const raw = {};
+    for(const [canonical, colIdx] of Object.entries(map)){
+      raw[canonical] = (r[colIdx]||'').toString().trim();
+    }
+    items.push(raw);
+  }
+
+  // Roda auditoria em cada item
+  auditItems = items.map(auditRunItem);
+  auditRender();
+}
+
+// ---------- Renderização de resumo, gráficos e tabela ----------
+function auditRender(){
+  document.getElementById('auditSummary').style.display = 'block';
+  document.getElementById('auditTableWrap').style.display = 'block';
+
+  // Gráfico geral: ok / fix / err
+  const cntGeral = {ok:0, fix:0, err:0};
+  auditItems.forEach(i => cntGeral[i.status]++);
+  renderPie('chartGeral', [
+    {label:'Já corretos', value:cntGeral.ok,  color:'#79a679'},
+    {label:'Divergências corrigidas', value:cntGeral.fix, color:'#e0b23b'},
+    {label:'Sem sugestão / erro', value:cntGeral.err, color:'#c26a5c'},
+  ]);
+
+  // Gráfico ICMS: normal / ST / cesta / erro
+  const cntIcms = {normal:0, st:0, cesta:0, semNcm:0};
+  auditItems.forEach(i => {
+    if(!i.fiscal){ cntIcms.semNcm++; return; }
+    if(i.fiscal.cesta) cntIcms.cesta++;
+    else if(i.fiscal.hasST) cntIcms.st++;
+    else cntIcms.normal++;
+  });
+  renderPie('chartIcms', [
+    {label:'Tributação normal', value:cntIcms.normal, color:'#7c94b0'},
+    {label:'Substituição Tributária', value:cntIcms.st, color:'#e08b3b'},
+    {label:'Cesta básica', value:cntIcms.cesta, color:'#79a679'},
+    {label:'Sem NCM válido', value:cntIcms.semNcm, color:'#c26a5c'},
+  ]);
+
+  // Gráfico PIS/COFINS: monofásico vs normal
+  const cntPis = {mono:0, normal:0, semNcm:0};
+  auditItems.forEach(i => {
+    if(!i.fiscal){ cntPis.semNcm++; return; }
+    if(i.fiscal.mono) cntPis.mono++;
+    else cntPis.normal++;
+  });
+  renderPie('chartPisCofins', [
+    {label:'Tributação normal', value:cntPis.normal, color:'#7c94b0'},
+    {label:'Monofásico', value:cntPis.mono, color:'#a66aa6'},
+    {label:'Sem NCM válido', value:cntPis.semNcm, color:'#c26a5c'},
+  ]);
+
+  // Tabela
+  const tbody = document.getElementById('auditItemsBody');
+  tbody.innerHTML = '';
+  const filtered = auditItems.filter(i => {
+    if(auditFilter === 'all') return true;
+    if(auditFilter === 'fix') return i.status === 'fix' || i.status === 'err';
+    if(auditFilter === 'ok') return i.status === 'ok';
+    return true;
+  });
+  filtered.forEach(item => {
+    const tr = document.createElement('tr');
+    const s = item.sugerido || {};
+    const o = item.original;
+    const badge = item.status === 'ok' ? '<span class="badge-mini audit-ok">OK</span>'
+                : item.status === 'fix' ? '<span class="badge-mini audit-fix">CORRIGIDO</span>'
+                : '<span class="badge-mini audit-err">ERRO</span>';
+    const d = item.diffs || {};
+    const cellClass = (k) => (d[k] === true) ? 'num diff' : 'num';
+    tr.innerHTML =
+      '<td>' + badge + '</td>' +
+      '<td class="prod-name">' + escapeHtml(o.nome||'—') + '</td>' +
+      '<td class="num">' + (o.ncm ? formatNcm(normalize(o.ncm)) : '—') + '</td>' +
+      '<td class="' + cellClass('ncm') + '">' + (s.ncm ? formatNcm(s.ncm) : '—') + '</td>' +
+      '<td class="' + cellClass('cfop') + '">' + code(s.cfop || '—') + '</td>' +
+      '<td class="' + cellClass('cst') + '">' + code(s.cst || '—') + '</td>' +
+      '<td class="' + cellClass('cest') + '">' + (s.cest ? code(s.cest) : '—') + '</td>' +
+      '<td class="' + cellClass('cst_pis') + '">' + code(s.cst_pis || '—') + '</td>' +
+      '<td class="' + cellClass('cst_cofins') + '">' + code(s.cst_cofins || '—') + '</td>' +
+      '<td class="' + cellClass('cclasstrib') + '">' + code(s.cclasstrib || '—') + '</td>' +
+      '<td style="font-size:11px;">' + escapeHtml((item.motivos||[]).join(' · ')) + '</td>';
+    tbody.appendChild(tr);
+  });
+}
+
+// ---------- SVG Pie chart puro ----------
+function renderPie(containerId, data){
+  const total = data.reduce((s,d)=>s+d.value, 0);
+  const el = document.getElementById(containerId);
+  if(total === 0){
+    el.innerHTML = '<p style="color:var(--ink-soft); font-size:12px;">Sem dados para exibir</p>';
+    return;
+  }
+  const size = 200, cx = size/2, cy = size/2, r = size/2 - 8;
+  let acc = 0;
+  const slices = data.filter(d=>d.value>0).map(d => {
+    const startPct = acc/total;
+    acc += d.value;
+    const endPct = acc/total;
+    const startAngle = startPct * 2 * Math.PI - Math.PI/2;
+    const endAngle = endPct * 2 * Math.PI - Math.PI/2;
+    const x1 = cx + r*Math.cos(startAngle);
+    const y1 = cy + r*Math.sin(startAngle);
+    const x2 = cx + r*Math.cos(endAngle);
+    const y2 = cy + r*Math.sin(endAngle);
+    const largeArc = (endPct - startPct) > 0.5 ? 1 : 0;
+    // Se é 100%, usa círculo completo (dois arcos)
+    let path;
+    if(d.value === total){
+      path = `M ${cx-r},${cy} a ${r},${r} 0 1,0 ${r*2},0 a ${r},${r} 0 1,0 ${-r*2},0`;
+    } else {
+      path = `M ${cx},${cy} L ${x1},${y1} A ${r},${r} 0 ${largeArc},1 ${x2},${y2} Z`;
+    }
+    const midAngle = (startAngle + endAngle)/2;
+    const labelR = r * 0.6;
+    const lx = cx + labelR*Math.cos(midAngle);
+    const ly = cy + labelR*Math.sin(midAngle);
+    const pct = (d.value/total*100);
+    return {d, path, lx, ly, pct};
+  });
+  let svg = `<svg viewBox="0 0 ${size} ${size}" xmlns="http://www.w3.org/2000/svg">`;
+  slices.forEach(s => {
+    svg += `<path d="${s.path}" fill="${s.d.color}" stroke="#fff" stroke-width="1.5"/>`;
+  });
+  slices.forEach(s => {
+    if(s.pct >= 6){
+      svg += `<text x="${s.lx}" y="${s.ly}" text-anchor="middle" dominant-baseline="middle" fill="#fff" style="font:600 12px sans-serif;">${s.pct.toFixed(0)}%</text>`;
+    }
+  });
+  svg += `</svg>`;
+  // Legenda
+  let leg = '<div class="chart-legend">';
+  data.forEach(d => {
+    const pct = total > 0 ? (d.value/total*100).toFixed(1) : '0';
+    leg += `<div class="li"><span class="label"><span class="swatch" style="background:${d.color};"></span>${d.label}</span><span class="cnt">${d.value} · ${pct}%</span></div>`;
+  });
+  leg += '</div>';
+  el.innerHTML = svg + leg;
+}
+
+// ---------- Filtros ----------
+document.getElementById('auditFilterAllBtn').addEventListener('click', ()=>{ auditFilter='all'; auditRender(); });
+document.getElementById('auditFilterErrBtn').addEventListener('click', ()=>{ auditFilter='fix'; auditRender(); });
+document.getElementById('auditFilterOkBtn').addEventListener('click', ()=>{ auditFilter='ok'; auditRender(); });
+
+// ---------- Exportação ----------
+function auditExportRows(){
+  const header = ['nome','ncm','cfop','cst','cest','cst_pis','cst_cofins','cclasstrib','origem','status','observacao'];
+  const rows = [header];
+  auditItems.forEach(i => {
+    const s = i.sugerido || {};
+    rows.push([
+      s.nome || i.original.nome || '',
+      s.ncm || '',
+      s.cfop || '',
+      s.cst || '',
+      s.cest || '',
+      s.cst_pis || '',
+      s.cst_cofins || '',
+      s.cclasstrib || '',
+      s.origem || i.original.origem || '0',
+      i.status,
+      (i.motivos||[]).join(' · '),
+    ]);
+  });
+  return rows;
+}
+document.getElementById('auditExportCsvBtn').addEventListener('click', function(){
+  const rows = auditExportRows();
+  const csv = rows.map(r => r.map(c => {
+    const s = (c==null?'':c).toString();
+    return /[";\n,]/.test(s) ? '"' + s.replace(/"/g,'""') + '"' : s;
+  }).join(';')).join('\n');
+  const blob = new Blob(['\ufeff'+csv], {type:'text/csv;charset=utf-8'}); // BOM p/ Excel BR
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'cadastro-corrigido.csv';
+  a.click();
+});
+document.getElementById('auditExportXlsxBtn').addEventListener('click', function(){
+  if(typeof XLSX === 'undefined'){
+    alert('Para baixar em Excel é preciso estar online. Enquanto isso, use o botão de CSV — o Excel abre CSV normalmente.');
+    return;
+  }
+  const rows = auditExportRows();
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Cadastro Corrigido');
+  XLSX.writeFile(wb, 'cadastro-corrigido.xlsx');
+});
+
+// ---------- Modelo CSV de exemplo ----------
+document.getElementById('auditTemplateBtn').addEventListener('click', function(e){
+  e.preventDefault();
+  const csv = 'nome;ncm;cfop;cst;cest;cst_pis;cst_cofins;cclasstrib;origem\n' +
+    'Cerveja Skol 350ml;22030000;;;;;;;\n' +
+    'Camiseta algodão;61091000;;;;;;;\n' +
+    'Arroz tipo 1 5kg;10063021;;;;;;;\n';
+  const blob = new Blob(['\ufeff'+csv], {type:'text/csv;charset=utf-8'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'modelo-cadastro.csv';
+  a.click();
+});
+
+</script>
+<script>window.FAROL_CALC={regime:"LP",origem:"GUIA-LP",commit:"cbd0cd8"};</script>
+<script>
+// ===== Ponte Farol Contábil (montada por ferramentas/montar_calc.py) =====
+// Usa o login do portal, a base NCM do banco do Farol, recebe XML do portal e põe a logo da CPUSIS na impressão.
+(function () {
+  'use strict';
+  var C = window.FAROL_CALC || {}, SN = C.regime === 'SN', pref = SN ? 'sn' : 'lp';
+  var API = 'https://cidvuirvojpsmukfxpll.supabase.co/functions/v1/farol';
+  var LOGO = new URL('../img/cpusis_logo.jpg', location.href).href;
+  var $ = function (id) { return document.getElementById(id); };
+  var EMBUTIDA = window.parent !== window;
+  function token() {
+    try { if (EMBUTIDA && window.parent.TOKEN) return window.parent.TOKEN; } catch (e) { }
+    try { return sessionStorage.getItem('portal_token'); } catch (e) { return null; }
+  }
+  function status(t) { try { atualizarStatusBase(t); } catch (e) { } }
+  var gate = $('authGate'), app = $('appRoot');
+  document.body.classList.remove('auth-locked'); document.body.classList.add('auth-ready');
+
+  function esconder(id) { var e = $(id); if (e) { e.hidden = true; e.style.display = 'none'; } }
+  function mostrarApp() {
+    if (gate) gate.style.display = 'none';
+    if (app) { app.hidden = false; app.style.display = ''; }
+    esconder('userBar'); esconder('tabBtnAdmin'); esconder('esperaLiberacao'); esconder('tabAdmin');
+    var cf = $('conteudoFerramenta'); if (cf) { cf.hidden = false; cf.style.display = ''; }
+    var t = $(pref + 'ArchiveTitle'); if (t && t.closest('section')) t.closest('section').style.display = 'none';
+    document.querySelectorAll('p.hint').forEach(function (p) { if (/guardados automaticamente/i.test(p.textContent)) p.textContent = 'O XML é lido aqui no seu computador; nada é guardado na calculadora. Os XML do cliente ficam na pasta dele no Farol.'; });
+    if (EMBUTIDA) { document.body.classList.add('farol-embutida'); var m = document.querySelector('.masthead'); if (m) m.style.display = 'none'; }
+    var topo = document.createElement('div'); topo.id = 'farolImpTopo';
+    topo.innerHTML = '<img alt="CPUSIS" src="' + LOGO + '"><div><b>Farol Contábil · Calculadora ' + (SN ? 'Simples Nacional' : 'Lucro Presumido') + '</b><span>CPUSIS — Cem Por Um Sistemas · impresso em ' + new Date().toLocaleString('pt-BR') + '</span></div>';
+    document.body.insertBefore(topo, document.body.firstChild);
+    var st = document.createElement('style');
+    st.textContent = '#farolImpTopo{display:none}@media print{#farolImpTopo{display:flex!important;align-items:center;gap:14px;border-bottom:2px solid #0b2545;padding:0 0 8px;margin:0 0 12px}' +
+      '#farolImpTopo img{height:60px}#farolImpTopo b{display:block;font-size:15px;color:#0b2545}#farolImpTopo span{font-size:11px;color:#444}}' +
+      'body.farol-embutida{background:transparent}';
+    document.head.appendChild(st);
+  }
+  function bloquear(msg) {
+    if (app) { app.hidden = true; app.style.display = 'none'; }
+    if (gate) {
+      gate.style.display = '';
+      Array.prototype.forEach.call(gate.querySelectorAll('form, .auth-tabs, [id^="authTab"], #authConteudo'), function (x) { x.style.display = 'none'; });
+      var c = $('authCarregando'); if (c) { c.hidden = false; c.style.display = ''; c.textContent = msg; }
+      else gate.insertAdjacentHTML('beforeend', '<p style="padding:20px">' + msg + '</p>');
+    }
+  }
+  var tk = token();
+  if (!tk) { bloquear('Abra a calculadora pelo portal Farol Contábil, com o seu login.'); return; }
+  mostrarApp();
+
+  // ---------- base fiscal (NCM, ST do Acre, MVA, monofásico) vinda do banco do Farol ----------
+  var CH = 'farol-base-ncm';
+  function ler() { try { var c = JSON.parse(localStorage.getItem(CH) || 'null'); return c && c.versao && c.rows ? c : null; } catch (e) { return null; } }
+  function registros(b) {
+    return b.rows.map(function (r) {
+      var p = r.split('|');
+      return { ncm: p[0], descricao: p[1], segmento: p[2] === '' ? null : b.segs[+p[2]], mva: p[3] === '' ? null : p[3], monofasico: p[4] === '' ? null : b.monos[+p[4]] };
+    });
+  }
+  var cache = ler();
+  if (cache) aplicarBaseNcm(registros(cache)); else status('Baixando a base fiscal…');
+  var pronta = fetch(API, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ acao: 'portal', fn: 'portalNcmBase', args: [tk, cache ? cache.versao : ''] }) })
+    .then(function (r) { return r.json(); })
+    .then(function (j) {
+      if (!j.ok) {
+        if (/SESSAO_EXPIRADA/.test(j.erro)) bloquear('Sua sessão do portal expirou. Entre de novo no Farol Contábil.');
+        else status(cache ? null : 'Não foi possível baixar a base fiscal: ' + j.erro);
+        return;
+      }
+      if (j.r.igual) return;
+      aplicarBaseNcm(registros(j.r));
+      try { localStorage.setItem(CH, JSON.stringify({ versao: j.r.versao, segs: j.r.segs, monos: j.r.monos, rows: j.r.rows })); } catch (e) { }
+    })
+    .catch(function () { status(cache ? null : 'Sem conexão para baixar a base fiscal. Recarregue a página.'); });
+
+  // ---------- XML vindo do portal (espelho da nota de compra) ----------
+  function abrirXml(texto) {
+    var aba = $(SN ? 'tabBtnConsulta' : 'tabBtnLP'); if (aba) aba.click();
+    return pronta.then(function () {
+      var parsed = parseNFeXML(texto);
+      if (SN) loadXmlItems(parsed); else lpLoadXmlItems(parsed);
+      var alvo = $(SN ? 'xmlFile' : 'lpXmlFile'); if (alvo && alvo.scrollIntoView) alvo.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      avisar('altura');
+    }).catch(function (e) { alert('Não consegui abrir este XML na calculadora: ' + e.message); });
+  }
+  window.farolAbrirXml = abrirXml;
+  window.addEventListener('message', function (ev) {
+    if (ev.origin !== location.origin || !ev.data) return;
+    if (ev.data.tipo === 'xml' && typeof ev.data.texto === 'string') abrirXml(ev.data.texto);
+  });
+  try { var pend = localStorage.getItem('farol_calc_xml'); if (pend) { localStorage.removeItem('farol_calc_xml'); abrirXml(pend); } } catch (e) { }
+
+  // ---------- impressão: relatórios com a logo da CPUSIS ----------
+  if (typeof window.openReportWindow === 'function') {
+    var orig = window.openReportWindow;
+    window.openReportWindow = function (h) {
+      var cab = '<div style="display:flex;align-items:center;gap:14px;border-bottom:2px solid #0b2545;padding:0 0 8px;margin:0 0 12px;font-family:Arial,sans-serif">' +
+        '<img src="' + LOGO + '" style="height:60px" alt="CPUSIS"><div><b style="display:block;font-size:15px;color:#0b2545">Farol Contábil · CPUSIS</b>' +
+        '<span style="font-size:11px;color:#444">Cem Por Um Sistemas · Epitaciolândia/AC</span></div></div>';
+      return orig(String(h).replace(/<body([^>]*)>/i, '<body$1>' + cab));
+    };
+  }
+
+  // ---------- altura da página para o portal ajustar o quadro ----------
+  var ultima = 0;
+  function avisar() {
+    if (!EMBUTIDA) return;
+    var h = Math.max(document.documentElement.scrollHeight, document.body.scrollHeight);
+    if (Math.abs(h - ultima) > 8) { ultima = h; try { window.parent.postMessage({ tipo: 'farolCalcAltura', h: h }, location.origin); } catch (e) { } }
+  }
+  if (EMBUTIDA) { setInterval(avisar, 700); window.addEventListener('load', avisar); }
+})();
+
+</script>
+</body>
+</html>

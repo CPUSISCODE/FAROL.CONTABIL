@@ -128,17 +128,21 @@ async function confirmar() {
 
 // ------------------------------------------------------------------ tela do portal (sessão do contador)
 const normal = (x: unknown) => String(x ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim().toUpperCase();
-async function sessao(token: unknown): Promise<{ contabs: string[] }> {
+async function sessao(token: unknown): Promise<{ contabs: string[]; empresa?: { contabilidade: string; cliente: string } | null; modulos?: string[] }> {
   const t = String(token || '');
   if (!/^[0-9a-f]{64}$/.test(t)) throw new Error('SESSAO_EXPIRADA');
-  const { data } = await db.from('sessoes').select('dados, expira_em').eq('token', t).maybeSingle();
+  const { data } = await db.from('sessoes').select('dados, expira_em, absoluta_ate').eq('token', t).maybeSingle();
   if (!data || new Date(data.expira_em).getTime() < Date.now()) throw new Error('SESSAO_EXPIRADA');
-  return data.dados as { contabs: string[] };
+  if (data.absoluta_ate && new Date(data.absoluta_ate).getTime() < Date.now()) throw new Error('SESSAO_EXPIRADA');
+  return data.dados as { contabs: string[]; empresa?: { contabilidade: string; cliente: string } | null; modulos?: string[] };
 }
 // o que a calculadora oficial respondeu para as notas e os pares NCM x cClassTrib do mês
 async function tela(req: any) {
   const s = await sessao(req.token), cs = s.contabs || [];
-  if (!cs.length || !(cs.includes('*') || cs.some((x) => normal(x) === normal(req.contabilidade)))) throw new Error('Sem permissão para esta contabilidade.');
+  if (s.modulos && !s.modulos.some((m) => m === 'conferencia' || m === 'produtos')) throw new Error('Seu acesso não inclui esta função.');
+  if (s.empresa) {   // login de cliente: só a própria empresa
+    if (normal(s.empresa.contabilidade) !== normal(req.contabilidade) || normal(s.empresa.cliente) !== normal(req.cliente)) throw new Error('Sem permissão para esta empresa.');
+  } else if (!cs.length || !(cs.includes('*') || cs.some((x) => normal(x) === normal(req.contabilidade)))) throw new Error('Sem permissão para esta contabilidade.');
   const mes = String(req.mes || ''); if (!/^\d{4}-\d{2}$/.test(mes)) throw new Error('Mês inválido.');
   const chaves = (Array.isArray(req.chaves) ? req.chaves : []).map(String).filter((c: string) => /^\d{44}$/.test(c)).slice(0, 300);
   const pares = (Array.isArray(req.pares) ? req.pares : []).map(String).filter((p: string) => /^[0-9A-Za-z.]{2,10}\|\d{6}$/.test(p)).slice(0, 600).map((p: string) => p + '|' + mes);
