@@ -40,7 +40,7 @@ var CONFIG = {
   GUARDAR_DIAS: 10, GUARDAR_SEMANAS: 0, GUARDAR_MESES: 0   // no máximo 10 dias (um backup por dia; mais velhos que 10 dias são apagados)
 };
 
-var VERSAO = '1.21';
+var VERSAO = '1.22';
 var PASTA_PORTAL = '_PORTAL_DADOS';   // resumos fiscais (JSON) e versão do agente
 var MESES = ['JANEIRO','FEVEREIRO','MARCO','ABRIL','MAIO','JUNHO','JULHO','AGOSTO','SETEMBRO','OUTUBRO','NOVEMBRO','DEZEMBRO'];
 var MESES_TXT = ['JANEIRO','FEVEREIRO','MARÇO','ABRIL','MAIO','JUNHO','JULHO','AGOSTO','SETEMBRO','OUTUBRO','NOVEMBRO','DEZEMBRO'];
@@ -507,6 +507,9 @@ function hashSenha_(sal, senha) {
 }
 
 function portalLogin(login, senha) {
+  // desde 25/11/2026 os logins, perfis e permissões ficam no banco (menu Acessos do portal);
+  // o login antigo pela planilha ficou desligado para ninguém entrar com senha ou acesso já tirados no banco.
+  return { ok: false, erro: 'Entre pelo endereço do portal: https://cpusiscode.github.io/FAROL.CONTABIL/' };
   login = String(login || '').trim().toLowerCase();
   if (!login || !senha) return { ok: false, erro: 'Informe login e senha.' };
   var cache = CacheService.getScriptCache();
