@@ -6,7 +6,7 @@
 //
 // Segurança (v3):
 //  - senhas em PBKDF2-SHA256 (150 mil iterações), migradas sozinhas no primeiro login de cada usuário;
-//  - bloqueio por login (8 erros / 15 min) e por IP (30 erros / 15 min);
+//  - bloqueio por login (8 erros / 15 min) e por IP (60 erros / 15 min; escritórios dividem o mesmo IP);
 //  - sessão: expira com 4 h sem uso e, de qualquer jeito, 12 h depois do login; cai na hora ao trocar senha/perfil;
 //  - perfis (admin, cpusis, gestor, contador, cliente) e módulos; tudo conferido aqui, não só na tela;
 //  - logins ficam no banco (a aba Usuários da planilha deixa de mandar);
@@ -149,7 +149,7 @@ async function portalLogin(login: unknown, senha: unknown) {
   const { data: cont, error: eCont } = await db.rpc('login_tentativa', { p_login: l, p_ip: IP || '' });
   erroDb(eCont);
   const c0 = (cont && cont[0]) || { falhas_login: 0, falhas_ip: 0 };
-  if (c0.falhas_ip > 30) return { ok: false, erro: 'Muitas tentativas deste computador. Aguarde 15 minutos.' };
+  if (c0.falhas_ip > 60) return { ok: false, erro: 'Muitas tentativas deste computador. Aguarde 15 minutos.' };
   if (c0.falhas_login > 8) return { ok: false, erro: 'Muitas tentativas. Aguarde 15 minutos.' };
   const { data: u, error } = await db.from('usuarios').select('*').eq('login', l).maybeSingle();
   erroDb(error);

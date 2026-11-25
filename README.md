@@ -51,7 +51,7 @@ Cada login pode ter módulos a menos do que o perfil permite. A API (`supabase/f
 confere perfil, módulo e empresa a cada pedido; o receptor e a função `rtc` também conferem a empresa do cliente.
 
 Segurança: senhas em PBKDF2-SHA256 (150 mil rodadas, migração automática das antigas no primeiro login);
-bloqueio por login (8 erros/15 min) e por IP (30 erros/15 min); sessão com 4 h de inatividade e 12 h no máximo,
+bloqueio por login (8 erros/15 min) e por IP (60 erros/15 min), contado antes de conferir a senha; sessão com 4 h de inatividade e 12 h no máximo,
 derrubada ao trocar senha/perfil; saída automática da tela após 1 h parada; troca de senha obrigatória quando marcada;
 registro de acessos com IP; CSP no portal publicado (`ferramentas/publicar_portal.py` gera o `index.html`).
 
