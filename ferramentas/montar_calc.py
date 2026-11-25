@@ -28,7 +28,7 @@ def montar(src, saida, regime, commit):
         velho = """'<td class="num">' + brl(row.entrada.icms) + (row.entrada.icms > 0 && row.entrada.aliqLabel ? '<br><span class="hint" style="margin:0;">' + row.entrada.aliqLabel + '</span>' : '') + ((item.vIBS||0)+(item.vCBS||0) > 0 ? '<br><span class="hint" style="margin:0;">CBS+IBS: ' + brl((item.vIBS||0)+(item.vCBS||0)) + ' (teste)</span>' : '') + '</td>' +"""
     else:
         velho = """'<td class="num">' + brl(row.entrada.icms) + '</td>' +"""
-    novo = """'<td class="num">' + brl(row.entrada.icms) + (row.entrada.aliqLabel ? '<br><span class="hint farol-icms-ent" style="margin:0;">' + row.entrada.aliqLabel + '</span>' : '') + '</td>' +"""
+    novo = """'<td class="num">' + brl(row.entrada.icms) + (row.entrada.aliqLabel ? '<br><span class="hint farol-icms-ent" style="margin:0;white-space:nowrap;cursor:help" title="' + String(row.entrada.aliqTitulo || row.entrada.aliqLabel).replace(/"/g, '&quot;') + '">' + row.entrada.aliqLabel + '</span>' : '') + '</td>' +"""
     assert s.count(velho) == 1, 'coluna ICMS entrada'
     s = s.replace(velho, novo)
     # 3) script de login do guia (o que tem SUPABASE_URL) sai inteiro

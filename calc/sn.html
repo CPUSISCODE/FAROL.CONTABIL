@@ -1956,7 +1956,7 @@ function renderXmlTable(){
       '<td class="num">' + brl(calc.valorXmlUnit) + '</td>' +
       '<td class="num">' + (calc.descUnit ? brl(calc.descUnit) : '—') + '</td>' +
       '<td class="num">' + (calc.freteUnit ? brl(calc.freteUnit) : '—') + '</td>' +
-      '<td class="num">' + brl(row.entrada.icms) + (row.entrada.aliqLabel ? '<br><span class="hint farol-icms-ent" style="margin:0;">' + row.entrada.aliqLabel + '</span>' : '') + '</td>' +
+      '<td class="num">' + brl(row.entrada.icms) + (row.entrada.aliqLabel ? '<br><span class="hint farol-icms-ent" style="margin:0;white-space:nowrap;cursor:help" title="' + String(row.entrada.aliqTitulo || row.entrada.aliqLabel).replace(/"/g, '&quot;') + '">' + row.entrada.aliqLabel + '</span>' : '') + '</td>' +
       '<td class="num">' + brl(calc.custoComOperacional) + custoOpInline + '</td>' +
       '<td class="num"><b>' + brl(calc.cmv) + '</b></td>' +
       '<td class="num">' + (calc.anexoI ? brl(calc.impostoSaidaSN) : '<span class="hint" style="margin:0;">informe RBT12</span>') + '</td>' +
@@ -3072,26 +3072,30 @@ document.getElementById('auditTemplateBtn').addEventListener('click', function(e
     };
   }
   function reais(v) { return 'R$ ' + (Number(v) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+  // devolve [texto curto para a coluna, explicação completa para o "passar o mouse"]
   function situacaoEntrada(r, item, uf) {
     var temST = SN ? r.hasCest : r.hasST, cst = item.icmsCst || '', csosn = item.icmsCsosn || '';
     var stNaNota = (item.vICMSST || 0) > 0, stAntes = /^(60|10|30|70)$/.test(cst) || /^(500|201|202|203)$/.test(csosn) || (item.vICMSSTRet || 0) > 0;
-    if (r.tipo === 'cesta') return r.icms > 0 ? r.aliqLabel : 'cesta básica do Acre · carga de 7% já paga pelo fornecedor (encerra)';
-    if (r.tipo === 'st') return r.aliqLabel + ' · com encerramento' + (stNaNota ? ' · a nota já traz ' + reais(item.vICMSST) + ' de ST retido' : '');
-    if (r.tipo === 'antecipacao') return r.aliqLabel + ' · antecipação parcial, sem encerramento' + (SN ? '' : ' (vira crédito)');
+    var pct = (String(r.aliqLabel || '').match(/(\d+(?:[.,]\d+)?)%/) || [])[1] || '';
+    if (r.tipo === 'cesta') return r.icms > 0 ? ['DIFAL cesta · encerra', r.aliqLabel + ' — cesta básica do Acre, o recolhimento encerra a tributação']
+                                              : ['Cesta AC · encerra', 'Cesta básica comprada no Acre: a carga de 7% é paga pelo fornecedor e encerra a tributação'];
+    if (r.tipo === 'st') return ['ST ' + pct + '% · encerra', r.aliqLabel + ' — ICMS-ST na entrada, com encerramento' + (stNaNota ? '; a nota já traz ' + reais(item.vICMSST) + ' de ST retido' : '')];
+    if (r.tipo === 'antecipacao') return ['Antecip. ' + pct + '% · sem encerr.', r.aliqLabel + ' — antecipação parcial, sem encerramento' + (SN ? '' : '; vira crédito na apuração')];
     if (r.tipo === 'interna') {
       if (temST) {
-        if (stNaNota) return 'compra no Acre · ST retido pelo fornecedor: ' + reais(item.vICMSST) + ' (encerra) · sem custo a mais';
-        if (stAntes) return 'compra no Acre · ST já recolhido antes (' + (cst ? 'CST ' + cst : 'CSOSN ' + csosn) + ') · encerra · sem custo a mais';
-        return 'compra no Acre · produto com ST, mas a nota não traz ST retido: conferir antecipação com encerramento';
+        if (stNaNota) return ['ST retido · encerra', 'Compra no Acre: ST de ' + reais(item.vICMSST) + ' retido pelo fornecedor na nota; encerra, sem custo a mais'];
+        if (stAntes) return ['ST anterior · encerra', 'Compra no Acre: ST já recolhido antes (' + (cst ? 'CST ' + cst : 'CSOSN ' + csosn) + '); encerra, sem custo a mais'];
+        return ['ST não retido · conferir', 'Compra no Acre de produto com ST, mas a nota não traz ST retido: conferir se cabe antecipação com encerramento'];
       }
-      return SN ? 'compra no Acre · sem antecipação (ICMS dentro do DAS)' : 'compra no Acre · ICMS normal' + ((item.vICMS || 0) > 0 ? ' · crédito ' + reais(item.vICMS) : ' · sem destaque na nota');
+      return SN ? ['Compra AC · sem antecip.', 'Compra no Acre sem ST: não há antecipação; o ICMS da venda vai no DAS']
+                : ['ICMS normal' + ((item.vICMS || 0) > 0 ? ' · créd. ' + reais(item.vICMS) : ''), 'Compra no Acre sem ST: ICMS normal' + ((item.vICMS || 0) > 0 ? ', com crédito de ' + reais(item.vICMS) : ', sem destaque na nota')];
     }
-    return r.aliqLabel || '';
+    return [r.aliqLabel || '', r.aliqLabel || ''];
   }
   ['computeIcmsEntradaXml', 'computeIcmsEntradaLP'].forEach(function (nome) {
     if (typeof window[nome] !== 'function') return;
     var orig = window[nome];
-    window[nome] = function (item, uf, crt) { var r = orig.apply(this, arguments); try { r.aliqLabel = situacaoEntrada(r, item || {}, uf); } catch (e) { } return r; };
+    window[nome] = function (item, uf, crt) { var r = orig.apply(this, arguments); try { var x = situacaoEntrada(r, item || {}, uf); r.aliqLabel = x[0]; r.aliqTitulo = x[1]; } catch (e) { } return r; };
   });
 
   // ---------- impressão: relatórios com a logo da CPUSIS ----------

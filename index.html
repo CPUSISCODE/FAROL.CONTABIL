@@ -58,7 +58,7 @@ input[type=text],input[type=password],input[type=search],input[type=date],select
   td.w{white-space:normal!important;max-width:none!important}
   tr{break-inside:avoid}
 }
-.rodape{max-width:1320px;margin:0 auto;padding:0 16px 28px;color:var(--muted);font-size:12.5px}
+.rodape{max-width:min(1880px,100%);margin:0 auto;padding:0 16px 28px;color:var(--muted);font-size:12.5px}
 .marca b{display:block;font-size:17px}.marca span{color:var(--muted);font-size:12.5px}
 .caixa label{display:grid;gap:4px;font-size:12.5px;color:var(--muted)}
 .erro{color:var(--bad);font-size:13px}
@@ -67,10 +67,10 @@ input[type=text],input[type=password],input[type=search],input[type=date],select
 
 /* app */
 header{position:sticky;top:0;z-index:5;background:var(--panel);border-bottom:1px solid var(--line)}
-.topo{max-width:1320px;margin:0 auto;padding:10px 16px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.topo{max-width:min(1880px,100%);margin:0 auto;padding:10px clamp(12px,2vw,32px);display:flex;align-items:center;gap:14px;flex-wrap:wrap}
 .topo .marca{margin-right:auto}
 .quem{color:var(--muted);font-size:13px}
-main{max-width:1320px;margin:0 auto;padding:18px 16px 48px;display:grid;grid-template-columns:minmax(0,1fr);gap:16px}
+main{max-width:min(1880px,100%);margin:0 auto;padding:18px clamp(12px,2vw,32px) 48px;display:grid;grid-template-columns:minmax(0,1fr);gap:16px}
 main>*{min-width:0}
 .filtros{display:flex;flex-wrap:wrap;gap:10px;align-items:end}
 .filtros label{display:grid;gap:3px;font-size:12px;color:var(--muted)}
@@ -3007,7 +3007,7 @@ function guiaAuto() {
   }
 
   /* ---------------- calculadoras (SN e LP) ---------------- */
-  window.VERSAO_PORTAL = '1.29';
+  window.VERSAO_PORTAL = '1.30';
   window.BASE_CALC = /(^|\.)github\.io$|^farol\.test$/.test(location.hostname) ? 'calc/' : 'https://cpusiscode.github.io/FAROL.CONTABIL/calc/';
   var CALC_SEL = null;
   function quadro(regime, id) {
