@@ -1,0 +1,3 @@
+-- Aplicado em 25/11/2026 (login_tentativas_atomicas): a tentativa de login é contada antes de conferir a senha,
+-- numa operação única (tentativas em paralelo não furam o bloqueio de 8 por login / 30 por IP em 15 minutos).
+-- Funções public.login_tentativa(p_login, p_ip) e public.login_sucesso(p_login, p_ip): ver o banco.

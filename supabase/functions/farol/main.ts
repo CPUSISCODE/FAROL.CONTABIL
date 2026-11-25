@@ -144,13 +144,13 @@ async function derrubarSessoes(login: string, exceto?: string) {
 async function portalLogin(login: unknown, senha: unknown) {
   const l = String(login || '').trim().toLowerCase();
   if (!l || !senha) return { ok: false, erro: 'Informe login e senha.' };
-  const quinze = 15 * 60e3, agora = Date.now(), IP = ipAtual(), AGENTE = agenteAtual();
-  if (IP) {
-    const { data: ti } = await db.from('tentativas_ip').select('falhas, ate').eq('ip', IP).maybeSingle();
-    if (ti && ti.falhas >= 30 && agora - new Date(ti.ate).getTime() < quinze) return { ok: false, erro: 'Muitas tentativas deste computador. Aguarde 15 minutos.' };
-  }
-  const { data: tent } = await db.from('tentativas_login').select('falhas, ate').eq('login', l).maybeSingle();
-  if (tent && tent.falhas >= 8 && agora - new Date(tent.ate).getTime() < quinze) return { ok: false, erro: 'Muitas tentativas. Aguarde 15 minutos.' };
+  const agora = Date.now(), IP = ipAtual(), AGENTE = agenteAtual();
+  // a tentativa é contada ANTES de conferir a senha, numa operação única no banco: várias tentativas ao mesmo tempo não furam o bloqueio
+  const { data: cont, error: eCont } = await db.rpc('login_tentativa', { p_login: l, p_ip: IP || '' });
+  erroDb(eCont);
+  const c0 = (cont && cont[0]) || { falhas_login: 0, falhas_ip: 0 };
+  if (c0.falhas_ip > 30) return { ok: false, erro: 'Muitas tentativas deste computador. Aguarde 15 minutos.' };
+  if (c0.falhas_login > 8) return { ok: false, erro: 'Muitas tentativas. Aguarde 15 minutos.' };
   const { data: u, error } = await db.from('usuarios').select('*').eq('login', l).maybeSingle();
   erroDb(error);
   let certo = false, refazer = false;
@@ -158,17 +158,10 @@ async function portalLogin(login: unknown, senha: unknown) {
   if (u) { const c = await confereSenha(String(u.senha_hash || ''), String(senha)); certo = c.ok; refazer = c.refazer; }
   else await pbkdf2(String(senha), 'x', 2000);   // tempo parecido para login inexistente
   if (!certo) {
-    const falhas = tent && agora - new Date(tent.ate).getTime() < quinze ? tent.falhas + 1 : 1;
-    await db.from('tentativas_login').upsert({ login: l, falhas, ate: new Date().toISOString() });
-    if (IP) {
-      const { data: ti } = await db.from('tentativas_ip').select('falhas, ate').eq('ip', IP).maybeSingle();
-      const fi = ti && agora - new Date(ti.ate).getTime() < quinze ? ti.falhas + 1 : 1;
-      await db.from('tentativas_ip').upsert({ ip: IP, falhas: fi, ate: new Date().toISOString() });
-    }
     await logAcesso(l, 'login_falhou', u ? 'senha incorreta' : 'login inexistente');
     return { ok: false, erro: 'Login ou senha incorretos.' };
   }
-  await db.from('tentativas_login').delete().eq('login', l);
+  await db.rpc('login_sucesso', { p_login: l, p_ip: IP || '' });
   const perfil = u.perfil || (Array.isArray(u.contabs) && u.contabs.includes('*') ? 'admin' : u.empresa_cliente ? 'cliente' : 'contador');
   const s: Sessao = { login: l, nome: u.nome || l, contabs: u.contabs || [], perfil, modulos: modulosDe(perfil, u.modulos) };
   if (perfil === 'admin' || perfil === 'cpusis') s.contabs = ['*'];
@@ -479,7 +472,7 @@ async function repassar(fn: string, args: unknown[]) {
   if (!RECEPTOR || !SENHA) throw new Error('Receptor não configurado no banco (RECEPTOR_URL / RECEPTOR_SENHA).');
   const s = fn === 'portalAparencia' ? null : await sessao(args[0]);
   if (s) {
-    const regra = REGRAS[fn];
+    const regra = Object.prototype.hasOwnProperty.call(REGRAS, fn) ? REGRAS[fn] : null;
     if (regra) regra(s, args);
     if (fn === 'portalArquivo') await logAcesso(s.login, 'download', [args[1], args[2], args[3], args[4]].filter(Boolean).join(' / '));
   }
@@ -499,8 +492,8 @@ async function receptor(acao: string, dados: Record<string, unknown>) {
 const soAdmin = (s: Sessao) => { if (perfilDe(s) !== 'admin') throw new Error('Só o administrador da CPUSIS pode fazer isso.'); };
 const soCpusis = (s: Sessao) => { if (!['admin', 'cpusis'].includes(perfilDe(s))) throw new Error('Só a equipe da CPUSIS pode fazer isso.'); };
 const REGRAS: Record<string, (s: Sessao, a: unknown[]) => void> = {
-  portalArquivo: (s, a) => { exigir(s, 'xml', 'produtos', 'conferencia', 'resumo'); if (!podeVerUnidade(s, a[1], a[2])) throw new Error('Sem permissão para esta empresa.'); },
-  portalParte: (s) => exigir(s, 'xml', 'produtos', 'conferencia', 'resumo'),
+  portalArquivo: (s, a) => { exigir(s, 'xml', 'produtos', 'conferencia', 'calculadora'); if (!podeVerUnidade(s, a[1], a[2])) throw new Error('Sem permissão para esta empresa.'); },
+  portalParte: (s) => exigir(s, 'xml', 'produtos', 'conferencia', 'calculadora'),
   portalAdmin: soCpusis, portalServidores: (s) => { soCpusis(s); exigir(s, 'servidores'); }, portalSalvarServidor: soAdmin, portalComando: soAdmin,
   portalCriarContabilidade: soAdmin, portalCriarCliente: soCpusis, portalSalvarRegime: soCpusis, portalUnificar: soAdmin,
   portalFinCarteira: (s) => exigir(s, 'bpo'), portalFinSalvarBpo: soCpusis,
@@ -531,7 +524,8 @@ async function portal(req: any) {
   const fn = String(req.fn || ''), args = Array.isArray(req.args) ? req.args : [];
   try {
     if (fn === 'portalLogin') return { ok: true, r: await portalLogin(args[0], args[1]) };
-    if (NATIVAS[fn]) return { ok: true, r: await NATIVAS[fn](...args) };
+    if (!/^portal[A-Z][A-Za-z]{1,40}$/.test(fn)) return { ok: false, erro: 'Função não permitida.' };
+    if (Object.prototype.hasOwnProperty.call(NATIVAS, fn)) return { ok: true, r: await NATIVAS[fn](...args) };
     if (REPASSE.has(fn)) return await repassar(fn, args);
     return { ok: false, erro: 'Função não permitida: ' + fn };
   } catch (e) {
