@@ -30,7 +30,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$VERSAO = '2.2'
+$VERSAO = '2.3'
 $BASE = $PSScriptRoot
 if (-not $Config) { $Config = Join-Path $BASE 'config.json' }
 $PASTA_LOG = Join-Path $BASE 'logs'
@@ -1349,6 +1349,7 @@ try { $trava = [System.IO.File]::Open((Join-Path $BASE 'em_execucao.lock'), 'Ope
 catch { Log 'Já existe um envio em andamento. Saindo.'; exit 0 }
 
 $codigoSaida = 0
+$script:AVISO_UP = $null   # 2.3: motivo de uma atualização que não deu certo (vai na mensagem do envio)
 try {
   Log "===== LC XML v$VERSAO - início ($env:COMPUTERNAME) ====="
 
@@ -1360,7 +1361,7 @@ try {
         $novo = $UTF8.GetString([Convert]::FromBase64String($up.conteudo)).TrimStart([char]0xFEFF)
         $tk = $null; $er = $null
         [void][System.Management.Automation.Language.Parser]::ParseInput($novo, [ref]$tk, [ref]$er)
-        if ($SISTEMA -eq 'gestores' -and $novo -notmatch 'function Invoke-Pg') { Log ('Atualização ' + $up.versao + ' ainda não tem suporte ao Gestores - mantida a versão atual.') }
+        if ($SISTEMA -eq 'gestores' -and $novo -notmatch 'function Invoke-Pg') { Log ('Atualização ' + $up.versao + ' ainda não tem suporte ao Gestores - mantida a versão atual.'); $script:AVISO_UP = 'atualização ' + $up.versao + ' sem suporte ao Gestores' }
         elseif ($er.Count -eq 0 -and $novo -match '\$VERSAO = ') {
           Copy-Item $PSCommandPath ($PSCommandPath + '.anterior') -Force
           [IO.File]::WriteAllText($PSCommandPath, $novo, (New-Object System.Text.UTF8Encoding($true)))
@@ -1377,13 +1378,14 @@ try {
             $msgNova = $_.Exception.Message
             if (Test-Path ($PSCommandPath + '.anterior')) { Copy-Item ($PSCommandPath + '.anterior') $PSCommandPath -Force }
             Log ('A versão ' + $up.versao + ' não abriu neste servidor (' + $msgNova + ') - voltei para a ' + $VERSAO + '.')
+            $script:AVISO_UP = 'atualização ' + $up.versao + ' não abriu: ' + $msgNova
             $prm.SemAtualizar = $true
             & $PSCommandPath @prm
             exit $LASTEXITCODE
           }
-        } else { Log 'Atualização recebida com erro - mantida a versão atual.' }
+        } else { Log 'Atualização recebida com erro - mantida a versão atual.'; $script:AVISO_UP = 'atualização ' + $up.versao + ' recebida com erro (' + $er.Count + ' erro(s) de leitura)' }
       }
-    } catch { Log ('(verificação de atualização falhou: ' + $_.Exception.Message + ')') }
+    } catch { Log ('(verificação de atualização falhou: ' + $_.Exception.Message + ')'); $script:AVISO_UP = 'atualização falhou: ' + $_.Exception.Message }
   }
   if ($Agendado) { $esp = Get-Random -Minimum 0 -Maximum 1200; Log "Aguardando $esp s (espalha os envios dos clientes)"; Start-Sleep -Seconds $esp }
 
@@ -1478,7 +1480,7 @@ try {
         [void](Chamar-Receptor @{ acao = 'concluir'; contabilidade = $emp.contabilidade; cliente = $emp.cliente; subpasta = $emp.subpasta; cnpj = $emp.cnpj;
                                   ano = $mes.Year; mes = $mes.Month; arquivo = $nomeArquivo; tamanho = $tam; contagens = $info.contagens;
                                   situacao = $situacao; maquina = $env:COMPUTERNAME; versao = $VERSAO;
-                                  mensagem = (($info.avisos + @("ignorados sem protocolo: $($info.ignorados)")) -join '; ') })
+                                  mensagem = (($info.avisos + @("ignorados sem protocolo: $($info.ignorados)") + @($script:AVISO_UP | Where-Object { $_ })) -join '; ') })
       } catch {
         $codigoSaida = 1
         $msg = $_.Exception.Message
@@ -1487,7 +1489,7 @@ try {
           try {
             [void](Chamar-Receptor @{ acao = 'concluir'; contabilidade = $emp.contabilidade; cliente = $emp.cliente; subpasta = $emp.subpasta; cnpj = $emp.cnpj;
                                       ano = $mes.Year; mes = $mes.Month; arquivo = $nomeArquivo; situacao = 'ERRO'; maquina = $env:COMPUTERNAME;
-                                      versao = $VERSAO; mensagem = $msg })
+                                      versao = $VERSAO; mensagem = (@($msg, $script:AVISO_UP) | Where-Object { $_ }) -join '; ' })
           } catch { Log ('   (não consegui avisar o painel: ' + $_.Exception.Message + ')') }
         }
       } finally {
