@@ -572,7 +572,7 @@ async function sync(req: any) {
         conta('resumos'); break;
       }
       case 'usuarios': {
-        // os logins agora são administrados no portal (banco); a planilha só acrescenta logins que o banco ainda não tem
+        // os logins agora são administrados no portal (banco)
         const { data: cfg } = await db.from('portal_config').select('valor').eq('chave', 'usuarios_no_banco').maybeSingle();
         const linhas = (it.linhas || []).map((u: any) => ({
           login: String(u.login).trim().toLowerCase(), nome: u.nome || '', contabs: u.contabs || [], senha_hash: u.senha_hash || '',
@@ -580,11 +580,8 @@ async function sync(req: any) {
           perfil: (u.contabs || []).includes('*') ? 'admin' : u.empresa_cliente ? 'cliente' : 'contador',
         })).filter((u: any) => u.login && u.senha_hash);
         if (cfg?.valor === true) {
-          const { data: ex } = await db.from('usuarios').select('login');
-          const tem = new Set((ex || []).map((x: any) => x.login));
-          const novos = linhas.filter((u: any) => !tem.has(u.login));
-          if (novos.length) erroDb((await db.from('usuarios').insert(novos.map((u: any) => ({ ...u, criado_por: 'planilha' })))).error);
-          conta('usuarios_novos', novos.length);
+          // logins só pelo portal (menu Acessos): a planilha é ignorada, senão um login excluído ou com senha trocada voltaria
+          conta('usuarios_ignorados', linhas.length);
         } else {
           await espelhar('usuarios', ['login'], linhas);
           conta('usuarios', linhas.length);

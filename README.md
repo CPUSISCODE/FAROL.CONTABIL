@@ -37,7 +37,7 @@ Tudo fica registrado na aba **Atualizações** da planilha "LC XML - Painel de e
 ## Acessos, perfis e permissões (desde 25/11/2026)
 
 Os logins ficam **no banco** (tabela `usuarios`) e são administrados no portal, menu **Acessos**.
-A aba Usuários da planilha só acrescenta logins que o banco ainda não tem (`portal_config.usuarios_no_banco`).
+A aba Usuários da planilha não vale mais (`portal_config.usuarios_no_banco`); o login antigo pelo Apps Script foi desligado.
 
 | Perfil | Vê | Pode |
 |---|---|---|
