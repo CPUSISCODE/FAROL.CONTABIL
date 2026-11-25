@@ -158,6 +158,46 @@ async function tela(req: any) {
   return { conf, ncm, classes, versao: tb.versao || '', cbs: tb.cbs, ibsUF: tb.ibsUF, tabelaEm: (c3 as any).data?.atualizado_em || null };
 }
 
+// ---------------------------------------------------------------- atualizações da Receita (IBS/CBS · cClassTrib)
+// O robô do GitHub (.github/workflows/receita.yml) confere todo dia o código-fonte oficial da Calculadora de Tributos e,
+// quando a Receita muda a tabela, grava dados/rtc_novidades.json. Aqui: a novidade nova entra no banco, a tabela do mês
+// é renovada e o banco cruza os NCMs que mudaram com o que cada cliente vende (rtc_impacto) para o portal avisar.
+const NOVIDADES = 'https://raw.githubusercontent.com/CPUSISCODE/FAROL.CONTABIL/main/dados/rtc_novidades.json';
+async function processarNovidades() {
+  const r = await fetch(NOVIDADES + '?t=' + Date.now(), { headers: { 'Cache-Control': 'no-cache' } });
+  if (!r.ok) return { ok: false, erro: 'GitHub respondeu ' + r.status };
+  const lista: any[] = (await r.json()).novidades || [];
+  const feitas: string[] = [];
+  for (const n of lista.slice(-5)) {
+    const { data: ja } = await db.from('rtc_novidades').select('id, processada_em').eq('id', n.id).maybeSingle();
+    if (ja?.processada_em) continue;
+    await db.from('rtc_novidades').upsert({ id: n.id, em: n.em, dados: n });
+    const ncms = (n.ncms || []).map((x: any) => x.ncm).filter((x: string) => /^\d{8}$/.test(x));
+    const { data: qtd, error } = await db.rpc('rtc_calcular_impacto', { p_id: n.id, p_ncms: ncms });
+    if (error) throw new Error('impacto: ' + error.message);
+    await db.from('rtc_tabela').update({ atualizado_em: '2000-01-01T00:00:00Z' }).gte('chave', new Date(Date.now() - 40 * 86400e3).toISOString().slice(0, 7));   // força renovar a tabela do mês
+    await db.from('rtc_novidades').update({ processada_em: new Date().toISOString() }).eq('id', n.id);
+    feitas.push(n.id + ': ' + qtd + ' cliente(s)');
+  }
+  return { ok: true, feitas };
+}
+// o que o login vê: as últimas novidades e os clientes dele que vendem produtos afetados
+async function avisos(req: any) {
+  const s = await sessao(req.token), cs = s.contabs || [];
+  const { data: nov } = await db.from('rtc_novidades').select('id, em, dados').order('em', { ascending: false }).limit(3);
+  const ids = (nov || []).map((n: any) => n.id);
+  let imp: any[] = [];
+  if (ids.length) {
+    const { data } = await db.from('rtc_impacto').select('novidade_id, mes, ncms, unidades(contabilidade, cliente, subpasta)').in('novidade_id', ids);
+    imp = (data || []).filter((x: any) => {
+      const u = x.unidades; if (!u) return false;
+      if (s.empresa) return normal(s.empresa.contabilidade) === normal(u.contabilidade) && normal(s.empresa.cliente) === normal(u.cliente);
+      return cs.includes('*') || cs.some((c) => normal(c) === normal(u.contabilidade));
+    }).map((x: any) => ({ novidade: x.novidade_id, mes: x.mes, ncms: x.ncms, contabilidade: x.unidades.contabilidade, cliente: x.unidades.cliente, subpasta: x.unidades.subpasta }));
+  }
+  return { novidades: (nov || []).map((n: any) => ({ id: n.id, em: n.em, resumo: n.dados.resumo, base: n.dados.base_depois, baseAntes: n.dados.base_antes, classes: n.dados.classes, ncms: (n.dados.ncms || []).slice(0, 400), totalNcms: n.dados.total_ncms })), impacto: imp };
+}
+
 Deno.serve(async (r) => {
   if (r.method === 'OPTIONS') return new Response('ok', { headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', 'Access-Control-Allow-Headers': 'content-type' } });
   try {
@@ -170,6 +210,15 @@ Deno.serve(async (r) => {
       const req = JSON.parse(await r.text());
       if (req.acao === 'tela') {
         try { return json({ ok: true, r: await tela(req) }); } catch (e) { return json({ ok: false, erro: String((e as Error)?.message || e) }); }
+      }
+      if (req.acao === 'avisos') {
+        try { return json({ ok: true, r: await avisos(req) }); } catch (e) { return json({ ok: false, erro: String((e as Error)?.message || e) }); }
+      }
+      if (req.acao === 'novidades') {   // agendado: mesmo token do confirmar
+        const { data: cfg } = await db.from('rtc_config').select('token').eq('id', 1).maybeSingle();
+        const TOKEN = String(cfg?.token || '');
+        if (TOKEN.length < 32 || !iguais(String(req.token || ''), TOKEN)) return json({ ok: false, erro: 'não autorizado' }, 401);
+        return json(await processarNovidades());
       }
       if (req.acao === 'confirmar') {
         const { data: cfg } = await db.from('rtc_config').select('token').eq('id', 1).maybeSingle();   // token guardado no banco (o agendamento lê dali)

@@ -25,7 +25,7 @@ for cid, cd, desc in c.execute(f"""select distinct t.CLTR_ID, t.CLTR_CD, t.CLTR_
     red = c.execute(f"select PERE_VALOR from PERCENTUAL_REDUCAO where PERE_CLTR_ID=? and PERE_TBTO_ID=2 and {viv('PERE_INICIO_VIGENCIA','PERE_FIM_VIGENCIA')}", (cid,)).fetchone()
     classes[cid] = {'c': cd, 'd': desc, 'r': float(red[0]) if red else 0}
 regras = []
-for nid, ncm, cid in c.execute(f"select NCMA_ID, NCMA_NCM_CD, NCMA_CLTR_ID from NCM_APLICAVEL where {viv('NCMA_INICIO_VIGENCIA','NCMA_FIM_VIGENCIA')} order by NCMA_NCM_CD").fetchall():
+for nid, ncm, cid in c.execute(f"select NCMA_ID, NCMA_NCM_CD, NCMA_CLTR_ID from NCM_APLICAVEL where {viv('NCMA_INICIO_VIGENCIA','NCMA_FIM_VIGENCIA')} order by NCMA_NCM_CD, NCMA_CLTR_ID, NCMA_ID").fetchall():
     if cid not in classes: continue
     exc = sorted({r[0] for r in c.execute(f"select ENCM_NCM_CD from EXCECAO_NCM_APLICAVEL where ENCM_NCMA_ID=? and {viv('ENCM_INICIO_VIGENCIA','ENCM_FIM_VIGENCIA')}", (nid,))})
     regras.append([ncm, classes[cid]['c']] + ([exc] if exc else []))
@@ -79,4 +79,7 @@ js = '''// Gerado por ferramentas/montar_rtc_oficial.py a partir do código-font
 })();
 '''
 (RAIZ / 'calc' / 'rtc_oficial.js').write_text(js, encoding='utf-8')
+(RAIZ / 'dados').mkdir(exist_ok=True)
+dados['base'] = 'V' + versao; dados['commit'] = COMMIT
+(RAIZ / 'dados' / 'rtc_oficial.json').write_text(json.dumps(dados, ensure_ascii=False, indent=0, sort_keys=True), encoding='utf-8')
 print('rtc_oficial.js', len(js), 'regras', len(regras), 'classes', len(cls), dados['fonte'])

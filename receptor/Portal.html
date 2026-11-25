@@ -402,7 +402,7 @@ function limparSessao() {
   if ($('navFin')) $('navFin').classList.add('hidden');
   if ($('navCalc')) $('navCalc').classList.add('hidden');
   if ($('navAcessos')) $('navAcessos').classList.add('hidden');
-  FIN = null; FINC = null;
+  FIN = null; FINC = null; if ($('rtcAviso')) $('rtcAviso').remove(); window.AVISOS_RTC = null;
   SRV = null;
 }
 function sair(expirou) {
@@ -434,6 +434,7 @@ function iniciar() {
     document.querySelector('.nav button[data-t="clientes"]').classList.toggle('hidden', d.empresa ? !(d.unidades || []).length : !mod('clientes'));
     var trocar = false; try { trocar = sessionStorage.getItem('farol_trocar') === '1'; } catch (e) {}
     if (!trocar && typeof guiaAuto === 'function') guiaAuto();
+    if (typeof carregarAvisosRtc === 'function') setTimeout(carregarAvisosRtc, 400);
     if (trocar && typeof trocarSenha === 'function') setTimeout(function () { trocarSenha(true); }, 50);
     if (d.empresa) { if ((d.unidades || []).length === 1 && d.unidades[0].meses.length) abrir(d.unidades[0]); else if ((d.unidades || []).length) telaLista(); else telaFinCliente(d.empresa.contabilidade, d.empresa.cliente, ''); }
     else if (cp) telaCentral(); else if (mod('painel')) telaPainel(); else if (mod('clientes')) telaLista(); else if (mod('calculadora')) telaCalculadoras(); else if (mod('usuarios')) telaAcessos(); else telaFinanceiro();
@@ -3005,7 +3006,7 @@ function guiaAuto() {
   }
 
   /* ---------------- calculadoras (SN e LP) ---------------- */
-  window.VERSAO_PORTAL = '1.31';
+  window.VERSAO_PORTAL = '1.32';
   window.BASE_CALC = /(^|\.)github\.io$|^farol\.test$/.test(location.hostname) ? 'calc/' : 'https://cpusiscode.github.io/FAROL.CONTABIL/calc/';
   var CALC_SEL = null;
   function quadro(regime, id) {
@@ -3022,6 +3023,7 @@ function guiaAuto() {
   window.telaCalculadoras = function () {
     marcarNav('calc'); ATUAL = null; RESUMO = null;
     $('tela').innerHTML = '<div class="cab"><div><h1>Calculadoras tributárias</h1><p class="sub">As calculadoras da CPUSIS para comércio no Acre: consulta de NCM (ST, MVA, monofásico, cesta básica, IBS/CBS), custo e preço de venda pelo XML da nota de compra, auditoria de cadastro e custo operacional.</p></div></div>' +
+      '<p style="margin:-4px 0 12px"><button class="lnk" type="button" onclick="verNovidadesRtc()">Atualizações da Receita (IBS/CBS · cClassTrib)</button> <span class="sub">· as regras de cClassTrib seguem a tabela oficial e são conferidas todo dia</span></p>' +
       '<div class="calc-esc"><button type="button" data-cr="sn" aria-pressed="' + (CALC_SEL === 'sn') + '"><b>Simples Nacional</b><span class="sub">CSOSN, PIS/COFINS no DAS (04/49), antecipação e ST na entrada</span></button>' +
       '<button type="button" data-cr="lp" aria-pressed="' + (CALC_SEL === 'lp') + '"><b>Lucro Presumido</b><span class="sub">CST de ICMS, PIS/COFINS cumulativo (01/04), IRPJ e CSLL de presunção</span></button></div>' +
       '<div id="calcArea" style="margin-top:12px">' + (CALC_SEL ? quadro(CALC_SEL, 'calcQ') : '<p class="nota">Escolha a calculadora.</p>') + '</div>';
@@ -3122,6 +3124,95 @@ function guiaAuto() {
   window.farolEspelhoNota = espelhoNota;
 })();
 </script>
+<!-- ================= AVISOS DA RECEITA (tabela de IBS/CBS atualizada) ================= -->
+<style>
+.rtc-aviso{max-width:min(1880px,100%);margin:12px auto 0;padding:0 clamp(12px,2vw,32px)}
+.rtc-aviso>div{display:flex;gap:14px;align-items:center;flex-wrap:wrap;background:var(--info-soft);border:1px solid var(--info);border-left:5px solid var(--info);border-radius:12px;padding:12px 16px}
+.rtc-aviso b{color:var(--info)}
+.rtc-aviso p{margin:0;flex:1;min-width:260px}
+</style>
+<script>
+(function () {
+  var URL_RTC = API_BANCO.replace(/\/farol$/, '/rtc');
+  window.AVISOS_RTC = null;
+  function vistoChave() { return 'farol_rtc_visto_' + ((DADOS && DADOS.login) || ''); }
+  function quando(iso) { return iso ? new Date(iso).toLocaleDateString('pt-BR') : ''; }
+  window.carregarAvisosRtc = function () {
+    if (!USA_BANCO || !TOKEN) return;
+    fetch(URL_RTC, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ acao: 'avisos', token: TOKEN }) })
+      .then(function (r) { return r.json(); }).then(function (j) { if (!j.ok) return; AVISOS_RTC = j.r; mostrarAviso(); }).catch(function () { });
+  };
+  function impactoDe(id) { return (AVISOS_RTC.impacto || []).filter(function (x) { return x.novidade === id; }); }
+  function mostrarAviso() {
+    var a = $('rtcAviso'); if (a) a.remove();
+    var n = AVISOS_RTC && AVISOS_RTC.novidades[0]; if (!n) return;
+    var visto = null; try { visto = localStorage.getItem(vistoChave()); } catch (e) { }
+    if (visto === n.id) return;
+    var imp = impactoDe(n.id), emp = DADOS && DADOS.empresa;
+    var nProd = imp.reduce(function (s, x) { return s + (x.ncms || []).length; }, 0);
+    var txt = emp
+      ? 'A Receita atualizou as regras de IBS/CBS em ' + quando(n.em) + '.' + (nProd ? ' <b>' + nProd + ' NCM(s) que você vende mudaram.</b> Confira e ajuste o cadastro pela <b>Análise fiscal dos produtos</b>.' : ' Nenhum produto que você vendeu no último mês foi afetado.')
+      : '<b>A Receita atualizou a tabela de IBS/CBS (cClassTrib)</b> em ' + quando(n.em) + ' (' + esc(n.resumo || '') + '). O Farol já atualizou as calculadoras e a análise de produtos.' +
+        (imp.length ? ' <b>' + imp.length + ' cliente(s) seu(s) vendem produtos afetados.</b>' : ' Nenhum cliente seu vendeu produtos afetados no último mês.');
+    var d = document.createElement('div'); d.id = 'rtcAviso'; d.className = 'rtc-aviso'; d.setAttribute('role', 'status');
+    d.innerHTML = '<div><span aria-hidden="true" style="font-size:20px">📢</span><p>' + txt + '</p>' +
+      '<button class="btn" type="button" id="rtcVer">' + (emp ? (nProd ? 'Ver os produtos' : 'Ver o que mudou') : 'Ver o que mudou e os clientes') + '</button><button class="btn sec" type="button" id="rtcOk">Entendi</button></div>';
+    $('tela').parentNode.insertBefore(d, $('tela'));
+    $('rtcOk').onclick = function () { try { localStorage.setItem(vistoChave(), n.id); } catch (e) { } d.remove(); };
+    $('rtcVer').onclick = function () { verNovidade(n); };
+  }
+  window.verNovidadesRtc = function () {
+    if (!AVISOS_RTC) { carregarAvisosRtc(); }
+    var n = AVISOS_RTC && AVISOS_RTC.novidades[0];
+    fetch('dados/receita_verificacao.json?t=' + Date.now()).then(function (r) { return r.json(); }).catch(function () { return null; }).then(function (v) {
+      if (n) verNovidade(n, v); else {
+        var d = dlg(); d.innerHTML = '<h2>Atualizações da Receita (IBS/CBS)</h2><p>Nenhuma mudança da Receita na tabela de cClassTrib desde que o Farol passou a acompanhar.</p>' +
+          (v ? '<p class="nota">Última conferência automática: ' + new Date(v.verificado_em).toLocaleString('pt-BR') + ' · base ' + esc(v.base) + ' da Calculadora de Tributos.</p>' : '') +
+          '<div class="ferr"><button class="btn sec" type="button" onclick="this.closest(\'dialog\').close()">Fechar</button></div>';
+        d.showModal();
+      }
+    });
+  };
+  function dlg() { var d = $('dlgRtc'); if (!d) { d = document.createElement('dialog'); d.id = 'dlgRtc'; document.body.appendChild(d); } return d; }
+  function verNovidade(n, verif) {
+    var d = dlg(), imp = impactoDe(n.id), emp = DADOS && DADOS.empresa, cl = n.classes || {};
+    var meus = {}; imp.forEach(function (x) { (x.ncms || []).forEach(function (c) { meus[c] = 1; }); });
+    var ncms = (n.ncms || []).filter(function (x) { return !emp || meus[x.ncm]; });
+    var linhaClasse = function (x, t) { return '<li><b>' + esc(x.c) + '</b> ' + esc((x.d || (x.depois && x.depois.d) || '')) + (t ? ' — ' + t : '') + '</li>'; };
+    d.innerHTML = '<h2>A Receita atualizou a tabela de IBS/CBS</h2>' +
+      '<p class="nota">Em ' + quando(n.em) + ' · base ' + esc(n.baseAntes || '?') + ' → ' + esc(n.base || '') + ' da Calculadora de Tributos oficial. O Farol já trocou as regras das calculadoras e da Análise fiscal dos produtos; abra a análise de cada cliente afetado para ver as correções.</p>' +
+      ((cl.novas || []).length || (cl.alteradas || []).length || (cl.removidas || []).length ? '<h3>Classificações (cClassTrib)</h3><ul class="lst">' +
+        (cl.novas || []).map(function (x) { return linhaClasse(x, 'nova' + (x.r ? ', redução de ' + x.r + '%' : '')); }).join('') +
+        (cl.alteradas || []).map(function (x) { return linhaClasse(x, 'redução ' + x.antes.r + '% → ' + x.depois.r + '%' + (x.antes.d !== x.depois.d ? ' · descrição mudou' : '')); }).join('') +
+        (cl.removidas || []).map(function (x) { return linhaClasse(x, 'removida'); }).join('') + '</ul>' : '') +
+      (!emp && imp.length ? '<h3>Seus clientes que vendem produtos afetados</h3><div class="tbl" style="max-height:260px"><table><thead><tr><th>Cliente</th><th>Contabilidade</th><th>NCMs afetados</th><th></th></tr></thead><tbody>' +
+        imp.map(function (x, i) { return '<tr><td>' + esc(x.cliente + (x.subpasta ? ' · ' + x.subpasta : '')) + '</td><td>' + esc(x.contabilidade) + '</td><td class="m">' + esc((x.ncms || []).join(', ')) + '</td><td><button class="lnk" type="button" data-cli="' + i + '">abrir a análise</button></td></tr>'; }).join('') + '</tbody></table></div>' : '') +
+      (ncms.length ? '<h3>' + (emp ? 'Seus produtos' : 'NCMs') + ' com enquadramento diferente' + (n.totalNcms > ncms.length && !emp ? ' (' + ncms.length + ' de ' + n.totalNcms + ')' : '') + '</h3><div class="tbl" style="max-height:280px"><table><thead><tr><th>NCM</th><th>Descrição</th><th>Antes</th><th>Agora</th></tr></thead><tbody>' +
+        ncms.map(function (x) { return '<tr><td class="m">' + esc(x.ncm) + '</td><td class="w">' + esc(x.d) + '</td><td class="m">' + esc((x.antes || []).join(', ') || '000001') + '</td><td class="m"><b>' + esc((x.depois || []).join(', ') || '000001') + '</b>' + (x.classe_mudou ? ' <span class="sub">(redução mudou)</span>' : '') + '</td></tr>'; }).join('') + '</tbody></table></div>' : '') +
+      (verif ? '<p class="nota">Conferência automática todo dia às 05:17 · última: ' + new Date(verif.verificado_em).toLocaleString('pt-BR') + '.</p>' : '') +
+      '<div class="ferr">' + (ncms.length ? '<button class="btn sec" type="button" id="rtcCsv">Exportar (CSV)</button>' : '') + (emp && DADOS.unidades.length ? '<button class="btn" type="button" id="rtcAnalise">Abrir a Análise fiscal dos produtos</button>' : '') +
+      '<button class="btn sec" type="button" id="rtcFechar">Fechar</button></div>';
+    d.showModal();
+    $('rtcFechar').onclick = function () { d.close(); };
+    if ($('rtcCsv')) $('rtcCsv').onclick = function () { csv([['ncm', 'NCM', 'm'], ['d', 'Descrição'], ['a', 'Antes', 'm'], ['b', 'Agora', 'm']], ncms.map(function (x) { return { ncm: x.ncm, d: x.d, a: (x.antes || []).join(' '), b: (x.depois || []).join(' ') }; }), 'mudancas IBS-CBS Receita ' + n.id + '.csv'); };
+    var abrirAnalise = function (u) { d.close(); ATUAL = { aba: 'cad' }; abrir(u); };
+    if ($('rtcAnalise')) $('rtcAnalise').onclick = function () { abrirAnalise(DADOS.unidades[0]); };
+    d.querySelectorAll('[data-cli]').forEach(function (b) {
+      b.onclick = function () {
+        var x = imp[+b.dataset.cli], u = DADOS.unidades.filter(function (v) { return norm(v.contabilidade) === norm(x.contabilidade) && norm(v.cliente) === norm(x.cliente) && norm(v.subpasta || '') === norm(x.subpasta || ''); })[0];
+        if (u) abrirAnalise(u); else alert('Cliente não encontrado na sua lista.');
+      };
+    });
+  }
+  // na Análise fiscal: aviso quando o cliente aberto vende produtos afetados pela última mudança
+  window.avisoRtcCliente = function (u) {
+    var n = AVISOS_RTC && AVISOS_RTC.novidades[0]; if (!n || !u) return '';
+    var x = impactoDe(n.id).filter(function (v) { return norm(v.contabilidade) === norm(u.contabilidade) && norm(v.cliente) === norm(u.cliente) && norm(v.subpasta || '') === norm(u.subpasta || ''); })[0];
+    if (!x) return '';
+    return '<div class="card" style="border-left:5px solid var(--info)"><b>A Receita mudou em ' + quando(n.em) + ' a regra de IBS/CBS de ' + x.ncms.length + ' NCM(s) que este cliente vende</b> (' + esc(x.ncms.join(', ')) + '). A análise abaixo já usa as regras novas. <button class="lnk" type="button" onclick="verNovidadesRtc()">ver o que mudou</button></div>';
+  };
+})();
+</script>
 <!-- ================= ANÁLISE FISCAL DOS PRODUTOS (antigo "Cadastro 2027"): confere produto a produto e gera a planilha com a correção ================= -->
 <style>
 .cad-f{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:4px 0 12px}
@@ -3180,7 +3271,7 @@ function guiaAuto() {
     var pos = u.meses.indexOf(ATUAL.mes), meses3 = u.meses.slice(Math.max(0, pos), Math.max(0, pos) + 3);
     if (!meses3.length) meses3 = [ATUAL.mes];
     var rg = regimeAtual();
-    c.innerHTML = '<div class="card"><h2>Análise fiscal dos produtos</h2>' +
+    c.innerHTML = (window.avisoRtcCliente ? avisoRtcCliente(ATUAL.u) : '') + '<div class="card"><h2>Análise fiscal dos produtos</h2>' +
       '<p class="nota">Confere <b>produto a produto</b> o que saiu nas notas de venda — <b>NCM, CST de ICMS / CSOSN, CFOP, CEST, CST de PIS e COFINS, IBS/CBS e cClassTrib</b> — com as mesmas regras das calculadoras da CPUSIS (' + (rg === 'SN' ? 'Simples Nacional' : rg === 'REAL' ? 'Lucro Real, pelas regras do Lucro Presumido' : 'Lucro Presumido') + ', RICMS/AC, base de 10.687 NCMs com ST e monofásicos), ' +
       'as notas de compra do próprio cliente e a tabela oficial da Receita. O que estiver diferente aparece aqui e sai numa planilha <b>com a correção pronta</b> (colunas <i>_final</i>) para a contabilidade aprovar e o cliente importar no sistema.</p>' +
       '<div class="ferr"><label class="sub" for="cadPer">Usar as notas de&nbsp;<select id="cadPer">' +

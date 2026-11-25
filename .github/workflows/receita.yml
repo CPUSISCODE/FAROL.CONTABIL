@@ -1,0 +1,40 @@
+# Confere todo dia se a Receita atualizou a tabela de IBS/CBS (cClassTrib) no código-fonte oficial da
+# Calculadora de Tributos e, se mudou, atualiza as calculadoras e a análise de produtos do portal e
+# registra a novidade (dados/rtc_novidades.json) para o banco avisar contadores e clientes.
+name: Regras da Receita (IBS/CBS)
+on:
+  schedule:
+    - cron: '17 9 * * *'     # 05:17 no Acre, todo dia
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/receita.yml', 'ferramentas/atualizar_receita.py', 'ferramentas/montar_rtc_oficial.py', 'ferramentas/montar_calc.py', 'ferramentas/calc_ponte.js']
+permissions:
+  contents: write
+concurrency:
+  group: receita
+  cancel-in-progress: false
+jobs:
+  atualizar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Baixar a calculadora oficial da Receita e as calculadoras da CPUSIS
+        run: |
+          git clone --depth 1 https://github.com/ReceitaFederal/calculadora-rtc-regime-regular /tmp/receita
+          git clone --depth 1 https://github.com/CPUSISCODE/GUIA-SN /tmp/guia-sn
+          git clone --depth 1 https://github.com/CPUSISCODE/GUIA-LP /tmp/guia-lp
+      - name: Montar as regras e comparar com as anteriores
+        run: python3 ferramentas/atualizar_receita.py /tmp/receita /tmp/guia-sn /tmp/guia-lp
+      - name: Publicar se mudou
+        run: |
+          git config user.name "Farol · robô da Receita"
+          git config user.email "farol-robo@users.noreply.github.com"
+          git add calc dados
+          if git diff --cached --quiet; then echo "nada mudou"; exit 0; fi
+          MSG="Regras da Receita conferidas $(date -u +%Y-%m-%d)"
+          if git diff --cached --name-only | grep -q rtc_novidades.json; then MSG="Receita atualizou a tabela de IBS/CBS: regras do portal atualizadas"; fi
+          git commit -q -m "$MSG"
+          git pull -q --rebase origin main
+          git push -q origin HEAD:main
