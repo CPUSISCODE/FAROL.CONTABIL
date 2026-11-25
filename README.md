@@ -67,3 +67,14 @@ GUIA-SN e GUIA-LP (as regras fiscais não são mexidas): o login vira o do porta
 Farol (`ncm_base`), o XML pode vir das notas do cliente e a impressão sai com a logo da CPUSIS.
 `calc/motor.js` traz as mesmas regras para a **Análise fiscal dos produtos** do portal.
 Para atualizar depois de mudar um guia: `python3 ferramentas/montar_calc.py <GUIA-SN> <GUIA-LP> <commit-sn> <commit-lp>`.
+
+## Atualização automática das regras da Receita (IBS/CBS · cClassTrib)
+
+- **05:17 (Acre), todo dia** — o robô `.github/workflows/receita.yml` baixa o código-fonte oficial da Calculadora de Tributos
+  (github.com/ReceitaFederal/calculadora-rtc-regime-regular), remonta `calc/rtc_oficial.js`, as calculadoras e o `calc/motor.js`
+  e compara com a versão anterior. Se a Receita mudou algo, grava a novidade em `dados/rtc_novidades.json`.
+  `dados/receita_verificacao.json` mostra a última conferência.
+- **06:40 (Acre)** — o agendamento `rtc-novidades` do banco lê as novidades, cruza os NCMs alterados com o que cada cliente
+  vendeu no último mês (`rtc_impacto`) e renova a tabela da Receita do mês.
+- **No portal** — aviso no topo para contadores (quantos clientes afetados, com link para a análise de cada um) e para clientes
+  (quais produtos dele mudaram). Fica também em Calculadoras → "Atualizações da Receita".
