@@ -2791,7 +2791,10 @@ function guiaAuto() {
 .ac-grid label{display:flex;gap:7px;align-items:flex-start;font-size:13.5px;color:var(--ink)}
 .ac-grid label small{display:block;color:var(--muted);font-size:11.5px}
 .ac-tag{display:inline-block;font-size:11px;padding:1px 7px;border-radius:999px;background:var(--soft);color:var(--muted);margin:1px 3px 1px 0}
-.calc-quadro{width:100%;min-height:900px;border:1px solid var(--line);border-radius:12px;background:var(--panel)}
+.calc-quadro{display:block;width:100%;height:700px;border:0;background:transparent;transition:height .25s ease;overflow:hidden}
+.calc-moldura{margin-top:14px}
+.calc-esc button{transition:border-color .15s,box-shadow .15s,transform .15s}
+.calc-esc button:hover{border-color:var(--brand);transform:translateY(-1px)}
 .calc-esc{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
 .calc-esc button{text-align:left;border:1px solid var(--line);background:var(--panel);border-radius:12px;padding:16px;cursor:pointer}
 .calc-esc button[aria-pressed=true]{border-color:var(--brand);box-shadow:0 0 0 2px var(--brand-soft)}
@@ -3004,15 +3007,19 @@ function guiaAuto() {
   }
 
   /* ---------------- calculadoras (SN e LP) ---------------- */
-  window.VERSAO_PORTAL = '1.27';
+  window.VERSAO_PORTAL = '1.28';
   window.BASE_CALC = /(^|\.)github\.io$|^farol\.test$/.test(location.hostname) ? 'calc/' : 'https://cpusiscode.github.io/FAROL.CONTABIL/calc/';
   var CALC_SEL = null;
   function quadro(regime, id) {
-    return '<iframe class="calc-quadro" id="' + id + '" title="Calculadora ' + (regime === 'sn' ? 'Simples Nacional' : 'Lucro Presumido') + '" src="' + BASE_CALC + regime + '.html?v=' + encodeURIComponent((window.VERSAO_PORTAL || '') + '') + '"></iframe>';
+    return '<div class="calc-moldura"><iframe class="calc-quadro" id="' + id + '" scrolling="no" title="Calculadora ' + (regime === 'sn' ? 'Simples Nacional' : 'Lucro Presumido') + '" src="' + BASE_CALC + regime + '.html?v=' + encodeURIComponent((window.VERSAO_PORTAL || '') + '') + '"></iframe></div>';
   }
   window.addEventListener('message', function (ev) {
-    if (ev.origin !== location.origin || !ev.data || ev.data.tipo !== 'farolCalcAltura') return;
-    document.querySelectorAll('.calc-quadro').forEach(function (f) { if (f.contentWindow === ev.source) f.style.height = Math.max(900, ev.data.h + 30) + 'px'; });
+    if (ev.origin !== location.origin || !ev.data) return;
+    document.querySelectorAll('.calc-quadro').forEach(function (f) {
+      if (f.contentWindow !== ev.source) return;
+      if (ev.data.tipo === 'farolCalcAltura') f.style.height = Math.max(360, ev.data.h) + 'px';
+      if (ev.data.tipo === 'farolCalcRolar') setTimeout(function () { window.scrollTo({ top: f.getBoundingClientRect().top + window.scrollY + ev.data.y - 90, behavior: 'smooth' }); }, 350);
+    });
   });
   window.telaCalculadoras = function () {
     marcarNav('calc'); ATUAL = null; RESUMO = null;
@@ -3066,7 +3073,6 @@ function guiaAuto() {
     textoXml(d).then(function (t) {
       var f = $('calcCli'); if (!f) return;
       f.contentWindow.postMessage({ tipo: 'xml', texto: t }, location.origin);
-      f.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
   }
   window.farolAbrirNaCalc = abrirNaCalc;
@@ -3284,7 +3290,7 @@ function guiaAuto() {
             obs.push('PIS/COFINS ' + (L.pis_cst || '—') + '/' + (L.cofins_cst || '—') + ' → ' + L.f_pis + '/' + L.f_cofins + (rec.mono ? ' (monofásico: ' + rec.mono + ')' : L.pis_cst === '04' ? ' (NCM não é monofásico)' : ''));
           } else if (/^0[6-9]$/.test(L.pis_cst) && !rec.mono) obs.push('PIS/COFINS ' + L.pis_cst + ' (alíquota zero/isenção): confirmar o enquadramento do produto');
           // 6) IBS/CBS e cClassTrib: regra das calculadoras > fornecedor confirmado > o que já usa
-          var rt = MOT.classifyRT(L.f_ncm), sug = rt.cst + '|' + rt.ct, origem = 'regra das calculadoras (LC 214/2025)';
+          var rt = MOT.classifyRT(L.f_ncm, L.descricao), sug = rt.cst + '|' + rt.ct, origem = rt.oficial === false ? 'regra da calculadora (produto sem lista de NCM na Receita)' : 'tabela oficial da Receita';
           var fSug = f && moda(f.cc), nSug = FN[L.f_ncm] && moda(FN[L.f_ncm].cc);
           if (rt.ct === '000001' && fSug && fSug.split('|')[1] !== '000001') { L._parForn = L.f_ncm + '|' + fSug.split('|')[1]; L._fSug = fSug; }
           L.fornecedor = f ? (moda(f.forn) || '') : '';
@@ -3293,7 +3299,7 @@ function guiaAuto() {
           else if (!fSug && nSug && nSug !== sug) obs.push('fornecedores de produtos com o mesmo NCM usam ' + nSug.replace('|', ' / '));
           if (rt.caveat && rt.ct !== '000001') obs.push(rt.caveat);
           if (L.cclass !== L.f_cclass || L.ibs_cst !== L.f_ibs) { erros.push('ibs'); if (!L.cclass) obs.push('o sistema ainda não preenche IBS/CBS neste produto' + (rg === 'SN' ? ' (Simples: obrigatório a partir de 01/2027)' : '')); }
-          var c = cls[L.f_cclass]; L.red = c ? c.rCBS : ''; L.enquadramento = rt.label + (c && c.d ? ' · ' + c.d : '');
+          var c = cls[L.f_cclass]; L.red = c ? c.rCBS : (rt.reducao != null ? rt.reducao : ''); L.enquadramento = rt.label + ' · ' + origem;
         }
         L.erros = erros.map(function (k) { return (CAMPOS.filter(function (x) { return x[0] === k; })[0] || [k, k])[1]; }).join(', ');
         L._erros = erros;
@@ -3363,7 +3369,7 @@ function guiaAuto() {
         '<li><b>Baixar planilha com a correção</b> leva só os produtos que precisam mudar; <b>Excel com todos</b> leva o cadastro inteiro que saiu nas notas. Abas: <b>Produtos</b>, <b>Resumo</b> e <b>Legenda</b>.</li>' +
         '<li>As colunas <i>_atual</i> mostram como o produto saiu na nota; as colunas <i>_final</i> já trazem o valor certo. A contabilidade confere, marca <b>S</b> na coluna <i>aprovado</i> e só as linhas aprovadas vão para o sistema do cliente.</li>' +
         '<li>Os nomes das colunas nunca mudam: o conversor para o layout de cada sistema funciona sempre.</li>' +
-        '<li>As regras são as mesmas das calculadoras SN e LP (RICMS/AC, ST e MVA por segmento, monofásicos, cesta básica do Acre, cClassTrib da LC 214/2025). Casos especiais (produção do Acre, benefícios, regimes especiais) ficam na observação para a contabilidade decidir.</li></ul></section>';
+        '<li>ICMS, CFOP, CEST e PIS/COFINS seguem as regras das calculadoras SN e LP (RICMS/AC, ST e MVA por segmento, monofásicos, cesta básica do Acre). O <b>cClassTrib</b> vem da <b>tabela oficial da Receita</b> (código-fonte da Calculadora de Tributos, lista de NCM de cada anexo da LC 214/2025). Casos especiais ficam na observação para a contabilidade decidir.</li></ul></section>';
     c.querySelectorAll('[data-fl]').forEach(function (b) { b.onclick = function () { CAD.filtro = b.dataset.fl; desenhar(c); }; });
     $('cadRefazer').onclick = function () { CAD = null; telaCadastro(c); };
     $('cadCsv').onclick = function () { csv(COLS.map(function (k) { return [k[0], k[1], k[2]]; }), CAD.linhas, nomeArq('csv', true)); };
@@ -3397,7 +3403,7 @@ function guiaAuto() {
         ['icms_cst_csosn_final', 'Simples: CSOSN (102, 500, 400…); demais: CST de 2 dígitos (00, 60, 41…). A origem fica em icms_origem'],
         ['cfop_final', 'só é mexido nas vendas dentro do estado (5102 / 5405)'], ['cest_final', 'obrigatório quando o produto tem ST; quando falta, vem o que o fornecedor usa (se houver)'],
         ['pis_cst_final / cofins_cst_final', 'Simples: 04 (monofásico) ou 49; Presumido: 04 (monofásico) ou 01'],
-        ['ibscbs_cst_final / cclasstrib_final', 'enquadramento de IBS/CBS (LC 214/2025): regra das calculadoras; vale o do fornecedor quando a Receita confirma o NCM'],
+        ['ibscbs_cst_final / cclasstrib_final', 'enquadramento de IBS/CBS pela tabela oficial da Receita (NCM de cada anexo da LC 214/2025); medicamentos, livros e combustíveis pela regra da calculadora; vale o do fornecedor quando a Receita confirma o NCM'],
         ['segmento_st_acre / mva_referencia / monofasico / cesta_basica_acre', 'o que a base fiscal diz sobre o NCM (RICMS/AC, SPED)'],
         ['campos_corrigidos', 'quais campos mudam'], ['status', 'NCM inválido · Corrigir · Conferir (certo, com aviso) · OK'], ['observacao', 'o motivo de cada mudança e os avisos'],
         ['aprovado', 'a contabilidade marca S nas linhas que podem ir para o sistema']];

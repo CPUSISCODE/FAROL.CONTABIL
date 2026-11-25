@@ -31,7 +31,8 @@ def montar(src, saida, regime, commit):
     # 4) ponte do Farol no fim do body
     cfg = '<script>window.FAROL_CALC={regime:"%s",origem:"%s",commit:"%s"};</script>\n' % (regime, 'GUIA-' + regime, commit)
     i = s.rfind('</body>'); assert i > 0
-    s = s[:i] + cfg + '<script>\n' + PONTE + '\n</script>\n' + s[i:]
+    OFICIAL = (RAIZ / 'calc' / 'rtc_oficial.js').read_text(encoding='utf-8')   # gerado por montar_rtc_oficial.py
+    s = s[:i] + cfg + '<script>\n' + OFICIAL + '\n</script>\n<script>\n' + PONTE + '\n</script>\n' + s[i:]
     s = s.replace('<title>', '<title>Farol Contábil · ', 1)
     pathlib.Path(saida).write_text(s, encoding='utf-8')
     print(saida, n0, '->', len(s))
@@ -53,9 +54,12 @@ def montar_motor(sn, lp, csn, clp):
     def regra(s, nome):
         m = re.search(r'function auditRegimeInfo\(rec, cesta\)\{.*?\n\}\n', s, re.S); assert m
         return m.group(0).replace('function auditRegimeInfo(', 'function ' + nome + '(')
-    js = ('// Gerado por ferramentas/montar_calc.py a partir de GUIA-SN ' + csn + ' e GUIA-LP ' + clp + '. Não editar à mão.\n'
-          '(function(){\n' + trecho(a) + '\n' + regra(a, 'regraSN') + '\n' + regra(b, 'regraLP') + '\n'
-          'window.FAROL_MOTOR = { qualifyCestaAC: qualifyCestaAC, classifyRT: classifyRT, regra: { SN: regraSN, LP: regraLP }, CESTA_AC: CESTA_AC, RT_RULES: RT_RULES, origem: "GUIA-SN ' + csn + ' / GUIA-LP ' + clp + '" };\n})();\n')
+    OFICIAL = (RAIZ / 'calc' / 'rtc_oficial.js').read_text(encoding='utf-8')
+    js = ('// Gerado por ferramentas/montar_calc.py a partir de GUIA-SN ' + csn + ' e GUIA-LP ' + clp + ' e da tabela oficial da Receita (rtc_oficial.js). Não editar à mão.\n'
+          + OFICIAL + '\n(function(){\n' + trecho(a) + '\n' + regra(a, 'regraSN') + '\n' + regra(b, 'regraLP') + '\n'
+          '// cClassTrib: tabela oficial da Receita por NCM; a regra da calculadora só vale onde a Receita não lista NCM (medicamentos, absorventes, livros, combustíveis)\n'
+          'var classificar = function (n, desc) { return window.farolClassificarRT(n, classifyRT, desc); };\n'
+          'window.FAROL_MOTOR = { qualifyCestaAC: qualifyCestaAC, classifyRT: classificar, classifyRTCalculadora: classifyRT, regra: { SN: regraSN, LP: regraLP }, CESTA_AC: CESTA_AC, RT_RULES: RT_RULES, origem: "GUIA-SN ' + csn + ' / GUIA-LP ' + clp + ' + ' + 'Receita V0073" };\n})();\n')
     (RAIZ / 'calc' / 'motor.js').write_text(js, encoding='utf-8')
     print('motor.js', len(js))
 

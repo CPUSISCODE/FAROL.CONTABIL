@@ -16,6 +16,33 @@
   document.body.classList.remove('auth-locked'); document.body.classList.add('auth-ready');
 
   function esconder(id) { var e = $(id); if (e) { e.hidden = true; e.style.display = 'none'; } }
+  // Dentro do portal a calculadora veste o visual do Farol: mesma fonte, cores e espaçamentos, sem moldura nem rolagem própria.
+  var TEMA = [
+    'body.farol-embutida{--ink:#15211c;--ink-soft:#5a6a62;--paper:transparent;--paper-raised:#fff;--line:#dbe2de;--gold:#0f6b55;--gold-soft:#e1efe9;--green:#0f6b55;--green-soft:#e1efe9;',
+    '--serif:"Segoe UI",system-ui,-apple-system,Roboto,Arial,sans-serif;--sans:"Segoe UI",system-ui,-apple-system,Roboto,Arial,sans-serif;padding:0 0 8px;overflow:hidden}',
+    'body.farol-embutida .wrap{max-width:none;padding:0 2px}',
+    'body.farol-embutida .tabs{margin:0 0 16px;gap:4px;border-bottom:1px solid var(--line)}',
+    'body.farol-embutida .tabs button{background:transparent;border:0;border-bottom:2px solid transparent;border-radius:0;color:var(--ink-soft);padding:10px 14px;margin-bottom:-1px}',
+    'body.farol-embutida .tabs button.active{background:transparent;color:#0f6b55;border-bottom-color:#0f6b55}',
+    'body.farol-embutida .tabs button:not(.active):hover{background:transparent;color:var(--ink)}',
+    'body.farol-embutida .search-block,body.farol-embutida .panel,body.farol-embutida table,body.farol-embutida .xml-summary,body.farol-embutida .settings-row{border-radius:12px;border-color:var(--line);box-shadow:none}',
+    'body.farol-embutida .search-block{margin-top:0}',
+    'body.farol-embutida button{border-radius:7px;background:#0f6b55;border-color:#0f6b55}',
+    'body.farol-embutida button:hover{background:#0c5a47}',
+    'body.farol-embutida button.ghost,body.farol-embutida .suggestions button{background:transparent;color:#0f6b55;border-color:#0f6b55}',
+    'body.farol-embutida button.ghost:hover{background:#e1efe9}',
+    'body.farol-embutida .tabs button{background:transparent;border-color:transparent}',
+    'body.farol-embutida .search-row input[type=text]{border:1px solid var(--line);border-radius:7px;font-size:15px}',
+    'body.farol-embutida .search-row input[type=text]:focus,body.farol-embutida select:focus,body.farol-embutida input:focus{outline:2px solid #0f6b55;outline-offset:1px}',
+    'body.farol-embutida select,body.farol-embutida input[type=number],body.farol-embutida input[type=text]{border-radius:7px;background:#fff}',
+    'body.farol-embutida .badge-code,body.farol-embutida .total-box{background:#15211c}',
+    'body.farol-embutida .note{background:#eef3f0;border-left-color:#0f6b55;border-radius:6px}',
+    'body.farol-embutida th{background:#eef3f0}',
+    'body.farol-embutida tr.data-row:hover{background:#f3f7f5}',
+    'body.farol-embutida h1,body.farol-embutida h2{font-family:var(--sans);letter-spacing:-.01em}',
+    'body.farol-embutida hr,body.farol-embutida .divider{border-color:var(--line)}',
+    'body.farol-embutida .xml-section,body.farol-embutida .manage{border-top:1px solid var(--line);margin-top:28px}'
+  ].join('');
   function mostrarApp() {
     if (gate) gate.style.display = 'none';
     if (app) { app.hidden = false; app.style.display = ''; }
@@ -30,7 +57,7 @@
     var st = document.createElement('style');
     st.textContent = '#farolImpTopo{display:none}@media print{#farolImpTopo{display:flex!important;align-items:center;gap:14px;border-bottom:2px solid #0b2545;padding:0 0 8px;margin:0 0 12px}' +
       '#farolImpTopo img{height:60px}#farolImpTopo b{display:block;font-size:15px;color:#0b2545}#farolImpTopo span{font-size:11px;color:#444}}' +
-      'body.farol-embutida{background:transparent}';
+      'body.farol-embutida{background:transparent}' + TEMA;
     document.head.appendChild(st);
   }
   function bloquear(msg) {
@@ -77,8 +104,12 @@
     return pronta.then(function () {
       var parsed = parseNFeXML(texto);
       if (SN) loadXmlItems(parsed); else lpLoadXmlItems(parsed);
-      var alvo = $(SN ? 'xmlFile' : 'lpXmlFile'); if (alvo && alvo.scrollIntoView) alvo.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      avisar('altura');
+      var alvo = $(SN ? 'xmlFile' : 'lpXmlFile');
+      avisar();
+      if (alvo) {
+        if (EMBUTIDA) { try { window.parent.postMessage({ tipo: 'farolCalcRolar', y: alvo.getBoundingClientRect().top + window.scrollY }, location.origin); } catch (e) { } }
+        else if (alvo.scrollIntoView) alvo.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
     }).catch(function (e) { alert('Não consegui abrir este XML na calculadora: ' + e.message); });
   }
   window.farolAbrirXml = abrirXml;
@@ -87,6 +118,12 @@
     if (ev.data.tipo === 'xml' && typeof ev.data.texto === 'string') abrirXml(ev.data.texto);
   });
   try { var pend = localStorage.getItem('farol_calc_xml'); if (pend) { localStorage.removeItem('farol_calc_xml'); abrirXml(pend); } } catch (e) { }
+
+  // ---------- cClassTrib (IBS/CBS) pela tabela oficial da Receita, não só pelas regras próprias da calculadora ----------
+  if (typeof window.classifyRT === 'function' && typeof window.farolClassificarRT === 'function') {
+    var regraCalc = window.classifyRT;
+    window.classifyRT = function (n) { return window.farolClassificarRT(n, regraCalc); };
+  }
 
   // ---------- impressão: relatórios com a logo da CPUSIS ----------
   if (typeof window.openReportWindow === 'function') {
@@ -103,8 +140,9 @@
   var ultima = 0;
   function avisar() {
     if (!EMBUTIDA) return;
-    var h = Math.max(document.documentElement.scrollHeight, document.body.scrollHeight);
+    var r = app ? app.getBoundingClientRect() : null;
+    var h = Math.ceil(r ? r.height + (r.top + window.scrollY) : document.body.scrollHeight) + 12;
     if (Math.abs(h - ultima) > 8) { ultima = h; try { window.parent.postMessage({ tipo: 'farolCalcAltura', h: h }, location.origin); } catch (e) { } }
   }
-  if (EMBUTIDA) { setInterval(avisar, 700); window.addEventListener('load', avisar); }
+  if (EMBUTIDA) { setInterval(avisar, 500); window.addEventListener('load', avisar); window.addEventListener('resize', avisar); if (window.ResizeObserver && app) new ResizeObserver(avisar).observe(app); }
 })();
