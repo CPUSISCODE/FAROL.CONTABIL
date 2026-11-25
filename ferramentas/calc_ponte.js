@@ -41,6 +41,20 @@
     'body.farol-embutida tr.data-row:hover{background:#f3f7f5}',
     'body.farol-embutida h1,body.farol-embutida h2{font-family:var(--sans);letter-spacing:-.01em}',
     'body.farol-embutida hr,body.farol-embutida .divider{border-color:var(--line)}',
+    // números: a mesma fonte do portal, com algarismos de largura igual (alinham nas colunas) e um pouco maiores
+    'body.farol-embutida{--mono:"Segoe UI",system-ui,-apple-system,Roboto,Arial,sans-serif;font-variant-numeric:tabular-nums}',
+    'body.farol-embutida td,body.farol-embutida td.num,body.farol-embutida .cell-input,body.farol-embutida input{font-family:var(--sans);font-variant-numeric:tabular-nums lining-nums}',
+    'body.farol-embutida td{font-size:13.5px;color:var(--ink)}',
+    'body.farol-embutida td.num{font-weight:500;letter-spacing:0}',
+    'body.farol-embutida td b,body.farol-embutida td.num b{font-weight:700}',
+    'body.farol-embutida th{font-family:var(--sans);font-size:11px;letter-spacing:.04em;font-weight:600}',
+    'body.farol-embutida .cell-input{font-size:13.5px;padding:4px 6px;border:1px solid var(--line);border-radius:6px}',
+    'body.farol-embutida td .hint{font-size:11.5px;color:var(--ink-soft)}',
+    'body.farol-embutida td input{font-size:13.5px!important;font-family:var(--sans)!important;font-variant-numeric:tabular-nums}',
+    'body.farol-embutida td input[type=number]:not(.frac-input):not(.lp-frac-input),body.farol-embutida td input[type=text]{min-width:82px;text-align:right}',
+    'body.farol-embutida .total-box .v,body.farol-embutida .totals .v,body.farol-embutida [class*=total] b{font-family:var(--sans);font-variant-numeric:tabular-nums}',
+    'body.farol-embutida .row .v{font-family:var(--sans);font-variant-numeric:tabular-nums}',
+    'body.farol-embutida .badge-code{font-family:var(--sans);font-weight:700;letter-spacing:.02em}',
     'body.farol-embutida .xml-section,body.farol-embutida .manage{border-top:1px solid var(--line);margin-top:28px}'
   ].join('');
   function mostrarApp() {
