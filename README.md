@@ -33,3 +33,37 @@ Tudo fica registrado na aba **Atualizações** da planilha "LC XML - Painel de e
   *Propriedades do script* do Apps Script.
 - O portal só mostra dados depois do login de cada escritório; cada login só vê as próprias contabilidades.
 - Os instaladores (.exe) **não** ficam aqui, porque levam a senha de conexão.
+
+## Acessos, perfis e permissões (desde 25/11/2026)
+
+Os logins ficam **no banco** (tabela `usuarios`) e são administrados no portal, menu **Acessos**.
+A aba Usuários da planilha só acrescenta logins que o banco ainda não tem (`portal_config.usuarios_no_banco`).
+
+| Perfil | Vê | Pode |
+|---|---|---|
+| Administrador | tudo | criar qualquer login, configurações, servidores |
+| Equipe CPUSIS | todas as contabilidades | operar BPO, servidores, regimes |
+| Gestor da contabilidade | as contabilidades dele | criar logins de contador e de cliente das contabilidades dele |
+| Contador | as contabilidades marcadas | os módulos marcados |
+| Cliente | só a própria empresa | resumo, XML, conferência, análise de produtos, calculadora, financeiro (BPO) |
+
+Cada login pode ter módulos a menos do que o perfil permite. A API (`supabase/functions/farol/main.ts`)
+confere perfil, módulo e empresa a cada pedido; o receptor e a função `rtc` também conferem a empresa do cliente.
+
+Segurança: senhas em PBKDF2-SHA256 (150 mil rodadas, migração automática das antigas no primeiro login);
+bloqueio por login (8 erros/15 min) e por IP (30 erros/15 min); sessão com 4 h de inatividade e 12 h no máximo,
+derrubada ao trocar senha/perfil; saída automática da tela após 1 h parada; troca de senha obrigatória quando marcada;
+registro de acessos com IP; CSP no portal publicado (`ferramentas/publicar_portal.py` gera o `index.html`).
+
+## Funções do Supabase
+
+`farol` e `rtc` são publicadas com um `index.ts` de uma linha que importa o `main.ts` deste repositório
+**de um commit fixo**: mudar o código aqui não muda nada em produção até publicar o `index.ts` com o commit novo.
+
+## Calculadoras (GUIA-SN e GUIA-LP)
+
+`calc/sn.html` e `calc/lp.html` são montados por `ferramentas/montar_calc.py` a partir dos repositórios
+GUIA-SN e GUIA-LP (as regras fiscais não são mexidas): o login vira o do portal, a base de NCM vem do banco do
+Farol (`ncm_base`), o XML pode vir das notas do cliente e a impressão sai com a logo da CPUSIS.
+`calc/motor.js` traz as mesmas regras para a **Análise fiscal dos produtos** do portal.
+Para atualizar depois de mudar um guia: `python3 ferramentas/montar_calc.py <GUIA-SN> <GUIA-LP> <commit-sn> <commit-lp>`.
