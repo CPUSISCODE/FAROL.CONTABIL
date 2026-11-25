@@ -40,7 +40,7 @@ var CONFIG = {
   GUARDAR_DIAS: 10, GUARDAR_SEMANAS: 0, GUARDAR_MESES: 0   // no máximo 10 dias (um backup por dia; mais velhos que 10 dias são apagados)
 };
 
-var VERSAO = '1.20';
+var VERSAO = '1.21';
 var PASTA_PORTAL = '_PORTAL_DADOS';   // resumos fiscais (JSON) e versão do agente
 var MESES = ['JANEIRO','FEVEREIRO','MARCO','ABRIL','MAIO','JUNHO','JULHO','AGOSTO','SETEMBRO','OUTUBRO','NOVEMBRO','DEZEMBRO'];
 var MESES_TXT = ['JANEIRO','FEVEREIRO','MARÇO','ABRIL','MAIO','JUNHO','JULHO','AGOSTO','SETEMBRO','OUTUBRO','NOVEMBRO','DEZEMBRO'];
@@ -549,7 +549,9 @@ function sessao_(token) {
   CacheService.getScriptCache().put('s_' + token, s, 21600);
   return JSON.parse(s);
 }
-function podeVer_(sessao, contab) {
+function podeVer_(sessao, contab, cliente) {
+  // login de cliente (empresa): só a própria contabilidade e, quando informado, o próprio cliente
+  if (sessao.empresa) return normal_(sessao.empresa.contabilidade) === normal_(contab) && (cliente === undefined || normal_(sessao.empresa.cliente) === normal_(cliente));
   if (sessao.contabs.indexOf('*') >= 0) return true;
   var n = normal_(contab);
   return sessao.contabs.some(function (c) { return normal_(c) === n; });
@@ -649,7 +651,7 @@ function pastaUnidade_(contab, cliente, subpasta) {
 
 function portalResumo(token, contab, cliente, subpasta, mes) {
   var s = sessao_(token);
-  if (!podeVer_(s, contab)) throw new Error('Sem permissão para esta contabilidade.');
+  if (!podeVer_(s, contab, cliente)) throw new Error('Sem permissão para esta contabilidade.');
   var p = pastaUnidade_(contab, cliente, subpasta);
   if (!p) throw new Error('Cliente não encontrado.');
   var it = p.getFilesByName(mes + '.json');
@@ -662,7 +664,7 @@ var PARTE = 5 * 1024 * 1024;
 function portalArquivo(token, contab, cliente, subpasta, mes) {
   var s = sessao_(token);
   logAcesso_(s.login, 'download', contab + ' / ' + cliente + (subpasta ? ' / ' + subpasta : '') + ' / ' + mes);
-  if (!podeVer_(s, contab)) throw new Error('Sem permissão para esta contabilidade.');
+  if (!podeVer_(s, contab, cliente)) throw new Error('Sem permissão para esta contabilidade.');
   var ano = Number(mes.slice(0, 4)), m = Number(mes.slice(5, 7));
   var pAno = existente_(existente_(existente_(pastaRaiz_(), contab), cliente), formatar_(CONFIG.FORMATO_ANO, ano, m));
   var p = pAno;
@@ -687,11 +689,11 @@ function portalParte(token, id, parte) {
   var arq = DriveApp.getFileById(id);
   // confere que o arquivo está dentro de uma contabilidade permitida
   var pai = arq.getParents(), ok = false, raizId = pastaRaiz_().getId();
-  var atual = pai.hasNext() ? pai.next() : null, nivel = 0;
+  var atual = pai.hasNext() ? pai.next() : null, nivel = 0, filho = null;
   while (atual && nivel < 8) {
     var pp = atual.getParents(); var acima = pp.hasNext() ? pp.next() : null;
-    if (acima && acima.getId() === raizId) { ok = podeVer_(s, atual.getName()); break; }
-    atual = acima; nivel++;
+    if (acima && acima.getId() === raizId) { ok = s.empresa ? !!filho && podeVer_(s, atual.getName(), filho.getName()) : podeVer_(s, atual.getName()); break; }
+    filho = atual; atual = acima; nivel++;
   }
   if (!ok) throw new Error('Sem permissão para este arquivo.');
   var bytes = arq.getBlob().getBytes();
@@ -823,7 +825,7 @@ function lerMemoria_(mes) {
 function portalIndicadoresLote(token, meses) {
   var s = sessao_(token);
   meses = (meses || []).filter(function (m) { return /^\d{4}-\d{2}$/.test(String(m)); }).slice(0, 24);
-  var unid = arvorePortal_().filter(function (u) { return podeVer_(s, u.contabilidade); });
+  var unid = arvorePortal_().filter(function (u) { return podeVer_(s, u.contabilidade, u.cliente); });
   var cache = CacheService.getScriptCache(), inicio = Date.now(), res = {};
   meses.forEach(function (mes) {
     var lista = unid.filter(function (u) { return u.arqs[mes]; });
