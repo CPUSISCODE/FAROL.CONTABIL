@@ -30,7 +30,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$VERSAO = '2.4'
+$VERSAO = '2.5'
 $BASE = $PSScriptRoot
 if (-not $Config) { $Config = Join-Path $BASE 'config.json' }
 $PASTA_LOG = Join-Path $BASE 'logs'
@@ -203,8 +203,22 @@ function Num($n) { if ($null -eq $n -or $n.InnerText -eq '') { return [decimal]0
 function Txt($n) { if ($null -eq $n) { return '' }; return $n.InnerText }
 function Filho($no, [string]$nome) { if ($null -eq $no) { return $null }; return $no[$nome] }
 
+# 2.5: validade do certificado digital lida do XML assinado (sem senha, sem tocar no certificado do cliente)
+function Ler-CertificadoXml($c) {
+  if (-not $c -or -not $c.b64) { return $null }
+  try {
+    $x5 = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 (, [Convert]::FromBase64String($c.b64))
+    $cn = ''; if ($x5.Subject -match 'CN=([^,]+)') { $cn = $Matches[1].Trim('"') }
+    $doc = ''; if ($cn -match ':(\d{11,14})$') { $doc = $Matches[1] }
+    $tipo = ''; foreach ($e in $x5.Extensions) { if ($e.Oid.Value -eq '2.5.29.32') { $t = $e.Format($false); if ($t -match '2\.16\.76\.1\.2\.1\.') { $tipo = 'A1' } elseif ($t -match '2\.16\.76\.1\.2\.3\.') { $tipo = 'A3' } } }
+    $emissor = ''; if ($x5.Issuer -match 'CN=([^,]+)') { $emissor = $Matches[1].Trim('"') }
+    return [ordered]@{ validade = $x5.NotAfter.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ'); inicio = $x5.NotBefore.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+      titular = ($cn -replace ':\d{11,14}$', ''); doc = $doc; tipo = $tipo; emissor = $emissor; serie = $x5.SerialNumber; notaEm = $c.dh }
+  } catch { return $null }
+}
+
 function Nova-Analise {
-  $script:AN = @{ docs = @{}; canceladas = @{}; inut = New-Object System.Collections.ArrayList; cte = @{ qtd = 0; valor = [decimal]0 }; mdfe = 0; sistemaDia = $null; pendencias = $null }
+  $script:AN = @{ docs = @{}; canceladas = @{}; inut = New-Object System.Collections.ArrayList; cte = @{ qtd = 0; valor = [decimal]0 }; mdfe = 0; sistemaDia = $null; pendencias = $null; certs = @{}; certCliente = $null }
 }
 
 # lê um documento autorizado (NF-e/NFC-e/compra) e guarda o que interessa
@@ -230,6 +244,11 @@ function Analisar-Doc([string]$grupo, [string]$texto) {
     uf = (Txt (Filho (Filho $emit 'enderEmit') 'UF')); cMunFG = (Txt (Filho $ide 'cMunFG')); dh = $dh
     vNF = (Num (Filho $tot 'vNF')); itens = New-Object System.Collections.ArrayList; pag = New-Object System.Collections.ArrayList
     refs = @($x.GetElementsByTagName('refNFe') | ForEach-Object { $_.InnerText })
+  }
+  # 2.5: certificado que assinou a nota (vai dentro do próprio XML, é público): guarda o da nota mais recente de cada emitente
+  if ($d.emitDoc) {
+    $xc = $x.GetElementsByTagName('X509Certificate')
+    if ($xc.Count -and (-not $script:AN.certs.ContainsKey($d.emitDoc) -or [string]$dh -gt [string]$script:AN.certs[$d.emitDoc].dh)) { $script:AN.certs[$d.emitDoc] = @{ dh = [string]$dh; b64 = ($xc[0].InnerText -replace '\s', '') } }
   }
   foreach ($det in $inf.GetElementsByTagName('det')) {
     $pr = $det['prod']; $im = $det['imposto']
@@ -549,6 +568,7 @@ function Montar-Resumo($emp, [datetime]$mes) {
     produtos = $topProd; produtosDistintos = $todosProd.Count
     devolucoes = @($devol); canceladas = @($canc); inutilizacoes = @($script:AN.inut); falhasNumeracao = @($falhas)
     ultimosNumeros = @($ultimos.Values)
+    certificadoXml = (Ler-CertificadoXml $script:AN.certCliente)
     porDia = $porDia; comSistema = [bool]$script:AN.sistemaDia
     pendencias = @($(if ($script:AN.pendencias) { $script:AN.pendencias } else { @() })); comPendencias = ($null -ne $script:AN.pendencias)
     rtc = $(try { Conferir-Rtc $mes } catch { [ordered]@{ erro = $_.Exception.Message } })
@@ -890,6 +910,7 @@ function Processar-Manuais {
       foreach ($d in $script:AN.docs.Values) {
         if ($d.emitDoc -eq $cnpj) { if ($d.modelo -eq '65') { $d.origem = 'NFCe' } else { $d.origem = 'NFe' } } else { $d.origem = 'Compras' }
       }
+      $script:AN.certCliente = $script:AN.certs[$cnpj]
       $emp = @{ cliente = $it.cliente; contabilidade = $it.contabilidade; subpasta = $it.subpasta; cnpj = (Formatar-Doc $cnpj) }
       $mesDt = [datetime]::ParseExact($it.mes + '-01', 'yyyy-MM-dd', $null)
       $res = Montar-Resumo $emp $mesDt

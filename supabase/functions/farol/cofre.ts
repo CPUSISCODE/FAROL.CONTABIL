@@ -68,6 +68,44 @@ function lerPfx(pfx: Uint8Array, senha: string) {
   return { inicio: titular.validity.notBefore.toISOString(), validade: titular.validity.notAfter.toISOString(), titular: nome.slice(0, 200), doc };
 }
 
+const CAMPOS_RENOV = 'contato_nome, contato_fone, contato_email, renov_status, renov_ref, renov_obs, renov_aviso_em, renov_aviso_por, renov_avisos, renov_historico';
+export const STATUS: Record<string, string> = {
+  nao_avisado: 'Não avisado', avisado: 'Avisado', negociando: 'Em negociação', agendado: 'Renovação agendada',
+  renovado: 'Renovou com a CPUSIS', outro: 'Renovou com outra certificadora', nao_renova: 'Não vai renovar',
+};
+const FINAIS = ['renovado', 'outro', 'nao_renova'];
+const MSG_PADRAO = 'Olá, {contato}! Aqui é da CPUSIS. O certificado digital da {empresa} vence em {vencimento} ({prazo}). ' +
+  'Sem ele a empresa para de emitir nota fiscal. A CPUSIS faz a renovação com condição especial para nossos clientes: quer que a gente já deixe agendado?';
+const DIA = 864e5;
+// etapas de aviso: 60, 30, 15 e 7 dias antes; na última semana, de 2 em 2 dias; vencido, de 3 em 3 dias
+export function renovacao(k: any, xml: any, foneBpo?: string) {
+  const cad = k.cert_validade ? new Date(k.cert_validade).getTime() : 0;
+  const lido = xml?.validade ? new Date(xml.validade).getTime() : 0;
+  const val = Math.max(cad, lido);            // o mais novo vale (certificado renovado aparece primeiro nas notas)
+  const fonte = !val ? '' : val === lido && lido !== cad ? 'nota' : 'cofre';
+  const agora = Date.now();
+  const dias = val ? Math.floor((val - agora) / DIA) : null;
+  let status = k.renov_status || '';
+  // veio certificado novo depois da situação marcada: mostra como renovado; quando ele mesmo chegar a 60 dias, começa ciclo novo
+  if (status && k.renov_ref && val && val > new Date(k.renov_ref).getTime() + DIA) status = dias! > 60 ? (FINAIS.includes(status) ? status : 'renovado') : '';
+  const ultimo = k.renov_aviso_em ? new Date(k.renov_aviso_em).getTime() : 0;
+  let etapa: number | null = null, avisarHoje = false;
+  if (dias != null && dias <= 60 && !FINAIS.includes(status)) {
+    etapa = dias < 0 ? 0 : dias <= 7 ? 7 : dias <= 15 ? 15 : dias <= 30 ? 30 : 60;
+    const entrouEm = etapa === 0 ? val : val - etapa * DIA;
+    if (!ultimo || ultimo < entrouEm) avisarHoje = true;
+    else if (etapa === 7 && agora - ultimo >= 2 * DIA) avisarHoje = true;
+    else if (etapa === 0 && agora - ultimo >= 3 * DIA) avisarHoje = true;
+  }
+  return {
+    validadeEfetiva: val ? new Date(val).toISOString() : '', fonte, dias, etapa, avisarHoje,
+    tipo: xml?.tipo || (k.cert_pfx_cifrado ? 'A1' : ''), emissor: xml?.emissor || '',
+    contatoNome: k.contato_nome || '', contatoFone: k.contato_fone || foneBpo || '', contatoEmail: k.contato_email || '', foneDoBpo: !k.contato_fone && !!foneBpo,
+    renovStatus: status, renovObs: k.renov_obs || '', avisoEm: k.renov_aviso_em || '', avisoPor: k.renov_aviso_por || '', avisos: k.renov_avisos || 0,
+    historico: Array.isArray(k.renov_historico) ? k.renov_historico.slice(-10).reverse() : [],
+  };
+}
+
 export function criarCofre(c: Ctx) {
   const { db } = c;
   async function soCofre(token: unknown) {
@@ -83,6 +121,15 @@ export function criarCofre(c: Ctx) {
     if (!data) throw new Error('Cliente não encontrado.');
     return data;
   }
+  const normalU = (u: any) => (u.contab_n || '') + '|' + (u.cliente_n || '');
+  async function contatosBpo() {   // WhatsApp já cadastrado no BPO serve de contato inicial
+    const out: Record<string, string> = {};
+    try {
+      const { data } = await db.from('bpo').select('contab_n, cliente_n, whatsapp');
+      (data || []).forEach((b: any) => { const w = Array.isArray(b.whatsapp) ? b.whatsapp[0] : b.whatsapp; if (w) out[b.contab_n + '|' + b.cliente_n] = String(w).replace(/\D/g, ''); });
+    } catch { /* sem BPO, sem contato inicial */ }
+    return out;
+  }
   const nomeU = (u: any) => u.cliente + (u.subpasta ? ' / ' + u.subpasta : '') + ' (' + u.contabilidade + ')';
   async function limite(login: string) {
     const desde = new Date(Date.now() - 3600e3).toISOString();
@@ -92,16 +139,19 @@ export function criarCofre(c: Ctx) {
 
   async function portalCofreLista(token: unknown) {
     await soCofre(token);
-    const us = await c.todas<any>(() => db.from('unidades').select('id, contabilidade, cliente, subpasta').order('contab_n').order('cliente_n').order('subpasta_n'));
-    const cf = await c.todas<any>(() => db.from('cofre').select('unidade_id, csc_id, csc_cifrado, cert_senha_cifrada, cert_pfx_cifrado, cert_arquivo, cert_inicio, cert_validade, cert_titular, cert_doc, obs, atualizado_por, atualizado_em'));
+    const us = await c.todas<any>(() => db.from('unidades').select('id, contabilidade, cliente, subpasta, contab_n, cliente_n').order('contab_n').order('cliente_n').order('subpasta_n'));
+    const cf = await c.todas<any>(() => db.from('cofre').select('unidade_id, csc_id, csc_cifrado, cert_senha_cifrada, cert_pfx_cifrado, cert_arquivo, cert_inicio, cert_validade, cert_titular, cert_doc, obs, atualizado_por, atualizado_em, ' + CAMPOS_RENOV));
+    const contatoBpo = await contatosBpo();
     const porU: Record<number, any> = {}; cf.forEach((r) => (porU[r.unidade_id] = r));
     // últimos números: junta os resumos dos últimos 4 meses, maior número por modelo/série
     const d = new Date(); d.setUTCMonth(d.getUTCMonth() - 3);
     const mesMin = d.toISOString().slice(0, 7);
-    const rs = await c.todas<any>(() => db.from('resumos').select('unidade_id, mes, ult:dados->ultimosNumeros, cnpj:dados->>cnpj, agente:dados->>agente').gte('mes', mesMin).order('mes', { ascending: false }));
+    const rs = await c.todas<any>(() => db.from('resumos').select('unidade_id, mes, ult:dados->ultimosNumeros, cx:dados->certificadoXml, cnpj:dados->>cnpj').gte('mes', mesMin).order('mes', { ascending: false }));
     const nums: Record<number, Record<string, any>> = {}, cnpj: Record<number, string> = {}, comUlt: Record<number, boolean> = {};
+    const certXml: Record<number, any> = {};
     rs.forEach((r) => {
       if (r.cnpj && !cnpj[r.unidade_id]) cnpj[r.unidade_id] = r.cnpj;
+      if (r.cx && r.cx.validade && (!certXml[r.unidade_id] || String(r.cx.notaEm || '') > String(certXml[r.unidade_id].notaEm || ''))) certXml[r.unidade_id] = r.cx;
       if (!Array.isArray(r.ult)) return;
       comUlt[r.unidade_id] = true;
       const m = (nums[r.unidade_id] = nums[r.unidade_id] || {});
@@ -120,6 +170,8 @@ export function criarCofre(c: Ctx) {
           cscId: k.csc_id || '', temCsc: !!k.csc_cifrado, temSenha: !!k.cert_senha_cifrada, temPfx: !!k.cert_pfx_cifrado, arquivo: k.cert_arquivo || '',
           inicio: k.cert_inicio || '', validade: k.cert_validade || '', titular: k.cert_titular || '', doc: k.cert_doc || '',
           obs: k.obs || '', por: k.atualizado_por || '', em: k.atualizado_em || '',
+          xml: certXml[u.id] || null,
+          ...renovacao(k, certXml[u.id], contatoBpo[normalU(u)]),
         };
       }),
       ativo: (Deno.env.get('COFRE_CHAVE') || '').length >= 24,
@@ -196,15 +248,65 @@ export function criarCofre(c: Ctx) {
     return { arquivo: data.cert_arquivo || 'certificado.pfx', base64: b64(pfx) };
   }
 
-  // resumo para o aviso do painel: certificados vencidos / vencendo em 30 dias
+  // resumo para o aviso da Central: vencidos, vencendo em 60 dias e quantos avisar hoje
   async function portalCofreAvisos(token: unknown) {
-    await soCofre(token);
-    const lim = new Date(Date.now() + 30 * 864e5).toISOString();
-    const { data } = await db.from('cofre').select('unidade_id, cert_validade').not('cert_validade', 'is', null).lte('cert_validade', lim);
-    const agora = Date.now();
-    const v = (data || []).filter((r) => new Date(r.cert_validade).getTime() < agora).length;
-    return { vencidos: v, vencendo: (data || []).length - v };
+    const r: any = await portalCofreLista(token);
+    let vencidos = 0, vencendo = 0, avisarHoje = 0;
+    r.unidades.forEach((u: any) => {
+      if (u.dias == null) return;
+      if (u.dias < 0) vencidos++; else if (u.dias <= 60) vencendo++;
+      if (u.avisarHoje) avisarHoje++;
+    });
+    return { vencidos, vencendo, avisarHoje };
   }
 
-  return { portalCofreLista, portalCofreSalvar, portalCofreRevelar, portalCofreBaixar, portalCofreAvisos };
+  // contato e situação da renovação. d: { contatoNome?, contatoFone?, contatoEmail?, status?, obs?, avisou?: 'whatsapp'|'email'|'telefone'|'outro' }
+  async function portalCofreRenovacao(token: unknown, id: unknown, d: any) {
+    const s = await soCofre(token);
+    const u = await unidade(id);
+    d = d && typeof d === 'object' ? d : {};
+    const { data: atual, error } = await db.from('cofre').select('unidade_id, cert_validade, renov_status, renov_avisos, renov_historico').eq('unidade_id', u.id).maybeSingle();
+    if (error) throw new Error('Banco: ' + error.message);
+    const novo: Record<string, unknown> = { unidade_id: u.id };
+    const lim = (v: unknown, n: number) => String(v ?? '').trim().slice(0, n) || null;
+    if ('contatoNome' in d) novo.contato_nome = lim(d.contatoNome, 120);
+    if ('contatoFone' in d) { const f = String(d.contatoFone || '').replace(/\D/g, ''); if (f && (f.length < 10 || f.length > 13)) throw new Error('Telefone inválido (DDD + número).'); novo.contato_fone = f || null; }
+    if ('contatoEmail' in d) { const e = lim(d.contatoEmail, 160); if (e && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)) throw new Error('E-mail inválido.'); novo.contato_email = e; }
+    if ('obs' in d) novo.renov_obs = lim(d.obs, 1000);
+    const validadeAtual = typeof d.validade === 'string' && /^\d{4}-\d{2}-\d{2}/.test(d.validade) ? d.validade : (atual?.cert_validade || null);
+    const hist = Array.isArray(atual?.renov_historico) ? atual!.renov_historico.slice(-29) : [];
+    const agora = new Date().toISOString();
+    if ('status' in d) {
+      if (!STATUS[d.status]) throw new Error('Situação inválida.');
+      novo.renov_status = d.status; novo.renov_ref = validadeAtual;
+      if ((atual?.renov_status || '') !== d.status) hist.push({ em: agora, por: s.login, oque: 'situação: ' + STATUS[d.status] });
+    }
+    if (d.avisou) {
+      const meio = ['whatsapp', 'email', 'telefone', 'outro'].includes(d.avisou) ? d.avisou : 'outro';
+      novo.renov_aviso_em = agora; novo.renov_aviso_por = s.login; novo.renov_avisos = (atual?.renov_avisos || 0) + 1;
+      hist.push({ em: agora, por: s.login, oque: 'avisou por ' + meio });
+      if (!('status' in d) && (!atual?.renov_status || atual.renov_status === 'nao_avisado')) { novo.renov_status = 'avisado'; novo.renov_ref = validadeAtual; }
+    }
+    novo.renov_historico = hist;
+    const { error: e2 } = await db.from('cofre').upsert(novo, { onConflict: 'unidade_id' });
+    if (e2) throw new Error('Banco: ' + e2.message);
+    await c.logAcesso(s.login, 'cofre-renovacao', nomeU(u) + ': ' + (hist.length ? hist[hist.length - 1].oque : 'contato atualizado'));
+    return { ok: true };
+  }
+
+  // texto padrão da mensagem de renovação (o mesmo para toda a equipe)
+  async function portalCofreMensagem(token: unknown, texto?: unknown) {
+    const s = await soCofre(token);
+    if (typeof texto === 'string') {
+      const t = texto.trim().slice(0, 1500);
+      const { error } = await db.from('portal_config').upsert({ chave: 'cofre_msg', valor: t, atualizado_em: new Date().toISOString() }, { onConflict: 'chave' });
+      if (error) throw new Error('Banco: ' + error.message);
+      await c.logAcesso(s.login, 'cofre-mensagem', 'texto da mensagem de renovação alterado');
+      return { texto: t || MSG_PADRAO };
+    }
+    const { data } = await db.from('portal_config').select('valor').eq('chave', 'cofre_msg').maybeSingle();
+    return { texto: (data?.valor as string) || MSG_PADRAO };
+  }
+
+  return { portalCofreLista, portalCofreSalvar, portalCofreRevelar, portalCofreBaixar, portalCofreAvisos, portalCofreRenovacao, portalCofreMensagem };
 }

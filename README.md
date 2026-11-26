@@ -63,6 +63,7 @@ Aba **Cofre**, só para perfis Administrador e Equipe CPUSIS (contador, gestor e
 - **CSC** (id + código) e **certificado A1** (arquivo .pfx + senha): a equipe cadastra no portal.
 - Segredos criptografados com AES-256-GCM na função `farol` (`cofre.ts`); a chave vem do segredo `COFRE_CHAVE`, que fica só no Supabase e nunca no banco nem no GitHub. **Se a chave for trocada ou perdida, o que já foi guardado não abre mais.**
 - Ao salvar, o .pfx é aberto com a senha: se a senha estiver errada, nada é gravado. Validade e titular são lidos do certificado, e a Central avisa quando um certificado está vencido ou vence em até 30 dias.
+- **Renovação de certificados** (aba do Cofre): a validade é lida sozinha do certificado que assinou a última nota de cada cliente (agente 2.5+, campo `certificadoXml` do resumo; vale para A1 e A3, sem senha). Os avisos começam 60 dias antes e voltam aos 30, 15 e 7 dias; na última semana, de 2 em 2 dias; vencido, de 3 em 3 dias. Cada cliente tem contato, situação (avisado, em negociação, agendado, renovou com a CPUSIS, com outra, não renova) e histórico. O botão WhatsApp abre a conversa com o texto pronto (configurável) e registra o aviso. A Central mostra quantos avisar hoje.
 - Revelar o CSC ou a senha e baixar o .pfx ficam no registro de acessos (`cofre-revelar`, `cofre-baixar`). Limite: 40 por hora por usuário.
 
 ## Funções do Supabase

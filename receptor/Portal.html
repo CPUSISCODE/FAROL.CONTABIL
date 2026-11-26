@@ -24,7 +24,7 @@ button,input,select{font:inherit;color:inherit}
 .btn.sec{background:transparent;color:var(--brand)}
 .btn:disabled{opacity:.55;cursor:default}
 .btn:focus-visible,input:focus-visible,select:focus-visible,.tab:focus-visible,th:focus-visible,.cli:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
-input[type=text],input[type=password],input[type=search],input[type=date],select{background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:8px 10px;min-width:0}
+input[type=text],input[type=password],input[type=search],input[type=date],input[type=tel],input[type=email],input[type=file],select{background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:8px 10px;min-width:0}
 .hidden{display:none!important}
 
 /* login */
@@ -247,7 +247,7 @@ td.b{font-weight:700;white-space:normal}
 #dlgFin label{display:grid;gap:4px;font-size:13px}
 #rfSec .minis.rf4{grid-template-columns:repeat(4,minmax(0,1fr))}@media (max-width:760px){#rfSec .minis.rf4{grid-template-columns:repeat(2,minmax(0,1fr))}}
 ul.lst{margin:6px 0 10px;padding-left:20px;display:grid;gap:4px}
-.cf-tab td{vertical-align:top}.cf-num{white-space:nowrap;font-variant-numeric:tabular-nums}.cf-num b{font-size:14px}.cf-seg{font-family:ui-monospace,Consolas,monospace;letter-spacing:.5px}.cf-seg.aberto{background:var(--warn-bg,#fff4d6);padding:1px 5px;border-radius:5px;user-select:all}
+.cf-tab td{vertical-align:top}.cf-hoje td{background:color-mix(in srgb,var(--warn) 7%,transparent)}.cf-faixas{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin:12px 0}.cf-faixa{display:flex;flex-direction:column;gap:2px;text-align:left;background:var(--card,#fff);border:1px solid var(--line);border-top:4px solid var(--c);border-radius:10px;padding:10px 12px;cursor:pointer;font:inherit;color:inherit}.cf-faixa.sel{outline:2px solid var(--c);outline-offset:1px}.cf-faixa .r{font-size:12px;opacity:.75}.cf-faixa .v{font-size:24px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--c)}.cf-faixa .d{font-size:11px;opacity:.65;min-height:13px}.cf-num{white-space:nowrap;font-variant-numeric:tabular-nums}.cf-num b{font-size:14px}.cf-seg{font-family:ui-monospace,Consolas,monospace;letter-spacing:.5px}.cf-seg.aberto{background:var(--warn-bg,#fff4d6);padding:1px 5px;border-radius:5px;user-select:all}
 </style>
 </head>
 <body>
@@ -3008,7 +3008,7 @@ function guiaAuto() {
   }
 
   /* ---------------- calculadoras (SN e LP) ---------------- */
-  window.VERSAO_PORTAL = '1.33';
+  window.VERSAO_PORTAL = '1.34';
   window.BASE_CALC = /(^|\.)github\.io$|^farol\.test$/.test(location.hostname) ? 'calc/' : 'https://cpusiscode.github.io/FAROL.CONTABIL/calc/';
   var CALC_SEL = null;
   function quadro(regime, id) {
@@ -3814,12 +3814,12 @@ tr.cf-sel.aberta td{background:rgba(127,127,127,.1)}
 // ================================================================ COFRE CPUSIS (CSC, certificado digital e numeração das notas)
 // Só perfis admin/cpusis. O servidor confere tudo de novo; revelar/baixar fica no registro de acessos.
 (function () {
-  var CF = null, CF_FILTRO = '';
+  var CF = null, CF_FILTRO = '', CF_ABA = 'renov', CF_RF = 'hoje', CF_MSG = null;
   function ehCpusis() { return DADOS && (DADOS.perfil === 'admin' || DADOS.perfil === 'cpusis' || (!DADOS.perfil && DADOS.admin)); }
   function diasPara(iso) { return iso ? Math.floor((new Date(iso).getTime() - Date.now()) / 864e5) : null; }
   function situacaoCert(u) {
-    if (!u.validade) return u.temSenha || u.temPfx ? { t: 'sem validade', c: 'warn' } : { t: 'não cadastrado', c: '' };
-    var d = diasPara(u.validade);
+    if (!u.validadeEfetiva) return u.temSenha || u.temPfx ? { t: 'sem validade', c: 'warn' } : { t: 'não cadastrado', c: '' };
+    var d = diasPara(u.validadeEfetiva);
     if (d < 0) return { t: 'vencido há ' + (-d) + (d === -1 ? ' dia' : ' dias'), c: 'bad' };
     if (d <= 30) return { t: 'vence em ' + d + (d === 1 ? ' dia' : ' dias'), c: 'warn' };
     return { t: 'válido', c: 'ok' };
@@ -3842,31 +3842,32 @@ tr.cf-sel.aberta td{background:rgba(127,127,127,.1)}
   };
   function aviso(t, erro) { var a = $('cfAviso'); if (!a) return; a.className = 'aviso' + (erro ? ' bad' : ''); a.textContent = t || ''; if (t) setTimeout(function () { if (a.textContent === t) a.textContent = ''; }, 8000); }
   function desenhar() {
+    if (CF_ABA === 'renov') return desenharRenov();
     var U = CF.unidades;
-    var comCert = U.filter(function (u) { return u.validade; });
-    var vencidos = comCert.filter(function (u) { return diasPara(u.validade) < 0; }).length;
-    var vencendo = comCert.filter(function (u) { var d = diasPara(u.validade); return d >= 0 && d <= 30; }).length;
+    var comCert = U.filter(function (u) { return u.validadeEfetiva; });
+    var vencidos = comCert.filter(function (u) { return diasPara(u.validadeEfetiva) < 0; }).length;
+    var vencendo = comCert.filter(function (u) { var d = diasPara(u.validadeEfetiva); return d >= 0 && d <= 30; }).length;
     var nfce = U.filter(function (u) { return u.numeros.some(function (n) { return n.modelo === '65'; }); });
     var semCsc = nfce.filter(function (u) { return !u.temCsc; }).length;
     $('tela').innerHTML = '<div class="cab"><div><h1>Cofre CPUSIS</h1><p class="sub">Numeração das notas, CSC e certificado digital de cada cliente. Só a equipe da CPUSIS enxerga esta tela; ' +
       'tudo fica criptografado, e cada vez que alguém revela uma senha ou baixa um certificado fica anotado (quem, quando e de qual cliente).</p></div>' +
-      '<button class="btn sec" type="button" id="cfAtual">Atualizar</button></div>' +
+      '<button class="btn sec" type="button" id="cfAtual">Atualizar</button></div>' + abasCofre() +
       (CF.ativo ? '' : '<div class="card erro"><b>O cofre ainda não foi ativado.</b> Falta cadastrar a chave COFRE_CHAVE nos segredos do Supabase. A numeração das notas já aparece; o CSC e o certificado só podem ser guardados depois disso.</div>') +
       '<div class="kpis kpis4">' + kpi2('Clientes / unidades', int(U.length), int(U.filter(function (u) { return u.numeros.length; }).length) + ' com numeração recebida', null) +
-        kpi2('Certificados guardados', int(comCert.length), int(U.length - comCert.length) + ' sem certificado', null) +
+        kpi2('Validade conhecida', int(comCert.length), int(U.filter(function (u) { return u.temPfx; }).length) + ' com o arquivo guardado no cofre', null) +
         kpi2('Vencem em 30 dias', int(vencendo), vencidos ? int(vencidos) + ' já vencidos' : 'nenhum vencido', null, vencidos ? 'bad' : vencendo ? 'warn' : 'muted') +
         kpi2('Emitem NFC-e sem CSC', int(semCsc), 'de ' + int(nfce.length) + ' que emitem NFC-e', null, semCsc ? 'warn' : 'muted') + '</div>' +
       '<div class="ferr"><input type="search" id="cfBusca" placeholder="Buscar cliente, contabilidade ou CNPJ" style="min-width:300px">' +
       '<select id="cfFiltro"><option value="">Todos</option><option value="venc">Vencidos ou vencendo</option><option value="semcert">Sem certificado</option><option value="semcsc">Emitem NFC-e sem CSC</option></select></div>' +
       '<p id="cfAviso" class="aviso" role="status"></p><div class="tbl" id="cfTab"></div><dialog id="dlgCf" aria-labelledby="dlgCfTit"></dialog>';
     $('cfFiltro').value = CF_FILTRO;
-    $('cfAtual').onclick = telaCofre;
+    $('cfAtual').onclick = telaCofre; ligarAbas();
     var tabela = function () {
       var b = norm($('cfBusca').value || ''); CF_FILTRO = $('cfFiltro').value;
       var L = U.filter(function (u) {
         if (b && norm([u.cliente, u.subpasta, u.contabilidade, u.cnpj, u.titular].join(' ')).indexOf(b) < 0) return false;
-        if (CF_FILTRO === 'venc') return u.validade && diasPara(u.validade) <= 30;
-        if (CF_FILTRO === 'semcert') return !u.validade;
+        if (CF_FILTRO === 'venc') return u.validadeEfetiva && diasPara(u.validadeEfetiva) <= 30;
+        if (CF_FILTRO === 'semcert') return !u.validadeEfetiva;
         if (CF_FILTRO === 'semcsc') return !u.temCsc && u.numeros.some(function (n) { return n.modelo === '65'; });
         return true;
       });
@@ -3877,7 +3878,7 @@ tr.cf-sel.aberta td{background:rgba(127,127,127,.1)}
             '<td>' + nums(u, '55') + '</td><td>' + nums(u, '65') + '</td>' +
             '<td>' + (u.cscId ? '<div class="sub">id ' + esc(u.cscId) + '</div>' : '') + oculto(u.id, 'csc', u.temCsc) + '</td>' +
             '<td>' + (sc.c ? '<span class="pill ' + (sc.c === 'ok' ? '' : sc.c) + '">' + esc(sc.t) + '</span>' : '<span class="sub">' + sc.t + '</span>') +
-              (u.validade ? '<div class="sub">até ' + new Date(u.validade).toLocaleDateString('pt-BR') + (u.titular ? ' · ' + esc(u.titular) : '') + '</div>' : '') +
+              (u.validadeEfetiva ? '<div class="sub">até ' + new Date(u.validadeEfetiva).toLocaleDateString('pt-BR') + (u.tipo ? ' · ' + esc(u.tipo) : '') + ((u.titular || (u.xml && u.xml.titular)) ? ' · ' + esc(u.titular || u.xml.titular) : '') + (u.fonte === 'nota' ? ' · <span title="Lido do certificado que assinou a última nota">lido da nota</span>' : '') + '</div>' : '') +
               (u.temPfx ? '<button class="lnk" type="button" data-baixar="' + u.id + '">baixar .pfx</button>' : '') + '</td>' +
             '<td>' + oculto(u.id, 'senha', u.temSenha) + '</td>' +
             '<td><button class="lnk" type="button" data-ed="' + u.id + '">' + (u.temCsc || u.temPfx || u.temSenha ? 'editar' : 'cadastrar') + '</button>' + (u.obs ? ' <span class="ac-tag" title="' + esc(u.obs) + '">obs</span>' : '') + '</td></tr>';
@@ -3891,6 +3892,128 @@ tr.cf-sel.aberta td{background:rgba(127,127,127,.1)}
       else if (x.dataset.copiar) copiar(x);
       else if (x.dataset.baixar) baixarPfx(achar(x.dataset.baixar), x);
     });
+  }
+  // ---------------------------------------------------------------- abas do cofre
+  function abasCofre() {
+    var n = CF.unidades.filter(function (u) { return u.avisarHoje; }).length;
+    return '<div class="abas" role="tablist"><button class="tab" role="tab" type="button" data-cfa="renov" aria-selected="' + (CF_ABA === 'renov') + '">Renovação de certificados' + (n ? ' <span class="pill warn">' + n + '</span>' : '') + '</button>' +
+      '<button class="tab" role="tab" type="button" data-cfa="cofre" aria-selected="' + (CF_ABA === 'cofre') + '">Cofre (CSC, certificado e numeração)</button></div>';
+  }
+  function ligarAbas() { document.querySelectorAll('[data-cfa]').forEach(function (b) { b.onclick = function () { CF_ABA = b.dataset.cfa; desenhar(); }; }); }
+  var STATUS = { '': 'Não avisado', nao_avisado: 'Não avisado', avisado: 'Avisado', negociando: 'Em negociação', agendado: 'Renovação agendada', renovado: 'Renovou com a CPUSIS', outro: 'Renovou com outra certificadora', nao_renova: 'Não vai renovar' };
+  var COR_ST = { '': 'warn', nao_avisado: 'warn', avisado: 'info', negociando: 'info', agendado: '', renovado: '', outro: 'bad', nao_renova: 'bad' };
+  var FINAIS = ['renovado', 'outro', 'nao_renova'];
+  function prazoTxt(d) { return d < 0 ? 'venceu há ' + (-d) + (d === -1 ? ' dia' : ' dias') : d === 0 ? 'vence hoje' : 'faltam ' + d + (d === 1 ? ' dia' : ' dias'); }
+  function faixa(u) { var d = u.dias; return d == null ? '' : d < 0 ? 'venc' : d <= 7 ? 'd7' : d <= 15 ? 'd15' : d <= 30 ? 'd30' : d <= 60 ? 'd60' : ''; }
+  function foneBR(f) { f = String(f || '').replace(/\D/g, ''); if (f.length === 10 || f.length === 11) return '(' + f.slice(0, 2) + ') ' + f.slice(2, f.length - 4) + '-' + f.slice(-4); return f; }
+  function mensagem(u) {
+    var t = CF_MSG || '';
+    var m = { contato: u.contatoNome || 'tudo bem', empresa: u.cliente, vencimento: u.validadeEfetiva ? new Date(u.validadeEfetiva).toLocaleDateString('pt-BR') : '', prazo: u.dias == null ? '' : prazoTxt(u.dias) };
+    return t.replace(/\{(contato|empresa|vencimento|prazo)\}/g, function (x, k) { return m[k]; });
+  }
+  function desenharRenov() {
+    var U = CF.unidades;
+    var conhecidos = U.filter(function (u) { return u.dias != null; });
+    var cont = { venc: 0, d7: 0, d15: 0, d30: 0, d60: 0 };
+    conhecidos.forEach(function (u) { var f = faixa(u); if (f && FINAIS.indexOf(u.renovStatus) < 0) cont[f]++; });
+    var hoje = U.filter(function (u) { return u.avisarHoje; }).length;
+    var negoc = U.filter(function (u) { return u.renovStatus === 'negociando' || u.renovStatus === 'agendado'; }).length;
+    var nossos = U.filter(function (u) { return u.renovStatus === 'renovado'; }).length;
+    var card = function (id, rot, n, cor, sub) { return '<button type="button" class="cf-faixa' + (CF_RF === id ? ' sel' : '') + '" data-rf="' + id + '" style="--c:var(--' + cor + ')"><span class="r">' + rot + '</span><span class="v">' + int(n) + '</span><span class="d">' + sub + '</span></button>'; };
+    $('tela').innerHTML = '<div class="cab"><div><h1>Cofre CPUSIS</h1><p class="sub">Renovação de certificados: a validade vem do certificado que assinou a última nota de cada cliente (automático) ou do arquivo guardado no cofre. ' +
+      'Os avisos começam 60 dias antes e voltam aos 30, 15 e 7 dias; na última semana, de 2 em 2 dias; vencido, de 3 em 3 dias. Contador e cliente não veem esta tela.</p></div>' +
+      '<div class="ferr"><button class="btn sec" type="button" id="cfMsg">Texto da mensagem</button><button class="btn sec" type="button" id="cfAtual">Atualizar</button></div></div>' + abasCofre() +
+      '<div class="cf-faixas">' + card('hoje', 'Avisar hoje', hoje, hoje ? 'warn' : 'muted', 'na etapa de aviso') + card('venc', 'Vencidos', cont.venc, cont.venc ? 'bad' : 'muted', 'parados sem emitir') +
+        card('d7', 'Até 7 dias', cont.d7, 'bad', 'urgente') + card('d15', '8 a 15 dias', cont.d15, 'warn', '') + card('d30', '16 a 30 dias', cont.d30, 'warn', '') + card('d60', '31 a 60 dias', cont.d60, 'info', 'primeiro aviso') +
+        card('neg', 'Em negociação', negoc, 'info', 'ou agendados') + card('todos', 'Todos', conhecidos.length, 'muted', int(nossos) + ' renovaram com a CPUSIS') + '</div>' +
+      '<div class="ferr"><input type="search" id="cfBusca" placeholder="Buscar cliente, contabilidade, contato ou certificadora" style="min-width:320px"></div>' +
+      '<p id="cfAviso" class="aviso" role="status"></p><div class="tbl" id="cfTab"></div><dialog id="dlgCf" aria-labelledby="dlgCfTit"></dialog>';
+    $('cfAtual').onclick = telaCofre; ligarAbas();
+    $('cfMsg').onclick = dlgMensagem;
+    document.querySelectorAll('[data-rf]').forEach(function (b) { b.onclick = function () { CF_RF = b.dataset.rf; desenharRenov(); }; });
+    var tabela = function () {
+      var b = norm($('cfBusca').value || '');
+      var L = conhecidos.filter(function (u) {
+        if (b && norm([u.cliente, u.subpasta, u.contabilidade, u.cnpj, u.contatoNome, u.emissor, u.titular].join(' ')).indexOf(b) < 0) return false;
+        if (CF_RF === 'hoje') return u.avisarHoje;
+        if (CF_RF === 'neg') return u.renovStatus === 'negociando' || u.renovStatus === 'agendado';
+        if (CF_RF === 'todos') return true;
+        return faixa(u) === CF_RF && FINAIS.indexOf(u.renovStatus) < 0;
+      }).sort(function (a, c) { return a.dias - c.dias; });
+      $('cfTab').innerHTML = '<table class="cf-tab"><thead><tr><th>Cliente</th><th>Certificado</th><th>Vence</th><th>Contato</th><th>Situação</th><th>Último aviso</th><th>Avisar</th></tr></thead><tbody>' +
+        L.map(function (u) {
+          var d = u.dias, cor = d < 0 ? 'bad' : d <= 7 ? 'bad' : d <= 30 ? 'warn' : d <= 60 ? 'info' : '';
+          var temFone = (u.contatoFone || '').length >= 10;
+          return '<tr' + (u.avisarHoje ? ' class="cf-hoje"' : '') + '><td><b>' + esc(u.cliente) + '</b>' + (u.subpasta ? ' <span class="pill info">' + esc(u.subpasta) + '</span>' : '') + '<div class="sub">' + esc(u.contabilidade) + (u.cnpj ? ' · ' + esc(fmtCnpj(u.cnpj)) : '') + '</div></td>' +
+            '<td>' + (u.tipo ? '<b>' + esc(u.tipo) + '</b> ' : '') + '<span class="sub">' + esc(u.emissor || '') + '</span>' + (u.fonte === 'nota' ? '<div class="sub">lido da nota</div>' : '<div class="sub">guardado no cofre</div>') + '</td>' +
+            '<td class="cf-num"><b>' + new Date(u.validadeEfetiva).toLocaleDateString('pt-BR') + '</b><div>' + (cor ? '<span class="pill ' + cor + '">' + esc(prazoTxt(d)) + '</span>' : '<span class="sub">' + esc(prazoTxt(d)) + '</span>') + '</div></td>' +
+            '<td>' + (u.contatoNome ? esc(u.contatoNome) + '<br>' : '') + (u.contatoFone ? '<span class="cf-num">' + esc(foneBR(u.contatoFone)) + '</span>' + (u.foneDoBpo ? ' <span class="sub" title="WhatsApp cadastrado no BPO">(BPO)</span>' : '') + '<br>' : '') + (u.contatoEmail ? '<span class="sub">' + esc(u.contatoEmail) + '</span><br>' : '') +
+              '<button class="lnk" type="button" data-ct="' + u.id + '">' + (u.contatoNome || u.contatoFone || u.contatoEmail ? 'editar' : '+ contato') + '</button></td>' +
+            '<td><span class="pill ' + (COR_ST[u.renovStatus] || '') + '">' + esc(STATUS[u.renovStatus] || u.renovStatus) + '</span>' + (u.renovObs ? '<div class="sub" title="' + esc(u.renovObs) + '">' + esc(u.renovObs.slice(0, 50)) + (u.renovObs.length > 50 ? '…' : '') + '</div>' : '') + '</td>' +
+            '<td>' + (u.avisoEm ? new Date(u.avisoEm).toLocaleDateString('pt-BR') + '<div class="sub">' + esc(u.avisoPor) + ' · ' + u.avisos + (u.avisos === 1 ? ' aviso' : ' avisos') + '</div>' : '<span class="sub">nunca</span>') + '</td>' +
+            '<td style="white-space:nowrap">' + (temFone ? '<button class="btn" type="button" data-wa="' + u.id + '">WhatsApp</button> ' : '') + (u.contatoEmail ? '<button class="btn sec" type="button" data-em="' + u.id + '">E-mail</button> ' : '') +
+              '<button class="lnk" type="button" data-ct="' + u.id + '">' + (temFone || u.contatoEmail ? 'registrar' : 'registrar aviso') + '</button></td></tr>';
+        }).join('') + (L.length ? '' : '<tr><td colspan="7" class="sub">' + (CF_RF === 'hoje' ? 'Ninguém para avisar hoje. ' : 'Nada nesta faixa. ') + (conhecidos.length ? '' : 'A validade aparece sozinha quando o agente 2.5 mandar as notas de cada cliente (a partir desta noite).') + '</td></tr>') + '</tbody></table>';
+    };
+    $('cfBusca').addEventListener('input', tabela); tabela();
+    $('cfTab').addEventListener('click', function (ev) {
+      var x = ev.target.closest('button'); if (!x) return;
+      if (x.dataset.ct) dlgRenov(achar(x.dataset.ct));
+      else if (x.dataset.wa) avisar(achar(x.dataset.wa), 'whatsapp');
+      else if (x.dataset.em) avisar(achar(x.dataset.em), 'email');
+    });
+    if (CF_MSG == null) chamar('portalCofreMensagem', TOKEN).then(function (r) { CF_MSG = r.texto; }).catch(function () {});
+  }
+  function avisar(u, meio) {
+    var ok = function () {
+      var txt = mensagem(u);
+      if (meio === 'whatsapp') { var f = String(u.contatoFone).replace(/\D/g, ''); if (f.length <= 11) f = '55' + f; window.open('https://wa.me/' + f + '?text=' + encodeURIComponent(txt), '_blank', 'noopener'); }
+      else location.href = 'mailto:' + encodeURIComponent(u.contatoEmail) + '?subject=' + encodeURIComponent('Renovação do certificado digital – ' + u.cliente) + '&body=' + encodeURIComponent(txt);
+      chamar('portalCofreRenovacao', TOKEN, u.id, { avisou: meio, validade: u.validadeEfetiva }).then(function () {
+        u.avisoEm = new Date().toISOString(); u.avisoPor = DADOS.login; u.avisos = (u.avisos || 0) + 1; u.avisarHoje = false; if (!u.renovStatus || u.renovStatus === 'nao_avisado') u.renovStatus = 'avisado';
+        desenharRenov(); aviso('Aviso registrado para ' + u.cliente + '. Envie a mensagem na janela que abriu.');
+      }).catch(function (e) { aviso(e.message, true); });
+    };
+    if (CF_MSG == null) chamar('portalCofreMensagem', TOKEN).then(function (r) { CF_MSG = r.texto; ok(); }).catch(function (e) { aviso(e.message, true); }); else ok();
+  }
+  function dlgRenov(u) {
+    var d = $('dlgCf');
+    d.innerHTML = '<form class="form" id="fRn" autocomplete="off"><h2 id="dlgCfTit">' + esc(u.cliente) + (u.subpasta ? ' / ' + esc(u.subpasta) : '') + '</h2>' +
+      '<p class="sub" style="margin-top:-6px">Certificado ' + esc(u.tipo || '') + ' até ' + new Date(u.validadeEfetiva).toLocaleDateString('pt-BR') + ' (' + esc(prazoTxt(u.dias)) + ')' + (u.emissor ? ' · ' + esc(u.emissor) : '') + '</p>' +
+      '<div class="ferr" style="align-items:flex-start"><label style="flex:2;min-width:180px">Contato (quem decide)<input id="rnNome" type="text" value="' + esc(u.contatoNome) + '" maxlength="120"></label>' +
+      '<label style="flex:1;min-width:150px">WhatsApp / telefone<input id="rnFone" type="tel" value="' + esc(foneBR(u.contatoFone)) + '" placeholder="(68) 99999-0000"></label>' +
+      '<label style="flex:2;min-width:200px">E-mail<input id="rnEmail" type="email" value="' + esc(u.contatoEmail) + '" maxlength="160"></label></div>' +
+      '<label>Situação<select id="rnSt">' + ['nao_avisado', 'avisado', 'negociando', 'agendado', 'renovado', 'outro', 'nao_renova'].map(function (k) { return '<option value="' + k + '"' + ((u.renovStatus || 'nao_avisado') === k ? ' selected' : '') + '>' + STATUS[k] + '</option>'; }).join('') + '</select></label>' +
+      '<label>Anotação<input id="rnObs" type="text" value="' + esc(u.renovObs) + '" maxlength="1000" placeholder="ex.: pediu para ligar depois do dia 10; preço passado R$ ..."></label>' +
+      '<fieldset style="border:1px solid var(--line);border-radius:9px;padding:8px 12px"><legend class="sub">Registrar um aviso dado agora</legend><div class="ferr">' +
+        ['', 'telefone', 'whatsapp', 'email', 'outro'].map(function (m) { return '<label class="ck"><input type="radio" name="rnMeio" value="' + m + '"' + (m === '' ? ' checked' : '') + '> ' + ({ '': 'não registrar', telefone: 'liguei', whatsapp: 'WhatsApp', email: 'e-mail', outro: 'outro meio' })[m] + '</label>'; }).join('') + '</div></fieldset>' +
+      (u.historico.length ? '<details><summary class="sub">Histórico (' + u.historico.length + ')</summary><ul class="sub" style="margin:6px 0 0 18px">' + u.historico.map(function (h) { return '<li>' + new Date(h.em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) + ' · ' + esc(h.por) + ' · ' + esc(h.oque) + '</li>'; }).join('') + '</ul></details>' : '') +
+      '<p class="erro" id="rnErro" role="alert"></p><div class="ferr"><button class="btn" type="submit" id="rnSalvar">Salvar</button><button class="btn sec" type="button" id="rnFechar">Fechar</button></div></form>';
+    d.showModal();
+    $('rnFechar').onclick = function () { d.close(); };
+    $('fRn').onsubmit = function (ev) {
+      ev.preventDefault();
+      var dados = { contatoNome: $('rnNome').value, contatoFone: $('rnFone').value.replace(/\D/g, ''), contatoEmail: $('rnEmail').value, obs: $('rnObs').value, validade: u.validadeEfetiva };
+      if ($('rnSt').value !== (u.renovStatus || 'nao_avisado')) dados.status = $('rnSt').value;
+      var meio = (document.querySelector('input[name="rnMeio"]:checked') || {}).value; if (meio) dados.avisou = meio;
+      if (u.foneDoBpo && dados.contatoFone === String(u.contatoFone).replace(/\D/g, '') && !$('rnNome').value && !$('rnEmail').value) delete dados.contatoFone;
+      $('rnSalvar').disabled = true;
+      chamar('portalCofreRenovacao', TOKEN, u.id, dados).then(function () { d.close(); telaCofre(); })
+        .catch(function (e) { $('rnErro').textContent = e.message; $('rnSalvar').disabled = false; });
+    };
+  }
+  function dlgMensagem() {
+    var d = $('dlgCf');
+    var abrir = function (t) {
+      d.innerHTML = '<form class="form" id="fMs"><h2 id="dlgCfTit">Texto da mensagem de renovação</h2><p class="nota">O mesmo texto para toda a equipe. Use {contato}, {empresa}, {vencimento} e {prazo}: o portal troca pelos dados de cada cliente.</p>' +
+        '<textarea id="msTxt" rows="7" maxlength="1500" style="width:100%">' + esc(t) + '</textarea><p class="erro" id="msErro" role="alert"></p>' +
+        '<div class="ferr"><button class="btn" type="submit">Salvar</button><button class="btn sec" type="button" id="msPadrao">Voltar ao texto padrão</button><button class="btn sec" type="button" id="msFechar">Fechar</button></div></form>';
+      d.showModal();
+      $('msFechar').onclick = function () { d.close(); };
+      $('msPadrao').onclick = function () { chamar('portalCofreMensagem', TOKEN, '').then(function (r) { CF_MSG = r.texto; $('msTxt').value = r.texto; }); };
+      $('fMs').onsubmit = function (ev) { ev.preventDefault(); chamar('portalCofreMensagem', TOKEN, $('msTxt').value).then(function (r) { CF_MSG = r.texto; d.close(); aviso('Texto salvo.'); }).catch(function (e) { $('msErro').textContent = e.message; }); };
+    };
+    chamar('portalCofreMensagem', TOKEN).then(function (r) { CF_MSG = r.texto; abrir(r.texto); }).catch(function (e) { aviso(e.message, true); });
   }
   function achar(id) { return CF.unidades.filter(function (u) { return String(u.id) === String(id); })[0]; }
   function fmtCnpj(c) { c = String(c).replace(/\D/g, ''); return c.length === 14 ? c.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5') : c; }
@@ -3968,10 +4091,10 @@ tr.cf-sel.aberta td{background:rgba(127,127,127,.1)}
   window.avisoCofre = function () {
     if (!ehCpusis()) return;
     chamar('portalCofreAvisos', TOKEN).then(function (r) {
-      if (!(r.vencidos || r.vencendo) || !$('cKpis') || $('cfCentral')) return;
-      var t = [r.vencidos ? r.vencidos + (r.vencidos === 1 ? ' certificado vencido' : ' certificados vencidos') : '', r.vencendo ? r.vencendo + (r.vencendo === 1 ? ' vence' : ' vencem') + ' nos próximos 30 dias' : ''].filter(Boolean).join(' e ');
-      $('cKpis').insertAdjacentHTML('beforebegin', '<div class="card" id="cfCentral" style="border-left:4px solid var(--' + (r.vencidos ? 'bad' : 'warn') + ');display:flex;gap:12px;align-items:center;justify-content:space-between"><span><b>Certificados digitais:</b> ' + esc(t) + '.</span><button class="btn sec" type="button" id="cfIr">Abrir o cofre</button></div>');
-      $('cfIr').onclick = function () { CF_FILTRO = 'venc'; telaCofre(); };
+      if (!(r.vencidos || r.vencendo || r.avisarHoje) || !$('cKpis') || $('cfCentral')) return;
+      var t = [r.avisarHoje ? '<b>' + r.avisarHoje + (r.avisarHoje === 1 ? ' cliente para avisar hoje' : ' clientes para avisar hoje') + '</b>' : '', r.vencidos ? r.vencidos + (r.vencidos === 1 ? ' certificado vencido' : ' certificados vencidos') : '', r.vencendo ? r.vencendo + (r.vencendo === 1 ? ' vence' : ' vencem') + ' nos próximos 60 dias' : ''].filter(Boolean).join(' · ');
+      $('cKpis').insertAdjacentHTML('beforebegin', '<div class="card" id="cfCentral" style="border-left:4px solid var(--' + (r.vencidos ? 'bad' : 'warn') + ');display:flex;gap:12px;align-items:center;justify-content:space-between"><span>Certificados digitais: ' + t + '.</span><button class="btn sec" type="button" id="cfIr">Ver renovações</button></div>');
+      $('cfIr').onclick = function () { CF_ABA = 'renov'; CF_RF = r.avisarHoje ? 'hoje' : r.vencidos ? 'venc' : 'todos'; telaCofre(); };
     }).catch(function () {});
   };
 })();
