@@ -264,7 +264,72 @@ async function portalResumo(token: unknown, contab: unknown, cliente: unknown, s
   const { data, error } = await db.from('resumos').select('dados').eq('unidade_id', u.id).eq('mes', String(mes)).maybeSingle();
   erroDb(error);
   if (!data) throw new Error('Resumo do mês não encontrado.');
-  return JSON.stringify(data.dados);
+  const { data: bx } = await db.from('pendencias_baixa').select('chave, descricao, obs, por, em').eq('unidade_id', u.id).eq('mes', String(mes));
+  return JSON.stringify({ ...(data.dados as any), baixas: bx || [] });
+}
+// ---- pendências concluídas à mão
+const chavePend = (p: any) => [p.tipo, p.modelo, Number(p.serie) || 0, p.numero].join('|');
+const chaveFalha = (f: any) => ['falha', f.modelo, Number(f.serie) || 0, f.de, f.ate].join('|');
+async function baixasDe(unidade: number, mes: string): Promise<Set<string>> {
+  const { data } = await db.from('pendencias_baixa').select('chave').eq('unidade_id', unidade).eq('mes', mes);
+  return new Set((data || []).map((r: any) => r.chave));
+}
+// recalcula os números do indicador sem as pendências concluídas (o semáforo, o painel e a reunião leem daqui)
+function aplicarBaixas(ind: any, dados: any, set: Set<string>) {
+  if (!ind || !dados || !set.size) return ind;
+  const pend = (dados.pendencias || []).filter((p: any) => !set.has(chavePend(p)));
+  const falhas = (dados.falhasNumeracao || []).filter((f: any) => !set.has(chaveFalha(f)));
+  const antes = (dados.pendencias || []).length + (dados.falhasNumeracao || []).length;
+  return { ...ind, pendencias: pend.slice(0, 40), pendQtd: pend.length, falhasLista: falhas.slice(0, 10),
+    falhas: falhas.reduce((a: number, f: any) => a + (Number(f.quantidade) || 0), 0), baixadas: antes - pend.length - falhas.length };
+}
+async function pendUnidade(token: unknown, contab: unknown, cliente: unknown, subpasta: unknown, mes: unknown) {
+  const s = await sessao(token);
+  if (perfilDe(s) === 'cliente' || s.empresa) throw new Error('Só a CPUSIS e a contabilidade marcam pendências como concluídas.');
+  exigir(s, 'resumo', 'painel', 'clientes');
+  if (!podeVerUnidade(s, contab, cliente)) throw new Error('Sem permissão para esta empresa.');
+  if (!mesOk(mes)) throw new Error('Mês inválido.');
+  const u = await acharUnidade(contab, cliente, subpasta);
+  if (!u) throw new Error('Cliente não encontrado.');
+  const { data, error } = await db.from('resumos').select('dados').eq('unidade_id', u.id).eq('mes', String(mes)).maybeSingle();
+  erroDb(error);
+  if (!data) throw new Error('Resumo do mês não encontrado.');
+  return { s, u, dados: data.dados as any };
+}
+async function regravarIndicador(u: any, mes: string, dados: any) {
+  const { data } = await db.from('indicadores').select('dados').eq('unidade_id', u.id).eq('mes', mes).maybeSingle();
+  if (!data) return;
+  const base = { ...(data.dados as any) };
+  // volta ao original (sem baixas) e aplica de novo
+  base.pendencias = (dados.pendencias || []).slice(0, 40); base.pendQtd = (dados.pendencias || []).length;
+  base.falhasLista = (dados.falhasNumeracao || []).slice(0, 10);
+  base.falhas = (dados.falhasNumeracao || []).reduce((a: number, f: any) => a + (Number(f.quantidade) || 0), 0); base.baixadas = 0;
+  erroDb((await db.from('indicadores').update({ dados: aplicarBaixas(base, dados, await baixasDe(u.id, mes)) }).eq('unidade_id', u.id).eq('mes', mes)).error);
+}
+async function portalPendConcluir(token: unknown, contab: unknown, cliente: unknown, subpasta: unknown, mes: unknown, chaves: unknown, obs: unknown) {
+  const { s, u, dados } = await pendUnidade(token, contab, cliente, subpasta, mes);
+  const validas: Record<string, string> = {};
+  (dados.pendencias || []).forEach((p: any) => (validas[chavePend(p)] = (p.modelo === '65' ? 'NFC-e ' : 'NF-e ') + p.numero + ' (' + p.tipo + ')'));
+  (dados.falhasNumeracao || []).forEach((f: any) => (validas[chaveFalha(f)] = (f.modelo === '65' ? 'NFC-e ' : 'NF-e ') + (f.de === f.ate ? f.de : f.de + ' a ' + f.ate) + ' (numeração)'));
+  const lista = (Array.isArray(chaves) ? chaves : []).map(String).filter((c) => validas[c]).slice(0, 2000);
+  if (!lista.length) throw new Error('Nenhuma pendência válida selecionada.');
+  const o = String(obs || '').trim().slice(0, 500) || null;
+  const agora = new Date().toISOString();
+  for (let i = 0; i < lista.length; i += 500) {
+    erroDb((await db.from('pendencias_baixa').upsert(lista.slice(i, i + 500).map((c) => ({ unidade_id: u.id, mes: String(mes), chave: c, descricao: validas[c], obs: o, por: s.login, em: agora })), { onConflict: 'unidade_id,mes,chave' })).error);
+  }
+  await regravarIndicador(u, String(mes), dados);
+  await logAcesso(s.login, 'pendencia-concluida', String(cliente) + (subpasta ? ' / ' + String(subpasta) : '') + ' ' + mes + ': ' + (lista.length === 1 ? validas[lista[0]] : lista.length + ' pendências') + (o ? ' · ' + o : ''));
+  return { ok: true, concluidas: lista.length };
+}
+async function portalPendReabrir(token: unknown, contab: unknown, cliente: unknown, subpasta: unknown, mes: unknown, chaves: unknown) {
+  const { s, u, dados } = await pendUnidade(token, contab, cliente, subpasta, mes);
+  const lista = (Array.isArray(chaves) ? chaves : []).map(String).slice(0, 2000);
+  if (!lista.length) throw new Error('Nada selecionado.');
+  erroDb((await db.from('pendencias_baixa').delete().eq('unidade_id', u.id).eq('mes', String(mes)).in('chave', lista)).error);
+  await regravarIndicador(u, String(mes), dados);
+  await logAcesso(s.login, 'pendencia-reaberta', String(cliente) + (subpasta ? ' / ' + String(subpasta) : '') + ' ' + mes + ': ' + lista.length + ' pendência(s)');
+  return { ok: true };
 }
 async function portalIndicadoresLote(token: unknown, meses: unknown) {
   const s = await sessao(token);
@@ -518,7 +583,7 @@ async function portalAdmin(token: unknown) {   // estrutura e regimes vêm do re
 const NATIVAS: Record<string, (...a: any[]) => Promise<unknown>> = {
   portalAparencia, portalDados, portalResumo, portalIndicadores, portalIndicadoresLote, portalSair, portalEu, portalTrocarSenha, portalNcmBase,
   portalUsuarios, portalSalvarUsuario, portalExcluirUsuario, portalSessoes, portalDerrubarSessoes, portalAuditoria, portalAdmin,
-  ...FIN_FUNCOES, portalFinLoginEmpresa, ...COFRE,
+  ...FIN_FUNCOES, portalFinLoginEmpresa, ...COFRE, portalPendConcluir, portalPendReabrir,
 };
 const REPASSE = new Set(['portalArquivo', 'portalParte', 'portalCriarContabilidade', 'portalCriarCliente', 'portalSalvarRegime', 'portalServidores', 'portalSalvarServidor', 'portalUnificar', 'portalComando']);
 
@@ -564,7 +629,7 @@ async function sync(req: any) {
         const id = await idUnidade(it.contabilidade, it.cliente, it.subpasta || '', it.pid);
         const agora = new Date().toISOString();
         erroDb((await db.from('resumos').upsert({ unidade_id: id, mes: it.mes, dados: it.dados, atualizado_em: agora })).error);
-        if (it.ind) erroDb((await db.from('indicadores').upsert({ unidade_id: id, mes: it.mes, dados: it.ind, atualizado_em: agora })).error);
+        if (it.ind) erroDb((await db.from('indicadores').upsert({ unidade_id: id, mes: it.mes, dados: aplicarBaixas(it.ind, it.dados, await baixasDe(id, it.mes)), atualizado_em: agora })).error);
         conta('resumos'); break;
       }
       case 'usuarios': {

@@ -247,7 +247,7 @@ td.b{font-weight:700;white-space:normal}
 #dlgFin label{display:grid;gap:4px;font-size:13px}
 #rfSec .minis.rf4{grid-template-columns:repeat(4,minmax(0,1fr))}@media (max-width:760px){#rfSec .minis.rf4{grid-template-columns:repeat(2,minmax(0,1fr))}}
 ul.lst{margin:6px 0 10px;padding-left:20px;display:grid;gap:4px}
-.cf-tab td{vertical-align:top}.cf-hoje td{background:color-mix(in srgb,var(--warn) 7%,transparent)}.cf-faixas{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin:12px 0}.cf-faixa{display:flex;flex-direction:column;gap:2px;text-align:left;background:var(--card,#fff);border:1px solid var(--line);border-top:4px solid var(--c);border-radius:10px;padding:10px 12px;cursor:pointer;font:inherit;color:inherit}.cf-faixa.sel{outline:2px solid var(--c);outline-offset:1px}.cf-faixa .r{font-size:12px;opacity:.75}.cf-faixa .v{font-size:24px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--c)}.cf-faixa .d{font-size:11px;opacity:.65;min-height:13px}.cf-num{white-space:nowrap;font-variant-numeric:tabular-nums}.cf-num b{font-size:14px}.cf-seg{font-family:ui-monospace,Consolas,monospace;letter-spacing:.5px}.cf-seg.aberto{background:var(--warn-bg,#fff4d6);padding:1px 5px;border-radius:5px;user-select:all}
+.cf-tab td{vertical-align:top}.pd-feita td{opacity:.7}.pd .tbl td{vertical-align:top}.cf-hoje td{background:color-mix(in srgb,var(--warn) 7%,transparent)}.cf-faixas{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin:12px 0}.cf-faixa{display:flex;flex-direction:column;gap:2px;text-align:left;background:var(--card,#fff);border:1px solid var(--line);border-top:4px solid var(--c);border-radius:10px;padding:10px 12px;cursor:pointer;font:inherit;color:inherit}.cf-faixa.sel{outline:2px solid var(--c);outline-offset:1px}.cf-faixa .r{font-size:12px;opacity:.75}.cf-faixa .v{font-size:24px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--c)}.cf-faixa .d{font-size:11px;opacity:.65;min-height:13px}.cf-num{white-space:nowrap;font-variant-numeric:tabular-nums}.cf-num b{font-size:14px}.cf-seg{font-family:ui-monospace,Consolas,monospace;letter-spacing:.5px}.cf-seg.aberto{background:var(--warn-bg,#fff4d6);padding:1px 5px;border-radius:5px;user-select:all}
 </style>
 </head>
 <body>
@@ -757,6 +757,7 @@ function telaCentral() {
   $('tela').innerHTML = '<div class="cab"><div><h1>Central de operação</h1><p class="sub">Situação de todos os clientes · atualizado às ' + new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) + '</p></div><button class="btn sec" type="button" id="cAtual">Atualizar</button></div>' +
     '<div class="kpis kpis4" id="cKpis"></div>' +
     '<section class="card"><div class="ch"><h2>Semáforo dos clientes</h2><div class="leg"><span><i class="dot d-ok"></i>tudo certo</span><span><i class="dot d-wn"></i>atenção</span><span><i class="dot d-bad"></i>ação necessária</span></div></div><div class="sema" id="cSema"></div><p class="nota" id="cSemaNota"></p></section>' +
+    '<section class="card" id="cSemMes"><div class="ch"><h2>Sem informações de ' + nomeMes(hoje) + '</h2><span>atualiza sozinho</span></div><div id="cSemMesL">' + carregando('Conferindo…').replace('card ', '') + '</div></section>' +
     '<div class="g2"><section class="card"><div class="ch"><h2>Pendências fiscais — por prazo</h2><span>' + meses.map(nomeMes).join(' e ') + '</span></div><div id="cPend">' + carregando('Lendo as pendências dos clientes…').replace('card ', '') + '</div></section>' +
     '<div class="col"><section class="card"><div class="ch"><h2>Versão dos servidores</h2><span>atualização automática</span></div><div id="cVers"></div></section>' +
     '<section class="card"><div class="ch"><h2>Uso do portal pelos contadores</h2><span>últimos 30 dias</span></div><div id="cUso">' + carregando('Carregando…').replace('card ', '') + '</div></section></div></div>';
@@ -776,6 +777,7 @@ function desenharCentral(sync, meses) {
   var carregou = meses.every(function (m) { return IND[m] && !IND[m].faltam; });
   var pend = []; meses.forEach(function (m) { pend = pend.concat(pendenciasDe(indDoMes(m), m)); });
   var porCk = {}; pend.forEach(function (p) { (porCk[p.x.ck] = porCk[p.x.ck] || []).push(p); });
+  var semCk = {}; if (new Date().getDate() > 2) (semDadosMesAtual(sync) || []).forEach(function (x) { semCk[x.s.ck] = 1; });
   var versoes = sync.filter(function (s) { return s.versao && s.grupo !== 'manual'; }).map(function (s) { return s.versao; });
   var maior = versoes.reduce(function (a, v) { return cmpVer(v, a) > 0 ? v : a; }, '0');
   var desat = sync.filter(function (s) { return s.versao && s.grupo !== 'manual' && cmpVer(s.versao, maior.split('.').slice(0, 2).join('.')) < 0; });
@@ -790,6 +792,7 @@ function desenharCentral(sync, meses) {
     if (!nivel && s.grupo === 'atencao') { nivel = 1; msg = s.dias + ' dias sem enviar'; }
     if (!nivel && desat.indexOf(s) >= 0) { nivel = 1; msg = 'servidor v' + s.versao; }
     if (!nivel && s.grupo === 'nunca') { nivel = 1; msg = 'nunca se comunicou'; }
+    if (!nivel && semCk[s.ck]) { nivel = 1; msg = 'sem notas de ' + nomeMes(mesHoje()).split(' ')[0].toLowerCase(); }
     if (!nivel) msg = s.grupo === 'manual' ? 'manual · processado ' + (s.ultimo ? new Date(s.ultimo).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : '') : 'enviado ' + (s.dias === 0 ? 'hoje ' : 'em ' + new Date(s.ultimo).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) + ' ') + new Date(s.ultimo).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
     return { s: s, nivel: nivel, msg: msg, u: unidPorChave(s.ck) };
   }).sort(function (a, b) { return b.nivel - a.nivel || a.s.cliente.localeCompare(b.s.cliente, 'pt-BR'); });
@@ -806,7 +809,7 @@ function desenharCentral(sync, meses) {
     return '<button type="button" class="scli n' + c.nivel + '" data-i="' + i + '" title="' + esc(c.s.contabilidade + ' · ' + c.s.cliente) + '"><b>' + esc(c.s.cliente.replace(' / ', ' · ')) + '</b><span>' + esc(c.msg) + '</span></button>';
   }).join('');
   $('cSemaNota').textContent = cards.filter(function (c) { return c.nivel === 2; }).length + ' com ação necessária · ' + cards.filter(function (c) { return c.nivel === 1; }).length + ' em atenção · ' + cards.filter(function (c) { return !c.nivel; }).length + ' em dia · clique para abrir o cliente';
-  $('cSema').onclick = function (ev) { var b = ev.target.closest('.scli'); if (!b) return; var c = cards[+b.dataset.i]; if (c.u) { ATUAL = { aba: 'dias' }; abrir(c.u, null); } };
+  $('cSema').onclick = function (ev) { var b = ev.target.closest('.scli'); if (!b) return; var c = cards[+b.dataset.i]; if (c.u) { ATUAL = { aba: 'dias' }; PEND_ABERTO = c.nivel > 0; abrir(c.u, null); } };
   // pendências
   if (carregou) {
     pend.sort(function (a, b) { return TIPO_PEND[a.tipo].ordem - TIPO_PEND[b.tipo].ordem || a.x.rotulo.localeCompare(b.x.rotulo, 'pt-BR'); });
@@ -818,7 +821,16 @@ function desenharCentral(sync, meses) {
       }).join('') + '</tbody></table></div>' + (pend.length > 60 ? '<p class="nota">Mostrando 60 de ' + pend.length + '.</p>' : '')
       : '<p class="nota ok">Nenhuma pendência fiscal nos clientes. 👍</p>') +
       (semDados ? '<p class="nota">' + semDados + ' cliente(s) ainda sem a conferência de pendências: ela chega com a atualização automática do programa dos servidores (versão 1.5).</p>' : '');
-    $('cPend').onclick = function (ev) { var b = ev.target.closest('[data-p]'); if (!b) return; var p = pend[+b.dataset.p]; if (p.x.unid) { ATUAL = { aba: 'dias' }; abrir(p.x.unid, p.mes); } };
+    $('cPend').onclick = function (ev) { var b = ev.target.closest('[data-p]'); if (!b) return; var p = pend[+b.dataset.p]; if (p.x.unid) { ATUAL = { aba: 'dias' }; PEND_ABERTO = true; abrir(p.x.unid, p.mes); } };
+  }
+  // clientes sem informação do mês atual
+  var sm = semDadosMesAtual(sync);
+  if (sm && $('cSemMesL')) {
+    $('cSemMes').querySelector('h2').innerHTML = 'Sem informações de ' + nomeMes(mesHoje()) + (sm.length ? ' <span class="pill ' + (sm.some(function (x) { return x.grave; }) ? 'bad' : 'warn') + '">' + sm.length + '</span>' : '');
+    $('cSemMesL').innerHTML = sm.length ? '<div class="sema">' + sm.map(function (x, i) { return '<button type="button" class="scli n' + (x.grave ? 2 : 1) + '" data-sm="' + i + '" title="' + esc(x.s.contabilidade) + '"><b>' + esc(x.s.cliente.replace(' / ', ' · ')) + '</b><span>' + esc(x.por) + '</span></button>'; }).join('') + '</div>' +
+      '<p class="nota">' + sm.length + ' de ' + sync.length + ' clientes ainda sem nenhuma nota de ' + nomeMes(mesHoje()) + ' no portal' + (new Date().getDate() <= 2 ? ' (início do mês: é normal até a primeira sincronização)' : '') + '.</p>'
+      : '<p class="nota ok">Todos os clientes já têm informações de ' + nomeMes(mesHoje()) + '. 👍</p>';
+    $('cSemMesL').onclick = function (ev) { var b = ev.target.closest('[data-sm]'); if (!b) return; var x = sm[+b.dataset.sm]; if (x.u) { ATUAL = { aba: 'dias' }; abrir(x.u, null); } };
   }
   // versões
   var cont = {}; versoes.forEach(function (v) { cont[v] = (cont[v] || 0) + 1; });
@@ -1814,6 +1826,66 @@ function desenharDias(c, D) {
   $('bCsvDias').addEventListener('click', function () { csv(cols, t.linhas(), (rotuloUnid(ATUAL.u) + ' ' + mes + ' dia a dia').replace(/[\\/:*?"<>|]/g, '-') + '.csv'); });
 }
 
+/* ---------------- pendências do cliente: marcar como concluídas ---------------- */
+var PEND_ABERTO = false;
+function chavePendCli(p) { return [p.tipo, p.modelo, Number(p.serie) || 0, p.numero].join('|'); }
+function chaveFalhaCli(f) { return ['falha', f.modelo, Number(f.serie) || 0, f.de, f.ate].join('|'); }
+function podeBaixarPend() { return !DADOS.empresa && DADOS.perfil !== 'cliente'; }
+function desenharPendCli() {
+  var box = $('pendCli'); if (!box || !RESUMO) return;
+  var r = RESUMO, bx = {}; (r.baixas || []).forEach(function (b) { bx[b.chave] = b; });
+  var L = [];
+  (r.pendencias || []).forEach(function (p) { L.push({ k: chavePendCli(p), tipo: p.tipo, doc: (p.modelo === '65' ? 'NFC-e ' : 'NF-e ') + p.numero + (p.serie ? ' · série ' + p.serie : '') + (p.data ? ' · ' + dataBR(p.data) : ''), motivo: p.motivo || '' }); });
+  (r.falhasNumeracao || []).forEach(function (f) { L.push({ k: chaveFalhaCli(f), tipo: 'falha', doc: (f.modelo === '65' ? 'NFC-e ' : 'NF-e ') + (f.de === f.ate ? f.de : f.de + ' a ' + f.ate) + (f.serie ? ' · série ' + f.serie : ''), motivo: 'números sem XML e sem inutilização' }); });
+  if (!L.length) { box.innerHTML = ''; return; }
+  var abertas = L.filter(function (p) { return !bx[p.k]; }), feitas = L.filter(function (p) { return bx[p.k]; });
+  var pode = podeBaixarPend();
+  abertas.sort(function (a, b) { return (TIPO_PEND[a.tipo] || {}).ordem - (TIPO_PEND[b.tipo] || {}).ordem; });
+  var linha = function (p, feita) {
+    var t = TIPO_PEND[p.tipo] || { nome: p.tipo, cls: '' }, b = bx[p.k];
+    return '<tr' + (feita ? ' class="pd-feita"' : '') + '>' + (pode ? '<td style="width:28px"><input type="checkbox" class="pdck" value="' + esc(p.k) + '" aria-label="Selecionar"></td>' : '') +
+      '<td><span class="pill ' + (feita ? '' : t.cls) + '">' + esc(t.nome) + '</span></td><td class="w">' + esc(p.doc) + (p.motivo ? '<br><span class="sub">' + esc(p.motivo.slice(0, 140)) + '</span>' : '') + '</td>' +
+      '<td>' + (feita ? '<span class="sub">concluída por ' + esc(b.por) + ' em ' + new Date(b.em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) + (b.obs ? '<br>' + esc(b.obs) : '') + '</span>' : '<span class="prazo" style="color:var(--' + (t.cor || 'warn') + ')">' + esc(prazoPend({ tipo: p.tipo, mes: ATUAL.mes })) + '</span>') + '</td></tr>';
+  };
+  box.innerHTML = '<section class="card pd"><div class="ch"><h2>' + (abertas.length ? 'Pendências de ' + nomeMes(ATUAL.mes) + ' <span class="pill bad">' + abertas.length + '</span>' : 'Pendências de ' + nomeMes(ATUAL.mes) + ' <span class="pill">todas concluídas</span>') + '</h2>' +
+    '<button class="lnk" type="button" id="pdAbrir">' + (PEND_ABERTO ? 'esconder' : 'ver ' + (abertas.length ? 'e resolver' : 'histórico')) + '</button></div>' +
+    (PEND_ABERTO ? (pode && abertas.length ? '<p class="nota" style="margin-top:0">Resolveu no sistema e o portal ainda mostra? Marque aqui: o cliente sai do vermelho na hora, e fica anotado quem marcou. Se a mesma pendência aparecer de novo numa sincronização, ela continua concluída.</p>' : '') +
+      (abertas.length ? '<div class="tbl sem"><table><tbody>' + abertas.map(function (p) { return linha(p, false); }).join('') + '</tbody></table></div>' : '') +
+      (pode && abertas.length ? '<div class="ferr" style="margin-top:8px"><input type="text" id="pdObs" placeholder="Observação (opcional): ex. transmitida no sistema, inutilizada na SEFAZ" maxlength="500" style="flex:1;min-width:260px">' +
+        '<button class="btn" type="button" id="pdSel">Marcar selecionadas como concluídas</button><button class="btn sec" type="button" id="pdTodas">Marcar todas (' + abertas.length + ')</button></div>' : '') +
+      (feitas.length ? '<details' + (abertas.length ? '' : ' open') + ' style="margin-top:10px"><summary class="sub">' + feitas.length + ' concluída(s) manualmente</summary><div class="tbl sem"><table><tbody>' + feitas.map(function (p) { return linha(p, true); }).join('') + '</tbody></table></div>' +
+        (pode ? '<button class="lnk" type="button" id="pdReabrir">reabrir as selecionadas</button>' : '') + '</details>' : '') +
+      '<p class="erro" id="pdErro" role="alert"></p>' : '') + '</section>';
+  $('pdAbrir').onclick = function () { PEND_ABERTO = !PEND_ABERTO; desenharPendCli(); };
+  if (!PEND_ABERTO || !pode) return;
+  var marcadas = function (sel) { return Array.prototype.map.call(box.querySelectorAll(sel + ' .pdck:checked'), function (c) { return c.value; }); };
+  var enviar = function (fn, chaves, btn) {
+    if (!chaves.length) { $('pdErro').textContent = 'Selecione pelo menos uma pendência.'; return; }
+    btn.disabled = true; $('pdErro').textContent = '';
+    var u = ATUAL.u, args = [fn, TOKEN, u.contabilidade, u.cliente, u.subpasta, ATUAL.mes, chaves];
+    if (fn === 'portalPendConcluir') args.push($('pdObs') ? $('pdObs').value : '');
+    chamar.apply(null, args).then(function () {
+      delete IND[ATUAL.mes];   // painel e central recarregam o mês já sem as pendências concluídas
+      return chamar('portalResumo', TOKEN, u.contabilidade, u.cliente, u.subpasta, ATUAL.mes);
+    }).then(function (txt) { RESUMO = JSON.parse(txt); desenharPendCli(); })
+      .catch(function (e) { btn.disabled = false; $('pdErro').textContent = e.message; });
+  };
+  if ($('pdSel')) $('pdSel').onclick = function () { enviar('portalPendConcluir', marcadas('tr:not(.pd-feita)').filter(function (k) { return !bx[k]; }), this); };
+  if ($('pdTodas')) $('pdTodas').onclick = function () { enviar('portalPendConcluir', abertas.map(function (p) { return p.k; }), this); };
+  if ($('pdReabrir')) $('pdReabrir').onclick = function () { enviar('portalPendReabrir', marcadas('details').filter(function (k) { return bx[k]; }), this); };
+}
+
+/* ---------------- clientes sem informação do mês atual ---------------- */
+function semDadosMesAtual(sync) {
+  var mes = mesHoje(), r = IND[mes]; if (!r || r.faltam) return null;
+  var com = {}; indDoMes(mes).forEach(function (x) { com[x.ck] = 1; });
+  return sync.filter(function (s) { return !com[s.ck]; }).map(function (s) {
+    var por = s.grupo === 'manual' ? 'manual: falta processar' : s.grupo === 'nunca' ? 'nunca se comunicou' : s.grupo === 'erro' ? 'último envio deu erro' :
+      s.dias > 1 ? 'sem enviar há ' + s.dias + ' dias' : 'enviando, mas sem notas';
+    return { s: s, por: por, u: unidPorChave(s.ck), grave: s.grupo !== 'ok' };
+  }).sort(function (a, b) { return (b.grave - a.grave) || a.s.cliente.localeCompare(b.s.cliente, 'pt-BR'); });
+}
+
 /* ---------------- tela 2: cliente e mês ---------------- */
 function abrir(u, mes) {
   ATUAL = { u: u, mes: mes || u.meses[0], aba: (ATUAL && ATUAL.aba) || 'dias', origem: 'Todas' };
@@ -1840,7 +1912,7 @@ function telaCliente() {
       kpi('ICMS próprio nas saídas', 'R$ ' + brl(somaSaidas('vICMS')), 'ICMS ST nas saídas: R$ ' + brl(somaSaidas('vST'))) +
       kpi('Devoluções', int((r.devolucoes || []).length), 'R$ ' + brl((r.devolucoes || []).reduce(function (a, d) { return a + d.valor; }, 0))) +
       kpi('CT-e / MDF-e', int((r.cte || {}).qtd) + ' / ' + int(r.mdfe), 'CT-e: R$ ' + brl((r.cte || {}).valor)) +
-    '</div>' +
+    '</div>' + '<div id="pendCli"></div>' +
     '<div class="abas" role="tablist">' + abasVisiveis().map(function (a) { return '<button class="tab" role="tab" type="button" data-a="' + a.id + '" aria-selected="' + (a.id === ATUAL.aba) + '">' + a.nome + '</button>'; }).join('') + '</div>' +
     '<div id="conteudo"></div>';
   $('tela').innerHTML = html;
@@ -1849,6 +1921,7 @@ function telaCliente() {
   if ($('bReuniao')) $('bReuniao').addEventListener('click', function () { abrirReuniao(ATUAL.u, ATUAL.mes); });
   $('fMes').addEventListener('change', function () { abrir(u, this.value); });
   if ($('bZip')) $('bZip').addEventListener('click', baixarZip);
+  desenharPendCli();
   if (!abasVisiveis().some(function (a) { return a.id === ATUAL.aba; })) ATUAL.aba = (abasVisiveis()[0] || {}).id;
   document.querySelectorAll('.abas .tab').forEach(function (x) { x.setAttribute('aria-selected', x.dataset.a === ATUAL.aba); });
   document.querySelector('.abas').addEventListener('click', function (ev) { var b = ev.target.closest('.tab'); if (!b) return; ATUAL.aba = b.dataset.a; document.querySelectorAll('.tab').forEach(function (x) { x.setAttribute('aria-selected', x === b); }); desenharAba(); });
@@ -3008,7 +3081,7 @@ function guiaAuto() {
   }
 
   /* ---------------- calculadoras (SN e LP) ---------------- */
-  window.VERSAO_PORTAL = '1.34';
+  window.VERSAO_PORTAL = '1.35';
   window.BASE_CALC = /(^|\.)github\.io$|^farol\.test$/.test(location.hostname) ? 'calc/' : 'https://cpusiscode.github.io/FAROL.CONTABIL/calc/';
   var CALC_SEL = null;
   function quadro(regime, id) {

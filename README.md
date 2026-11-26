@@ -55,6 +55,12 @@ bloqueio por login (8 erros/15 min) e por IP (60 erros/15 min), contado antes de
 derrubada ao trocar senha/perfil; saída automática da tela após 1 h parada; troca de senha obrigatória quando marcada;
 registro de acessos com IP; CSP no portal publicado (`ferramentas/publicar_portal.py` gera o `index.html`).
 
+## Pendências concluídas à mão e clientes sem informação do mês (26/11/2026)
+
+- Dentro do cliente, o quadro **Pendências do mês** lista contingência, rejeitada, em digitação, sem XML e numeração pulada. A CPUSIS e a contabilidade (cliente não) podem marcar uma, várias ou todas como **concluídas**, com observação. Fica gravado em `pendencias_baixa` (quem, quando) e no registro de acessos, e dá para reabrir.
+- Ao marcar, o indicador do mês é recalculado na hora, e o semáforo, o painel e a reunião deixam de contar aquela pendência. Se a mesma pendência voltar numa sincronização, ela continua concluída (`aplicarBaixas` no `sync`).
+- A Central tem o quadro **Sem informações de <mês atual>**: clientes sem nenhuma nota do mês no portal, com o motivo (manual, nunca se comunicou, parado há X dias, enviando sem notas). Esses clientes também ficam em atenção no semáforo a partir do dia 3.
+
 ## Cofre CPUSIS (desde 25/11/2026)
 
 Aba **Cofre**, só para perfis Administrador e Equipe CPUSIS (contador, gestor e cliente não veem nem pela API).
