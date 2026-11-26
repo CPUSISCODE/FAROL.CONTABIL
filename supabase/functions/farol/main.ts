@@ -13,6 +13,7 @@
 //  - registro de auditoria (acessos) com IP.
 import { createClient } from 'npm:@supabase/supabase-js@2.45.4';
 import { criarFin } from './fin.ts';
+import { criarCofre } from './cofre.ts';
 import { AsyncLocalStorage } from 'node:async_hooks';
 
 const db = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, { auth: { persistSession: false } });
@@ -503,6 +504,7 @@ const FIN = criarFin({ db, sessao, normal, podeVer, receptor, repassar } as any)
 function comModulo(fn: (...a: any[]) => Promise<unknown>) {
   return async (...a: any[]) => { const s = await sessao(a[0]); exigir(s, 'bpo'); return await fn(...a); };
 }
+const COFRE = criarCofre({ db, sessao, perfilDe, logAcesso, todas } as any);
 const FIN_FUNCOES: Record<string, (...a: any[]) => Promise<unknown>> = {};
 Object.entries(FIN.funcoes).forEach(([k, f]) => (FIN_FUNCOES[k] = k === 'portalFinPlano' ? f : comModulo(f)));
 
@@ -516,7 +518,7 @@ async function portalAdmin(token: unknown) {   // estrutura e regimes vêm do re
 const NATIVAS: Record<string, (...a: any[]) => Promise<unknown>> = {
   portalAparencia, portalDados, portalResumo, portalIndicadores, portalIndicadoresLote, portalSair, portalEu, portalTrocarSenha, portalNcmBase,
   portalUsuarios, portalSalvarUsuario, portalExcluirUsuario, portalSessoes, portalDerrubarSessoes, portalAuditoria, portalAdmin,
-  ...FIN_FUNCOES, portalFinLoginEmpresa,
+  ...FIN_FUNCOES, portalFinLoginEmpresa, ...COFRE,
 };
 const REPASSE = new Set(['portalArquivo', 'portalParte', 'portalCriarContabilidade', 'portalCriarCliente', 'portalSalvarRegime', 'portalServidores', 'portalSalvarServidor', 'portalUnificar', 'portalComando']);
 

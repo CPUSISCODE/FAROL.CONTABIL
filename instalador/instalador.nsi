@@ -1,5 +1,5 @@
 Unicode true
-!define VERSAO "2.3"
+!define VERSAO "2.4"
 Name "Farol Contábil - Instalador do agente ${VERSAO}"
 Caption "Farol Contábil - Instalador do agente (CPUSIS)"
 OutFile "FarolContabil_Instalador_v${VERSAO}.exe"

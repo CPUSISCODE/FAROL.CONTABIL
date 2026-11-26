@@ -55,6 +55,16 @@ bloqueio por login (8 erros/15 min) e por IP (60 erros/15 min), contado antes de
 derrubada ao trocar senha/perfil; saída automática da tela após 1 h parada; troca de senha obrigatória quando marcada;
 registro de acessos com IP; CSP no portal publicado (`ferramentas/publicar_portal.py` gera o `index.html`).
 
+## Cofre CPUSIS (desde 25/11/2026)
+
+Aba **Cofre**, só para perfis Administrador e Equipe CPUSIS (contador, gestor e cliente não veem nem pela API).
+
+- **Última NF-e e NFC-e por série**: automático, vem dos XMLs que o agente já lê (agente 2.4+, campo `ultimosNumeros` do resumo).
+- **CSC** (id + código) e **certificado A1** (arquivo .pfx + senha): a equipe cadastra no portal.
+- Segredos criptografados com AES-256-GCM na função `farol` (`cofre.ts`); a chave vem do segredo `COFRE_CHAVE`, que fica só no Supabase e nunca no banco nem no GitHub. **Se a chave for trocada ou perdida, o que já foi guardado não abre mais.**
+- Ao salvar, o .pfx é aberto com a senha: se a senha estiver errada, nada é gravado. Validade e titular são lidos do certificado, e a Central avisa quando um certificado está vencido ou vence em até 30 dias.
+- Revelar o CSC ou a senha e baixar o .pfx ficam no registro de acessos (`cofre-revelar`, `cofre-baixar`). Limite: 40 por hora por usuário.
+
 ## Funções do Supabase
 
 `farol` e `rtc` são publicadas com um `index.ts` de uma linha que importa o `main.ts` deste repositório

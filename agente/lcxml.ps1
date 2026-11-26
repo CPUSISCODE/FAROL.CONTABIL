@@ -30,7 +30,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$VERSAO = '2.3'
+$VERSAO = '2.4'
 $BASE = $PSScriptRoot
 if (-not $Config) { $Config = Join-Path $BASE 'config.json' }
 $PASTA_LOG = Join-Path $BASE 'logs'
@@ -428,7 +428,7 @@ function Conferir-Rtc([datetime]$mes) {
 function Montar-Resumo($emp, [datetime]$mes) {
   $trib = @{}; $ncm = @{}; $prod = @{}; $pc = @{}; $pagto = @{}; $tot = @{}
   $canc = New-Object System.Collections.ArrayList; $devol = New-Object System.Collections.ArrayList
-  $numeros = @{}; $crts = @{}
+  $numeros = @{}; $crts = @{}; $ultimos = @{}   # 2.4: último número emitido por modelo e série
   # reforma tributária: quem já destaca IBS/CBS nos XML (por documento e por item)
   $rfOrig = @{}; $rfCls = @{}; $rfSem = New-Object System.Collections.ArrayList; $rfForn = @{}
   foreach ($d in $script:AN.docs.Values) {
@@ -453,7 +453,7 @@ function Montar-Resumo($emp, [datetime]$mes) {
     if ($o -ne 'Compras' -and $d.crt) { $crts[$d.crt] = 1 + [int]$crts[$d.crt] }
     if (-not $tot.ContainsKey($o)) { $tot[$o] = [ordered]@{ qtd = 0; canceladas = 0; valor = [decimal]0; vBC = [decimal]0; vICMS = [decimal]0; vST = [decimal]0; vIPI = [decimal]0; vPIS = [decimal]0; vCOFINS = [decimal]0; vIBS = [decimal]0; vCBS = [decimal]0 } }
     $t = $tot[$o]
-    if ($o -ne 'Compras') { $k = $d.modelo + '|' + $d.serie; if (-not $numeros.ContainsKey($k)) { $numeros[$k] = New-Object 'System.Collections.Generic.HashSet[long]' }; [void]$numeros[$k].Add($d.numero) }
+    if ($o -ne 'Compras') { $k = $d.modelo + '|' + $d.serie; if (-not $numeros.ContainsKey($k)) { $numeros[$k] = New-Object 'System.Collections.Generic.HashSet[long]' }; [void]$numeros[$k].Add($d.numero); if (-not $ultimos.ContainsKey($k) -or [long]$d.numero -gt [long]$ultimos[$k].numero) { $ultimos[$k] = [ordered]@{ modelo = $d.modelo; serie = $d.serie; numero = [long]$d.numero; data = $d.data } } }
     if ($script:AN.canceladas.ContainsKey($d.chave)) {
       $t.canceladas++
       [void]$canc.Add([ordered]@{ origem = $o; modelo = $d.modelo; serie = $d.serie; numero = $d.numero; data = $d.data; valor = (R2 $d.vNF); chave = $d.chave })
@@ -548,6 +548,7 @@ function Montar-Resumo($emp, [datetime]$mes) {
     tributacao = @(Fechar $trib); ncm = @(Fechar $ncm); pisCofins = @(Fechar $pc); pagamentos = @(Fechar $pagto)
     produtos = $topProd; produtosDistintos = $todosProd.Count
     devolucoes = @($devol); canceladas = @($canc); inutilizacoes = @($script:AN.inut); falhasNumeracao = @($falhas)
+    ultimosNumeros = @($ultimos.Values)
     porDia = $porDia; comSistema = [bool]$script:AN.sistemaDia
     pendencias = @($(if ($script:AN.pendencias) { $script:AN.pendencias } else { @() })); comPendencias = ($null -ne $script:AN.pendencias)
     rtc = $(try { Conferir-Rtc $mes } catch { [ordered]@{ erro = $_.Exception.Message } })

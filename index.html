@@ -249,6 +249,7 @@ td.b{font-weight:700;white-space:normal}
 #dlgFin label{display:grid;gap:4px;font-size:13px}
 #rfSec .minis.rf4{grid-template-columns:repeat(4,minmax(0,1fr))}@media (max-width:760px){#rfSec .minis.rf4{grid-template-columns:repeat(2,minmax(0,1fr))}}
 ul.lst{margin:6px 0 10px;padding-left:20px;display:grid;gap:4px}
+.cf-tab td{vertical-align:top}.cf-num{white-space:nowrap;font-variant-numeric:tabular-nums}.cf-num b{font-size:14px}.cf-seg{font-family:ui-monospace,Consolas,monospace;letter-spacing:.5px}.cf-seg.aberto{background:var(--warn-bg,#fff4d6);padding:1px 5px;border-radius:5px;user-select:all}
 </style>
 </head>
 <body>
@@ -268,7 +269,7 @@ ul.lst{margin:6px 0 10px;padding-left:20px;display:grid;gap:4px}
 <section id="app" class="hidden">
   <header><div class="topo">
     <div class="marca"><div class="selo">CP</div><div><b>Portal Contábil</b><span>CPUSIS</span></div></div>
-    <nav class="nav" aria-label="Seções"><button type="button" data-t="central" class="hidden" id="navCentral">Central</button><button type="button" data-t="painel">Painel</button><button type="button" data-t="clientes">Clientes</button><button type="button" data-t="servidores" class="hidden" id="navSrv">Servidores</button><button type="button" data-t="financeiro" class="hidden" id="navFin">Financeiro</button><button type="button" data-t="calc" class="hidden" id="navCalc">Calculadoras</button><button type="button" data-t="acessos" class="hidden" id="navAcessos">Acessos</button><button type="button" data-t="config" class="hidden" id="navCfg">Configurações</button></nav>
+    <nav class="nav" aria-label="Seções"><button type="button" data-t="central" class="hidden" id="navCentral">Central</button><button type="button" data-t="painel">Painel</button><button type="button" data-t="clientes">Clientes</button><button type="button" data-t="servidores" class="hidden" id="navSrv">Servidores</button><button type="button" data-t="financeiro" class="hidden" id="navFin">Financeiro</button><button type="button" data-t="calc" class="hidden" id="navCalc">Calculadoras</button><button type="button" data-t="acessos" class="hidden" id="navAcessos">Acessos</button><button type="button" data-t="cofre" class="hidden" id="navCofre">Cofre</button><button type="button" data-t="config" class="hidden" id="navCfg">Configurações</button></nav>
     <span class="quem" id="quem"></span>
     <button class="btn sec" id="bSenha" type="button" title="Trocar a minha senha">Minha senha</button>
     <button class="btn sec" id="bSair" type="button">Sair</button>
@@ -430,7 +431,7 @@ function iniciar() {
     $('navCfg').classList.toggle('hidden', !d.admin); $('navCentral').classList.toggle('hidden', !cp); $('navSrv').classList.toggle('hidden', !(cp && mod('servidores')));
     $('navFin').classList.toggle('hidden', !mod('bpo'));
     $('navCalc').classList.toggle('hidden', !!d.empresa || !mod('calculadora'));
-    $('navAcessos').classList.toggle('hidden', !mod('usuarios'));
+    $('navAcessos').classList.toggle('hidden', !mod('usuarios')); $('navCofre').classList.toggle('hidden', !cp);
     document.querySelector('.nav button[data-t="painel"]').classList.toggle('hidden', !!d.empresa || !mod('painel'));
     document.querySelector('.nav button[data-t="clientes"]').textContent = d.empresa ? 'Minha empresa' : 'Clientes';
     document.querySelector('.nav button[data-t="clientes"]').classList.toggle('hidden', d.empresa ? !(d.unidades || []).length : !mod('clientes'));
@@ -457,7 +458,7 @@ if (MODO_WEB) chamar('portalAparencia').then(function (ap) {
   try { localStorage.setItem('farol_aparencia', JSON.stringify(ap)); } catch (e) {}
   if (JSON.stringify(ap) !== JSON.stringify(APARENCIA_ATUAL)) aplicarAparencia(ap);
 }).catch(function () {});
-document.querySelector('.nav').addEventListener('click', function (ev) { var b = ev.target.closest('button'); if (!b || !DADOS) return; if (b.dataset.t === 'central') telaCentral(); else if (b.dataset.t === 'painel') telaPainel(); else if (b.dataset.t === 'config') telaConfig(); else if (b.dataset.t === 'servidores') telaServidores(); else if (b.dataset.t === 'calc') telaCalculadoras(); else if (b.dataset.t === 'acessos') telaAcessos(); else if (b.dataset.t === 'financeiro') { if (DADOS.empresa) telaFinCliente(DADOS.empresa.contabilidade, DADOS.empresa.cliente, ''); else telaFinanceiro(); } else telaLista(); });
+document.querySelector('.nav').addEventListener('click', function (ev) { var b = ev.target.closest('button'); if (!b || !DADOS) return; if (b.dataset.t === 'central') telaCentral(); else if (b.dataset.t === 'painel') telaPainel(); else if (b.dataset.t === 'config') telaConfig(); else if (b.dataset.t === 'servidores') telaServidores(); else if (b.dataset.t === 'calc') telaCalculadoras(); else if (b.dataset.t === 'acessos') telaAcessos(); else if (b.dataset.t === 'cofre') telaCofre(); else if (b.dataset.t === 'financeiro') { if (DADOS.empresa) telaFinCliente(DADOS.empresa.contabilidade, DADOS.empresa.cliente, ''); else telaFinanceiro(); } else telaLista(); });
 function marcarNav(t) { document.querySelectorAll('.nav button').forEach(function (b) { if (b.dataset.t === t) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); }); }
 
 /* ---------------- tela 1: clientes ---------------- */
@@ -764,6 +765,7 @@ function telaCentral() {
   $('cAtual').addEventListener('click', function () { IND = {}; CFG = null; iniciar(); });
   var desenhar = function () { desenharCentral(sync, meses); };
   desenhar();
+  if (typeof avisoCofre === 'function') avisoCofre();
   carregarLote(meses)
     .then(function () { if ($('cSema')) desenhar(); })
     .catch(function (e) { if ($('cPend')) $('cPend').innerHTML = '<p class="erro">' + esc(e.message) + '</p>'; });
@@ -3008,7 +3010,7 @@ function guiaAuto() {
   }
 
   /* ---------------- calculadoras (SN e LP) ---------------- */
-  window.VERSAO_PORTAL = '1.32';
+  window.VERSAO_PORTAL = '1.33';
   window.BASE_CALC = /(^|\.)github\.io$|^farol\.test$/.test(location.hostname) ? 'calc/' : 'https://cpusiscode.github.io/FAROL.CONTABIL/calc/';
   var CALC_SEL = null;
   function quadro(regime, id) {
@@ -3808,6 +3810,172 @@ tr.cf-sel.aberta td{background:rgba(127,127,127,.1)}
     if (limpa) limpa.onclick = function () { try { localStorage.removeItem(chave()); } catch (e) {} AP = null; telaApuracao(c); };
     if (t69) t69.onchange = function () { try { localStorage.setItem('farol_apu_sem_tema69', this.checked ? '0' : '1'); } catch (e) {} desenhar(c, AP.r); };
   }
+})();
+</script>
+<script>
+// ================================================================ COFRE CPUSIS (CSC, certificado digital e numeração das notas)
+// Só perfis admin/cpusis. O servidor confere tudo de novo; revelar/baixar fica no registro de acessos.
+(function () {
+  var CF = null, CF_FILTRO = '';
+  function ehCpusis() { return DADOS && (DADOS.perfil === 'admin' || DADOS.perfil === 'cpusis' || (!DADOS.perfil && DADOS.admin)); }
+  function diasPara(iso) { return iso ? Math.floor((new Date(iso).getTime() - Date.now()) / 864e5) : null; }
+  function situacaoCert(u) {
+    if (!u.validade) return u.temSenha || u.temPfx ? { t: 'sem validade', c: 'warn' } : { t: 'não cadastrado', c: '' };
+    var d = diasPara(u.validade);
+    if (d < 0) return { t: 'vencido há ' + (-d) + (d === -1 ? ' dia' : ' dias'), c: 'bad' };
+    if (d <= 30) return { t: 'vence em ' + d + (d === 1 ? ' dia' : ' dias'), c: 'warn' };
+    return { t: 'válido', c: 'ok' };
+  }
+  function nums(u, modelo) {
+    var l = u.numeros.filter(function (n) { return n.modelo === modelo; });
+    if (!l.length) return '<span class="sub">' + (u.numerosAgente ? '—' : 'aguardando agente') + '</span>';
+    return l.map(function (n) { return '<div class="cf-num"><b>' + int(n.numero) + '</b> <span class="sub">série ' + esc(n.serie) + (n.data ? ' · ' + dataBR(n.data) : '') + '</span></div>'; }).join('');
+  }
+  function oculto(id, campo, tem) {
+    if (!tem) return '<span class="sub">—</span>';
+    return '<span class="cf-seg" id="cf_' + campo + '_' + id + '">••••••••</span> <button class="lnk" type="button" data-rev="' + id + '" data-cpo="' + campo + '">revelar</button>';
+  }
+  window.telaCofre = function () {
+    if (!ehCpusis()) return;
+    marcarNav('cofre'); ATUAL = null; RESUMO = null;
+    $('tela').innerHTML = carregando('Abrindo o cofre…');
+    chamar('portalCofreLista', TOKEN).then(function (r) { CF = r; desenhar(); })
+      .catch(function (e) { $('tela').innerHTML = '<div class="card erro">' + esc(e.message) + '</div>'; });
+  };
+  function aviso(t, erro) { var a = $('cfAviso'); if (!a) return; a.className = 'aviso' + (erro ? ' bad' : ''); a.textContent = t || ''; if (t) setTimeout(function () { if (a.textContent === t) a.textContent = ''; }, 8000); }
+  function desenhar() {
+    var U = CF.unidades;
+    var comCert = U.filter(function (u) { return u.validade; });
+    var vencidos = comCert.filter(function (u) { return diasPara(u.validade) < 0; }).length;
+    var vencendo = comCert.filter(function (u) { var d = diasPara(u.validade); return d >= 0 && d <= 30; }).length;
+    var nfce = U.filter(function (u) { return u.numeros.some(function (n) { return n.modelo === '65'; }); });
+    var semCsc = nfce.filter(function (u) { return !u.temCsc; }).length;
+    $('tela').innerHTML = '<div class="cab"><div><h1>Cofre CPUSIS</h1><p class="sub">Numeração das notas, CSC e certificado digital de cada cliente. Só a equipe da CPUSIS enxerga esta tela; ' +
+      'tudo fica criptografado, e cada vez que alguém revela uma senha ou baixa um certificado fica anotado (quem, quando e de qual cliente).</p></div>' +
+      '<button class="btn sec" type="button" id="cfAtual">Atualizar</button></div>' +
+      (CF.ativo ? '' : '<div class="card erro"><b>O cofre ainda não foi ativado.</b> Falta cadastrar a chave COFRE_CHAVE nos segredos do Supabase. A numeração das notas já aparece; o CSC e o certificado só podem ser guardados depois disso.</div>') +
+      '<div class="kpis kpis4">' + kpi2('Clientes / unidades', int(U.length), int(U.filter(function (u) { return u.numeros.length; }).length) + ' com numeração recebida', null) +
+        kpi2('Certificados guardados', int(comCert.length), int(U.length - comCert.length) + ' sem certificado', null) +
+        kpi2('Vencem em 30 dias', int(vencendo), vencidos ? int(vencidos) + ' já vencidos' : 'nenhum vencido', null, vencidos ? 'bad' : vencendo ? 'warn' : 'muted') +
+        kpi2('Emitem NFC-e sem CSC', int(semCsc), 'de ' + int(nfce.length) + ' que emitem NFC-e', null, semCsc ? 'warn' : 'muted') + '</div>' +
+      '<div class="ferr"><input type="search" id="cfBusca" placeholder="Buscar cliente, contabilidade ou CNPJ" style="min-width:300px">' +
+      '<select id="cfFiltro"><option value="">Todos</option><option value="venc">Vencidos ou vencendo</option><option value="semcert">Sem certificado</option><option value="semcsc">Emitem NFC-e sem CSC</option></select></div>' +
+      '<p id="cfAviso" class="aviso" role="status"></p><div class="tbl" id="cfTab"></div><dialog id="dlgCf" aria-labelledby="dlgCfTit"></dialog>';
+    $('cfFiltro').value = CF_FILTRO;
+    $('cfAtual').onclick = telaCofre;
+    var tabela = function () {
+      var b = norm($('cfBusca').value || ''); CF_FILTRO = $('cfFiltro').value;
+      var L = U.filter(function (u) {
+        if (b && norm([u.cliente, u.subpasta, u.contabilidade, u.cnpj, u.titular].join(' ')).indexOf(b) < 0) return false;
+        if (CF_FILTRO === 'venc') return u.validade && diasPara(u.validade) <= 30;
+        if (CF_FILTRO === 'semcert') return !u.validade;
+        if (CF_FILTRO === 'semcsc') return !u.temCsc && u.numeros.some(function (n) { return n.modelo === '65'; });
+        return true;
+      });
+      $('cfTab').innerHTML = '<table class="cf-tab"><thead><tr><th>Cliente</th><th>Última NF-e</th><th>Última NFC-e</th><th>CSC</th><th>Certificado digital</th><th>Senha</th><th></th></tr></thead><tbody>' +
+        L.map(function (u) {
+          var sc = situacaoCert(u);
+          return '<tr><td><b>' + esc(u.cliente) + '</b>' + (u.subpasta ? ' <span class="pill info">' + esc(u.subpasta) + '</span>' : '') + '<div class="sub">' + esc(u.contabilidade) + (u.cnpj ? ' · ' + esc(fmtCnpj(u.cnpj)) : '') + '</div></td>' +
+            '<td>' + nums(u, '55') + '</td><td>' + nums(u, '65') + '</td>' +
+            '<td>' + (u.cscId ? '<div class="sub">id ' + esc(u.cscId) + '</div>' : '') + oculto(u.id, 'csc', u.temCsc) + '</td>' +
+            '<td>' + (sc.c ? '<span class="pill ' + (sc.c === 'ok' ? '' : sc.c) + '">' + esc(sc.t) + '</span>' : '<span class="sub">' + sc.t + '</span>') +
+              (u.validade ? '<div class="sub">até ' + new Date(u.validade).toLocaleDateString('pt-BR') + (u.titular ? ' · ' + esc(u.titular) : '') + '</div>' : '') +
+              (u.temPfx ? '<button class="lnk" type="button" data-baixar="' + u.id + '">baixar .pfx</button>' : '') + '</td>' +
+            '<td>' + oculto(u.id, 'senha', u.temSenha) + '</td>' +
+            '<td><button class="lnk" type="button" data-ed="' + u.id + '">' + (u.temCsc || u.temPfx || u.temSenha ? 'editar' : 'cadastrar') + '</button>' + (u.obs ? ' <span class="ac-tag" title="' + esc(u.obs) + '">obs</span>' : '') + '</td></tr>';
+        }).join('') + (L.length ? '' : '<tr><td colspan="7" class="sub">Nada encontrado.</td></tr>') + '</tbody></table>';
+    };
+    $('cfBusca').addEventListener('input', tabela); $('cfFiltro').addEventListener('change', tabela); tabela();
+    $('cfTab').addEventListener('click', function (ev) {
+      var x = ev.target.closest('button'); if (!x) return;
+      if (x.dataset.ed) dlgCofre(achar(x.dataset.ed));
+      else if (x.dataset.rev) revelar(x);
+      else if (x.dataset.copiar) copiar(x);
+      else if (x.dataset.baixar) baixarPfx(achar(x.dataset.baixar), x);
+    });
+  }
+  function achar(id) { return CF.unidades.filter(function (u) { return String(u.id) === String(id); })[0]; }
+  function fmtCnpj(c) { c = String(c).replace(/\D/g, ''); return c.length === 14 ? c.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5') : c; }
+  function revelar(btn) {
+    var id = btn.dataset.rev, cpo = btn.dataset.cpo, alvo = $('cf_' + cpo + '_' + id);
+    btn.disabled = true; btn.textContent = 'abrindo…';
+    chamar('portalCofreRevelar', TOKEN, Number(id), cpo).then(function (r) {
+      alvo.textContent = r.valor; alvo.classList.add('aberto');
+      btn.disabled = false; btn.textContent = 'copiar'; btn.removeAttribute('data-rev'); btn.dataset.copiar = r.valor;
+      setTimeout(function () {   // esconde de novo em 30 s
+        if (!document.body.contains(alvo)) return;
+        alvo.textContent = '••••••••'; alvo.classList.remove('aberto');
+        btn.textContent = 'revelar'; btn.dataset.rev = id; btn.removeAttribute('data-copiar');
+      }, 30000);
+    }).catch(function (e) { btn.disabled = false; btn.textContent = 'revelar'; aviso(e.message, true); });
+  }
+  function copiar(btn) {
+    var v = btn.dataset.copiar || '';
+    (navigator.clipboard ? navigator.clipboard.writeText(v) : Promise.reject()).then(function () { aviso('Copiado. Some da tela em 30 segundos.'); }).catch(function () { aviso('Não consegui copiar; selecione o texto e use Ctrl+C.', true); });
+  }
+  function baixarPfx(u, btn) {
+    btn.disabled = true;
+    chamar('portalCofreBaixar', TOKEN, u.id).then(function (r) {
+      var bin = atob(r.base64), arr = new Uint8Array(bin.length); for (var i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+      var a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([arr], { type: 'application/x-pkcs12' })); a.download = r.arquivo;
+      document.body.appendChild(a); a.click(); setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
+      btn.disabled = false; aviso('Certificado baixado. Lembre de apagar a cópia depois de instalar.');
+    }).catch(function (e) { btn.disabled = false; aviso(e.message, true); });
+  }
+  function dlgCofre(u) {
+    var d = $('dlgCf');
+    d.innerHTML = '<form class="form" id="fCf" autocomplete="off"><h2 id="dlgCfTit">' + esc(u.cliente) + (u.subpasta ? ' / ' + esc(u.subpasta) : '') + '</h2><p class="sub" style="margin-top:-6px">' + esc(u.contabilidade) + (u.cnpj ? ' · CNPJ ' + esc(fmtCnpj(u.cnpj)) : '') + '</p>' +
+      '<fieldset style="border:1px solid var(--line);border-radius:9px;padding:10px 12px"><legend class="sub">CSC da NFC-e</legend><div class="ferr" style="align-items:flex-end">' +
+        '<label style="flex:1;min-width:120px">Id do CSC<input id="cfCscId" type="text" value="' + esc(u.cscId) + '" placeholder="ex.: 000001" maxlength="20"></label>' +
+        '<label style="flex:3;min-width:240px">Código CSC ' + (u.temCsc ? '(em branco mantém o atual)' : '') + '<input id="cfCsc" type="password" autocomplete="new-password" maxlength="64"></label></div>' +
+        (u.temCsc ? '<label class="ck"><input type="checkbox" id="cfApCsc"> Apagar o CSC guardado</label>' : '') + '</fieldset>' +
+      '<fieldset style="border:1px solid var(--line);border-radius:9px;padding:10px 12px"><legend class="sub">Certificado digital A1</legend>' +
+        (u.temPfx ? '<p class="nota" style="margin:0 0 6px">Guardado: ' + esc(u.arquivo || 'certificado.pfx') + (u.validade ? ' · válido até ' + new Date(u.validade).toLocaleDateString('pt-BR') : '') + (u.titular ? ' · ' + esc(u.titular) : '') + '</p>' : '') +
+        '<label>' + (u.temPfx ? 'Trocar o arquivo (.pfx ou .p12)' : 'Arquivo do certificado (.pfx ou .p12)') + '<input id="cfPfx" type="file" accept=".pfx,.p12,application/x-pkcs12"></label>' +
+        '<label>Senha do certificado ' + (u.temSenha ? '(em branco mantém a atual)' : '') + '<input id="cfSenha" type="password" autocomplete="new-password" maxlength="200"></label>' +
+        '<p class="nota" style="margin:4px 0 0">Ao salvar, o portal abre o certificado com a senha: se a senha não abrir, nada é gravado. A validade e o titular são lidos do próprio certificado.</p>' +
+        (u.temPfx || u.temSenha ? '<label class="ck"><input type="checkbox" id="cfApCert"> Apagar o certificado e a senha guardados</label>' : '') + '</fieldset>' +
+      '<label>Observação interna<input id="cfObs" type="text" value="' + esc(u.obs) + '" maxlength="1000" placeholder="ex.: renovar com a contabilidade, certificado na AC Soluti"></label>' +
+      (u.por ? '<p class="nota">Última alteração: ' + esc(u.por) + ' em ' + new Date(u.em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) + '</p>' : '') +
+      '<p class="erro" id="cfErro" role="alert"></p>' +
+      '<div class="ferr"><button class="btn" type="submit" id="cfSalvar"' + (CF.ativo ? '' : ' disabled title="Falta ativar o cofre"') + '>Salvar</button><button class="btn sec" type="button" id="cfFechar">Fechar</button></div></form>';
+    d.showModal();
+    $('cfFechar').onclick = function () { d.close(); };
+    $('fCf').onsubmit = function (ev) {
+      ev.preventDefault();
+      var err = $('cfErro'); err.textContent = '';
+      var dados = { cscId: $('cfCscId').value.trim(), obs: $('cfObs').value };
+      if ($('cfCsc').value.trim()) dados.csc = $('cfCsc').value.trim();
+      if ($('cfSenha').value) dados.senha = $('cfSenha').value;
+      if ($('cfApCsc') && $('cfApCsc').checked) dados.apagarCsc = true;
+      if ($('cfApCert') && $('cfApCert').checked) dados.apagarCert = true;
+      var f = $('cfPfx').files[0];
+      var enviar = function () {
+        $('cfSalvar').disabled = true; $('cfSalvar').textContent = 'Salvando…';
+        chamar('portalCofreSalvar', TOKEN, u.id, dados).then(function (r) {
+          d.close(); CF = null; telaCofre();
+          setTimeout(function () { aviso('Salvo' + (r.validade ? ' · certificado válido até ' + new Date(r.validade).toLocaleDateString('pt-BR') : '') + '.'); }, 600);
+        }).catch(function (e) { err.textContent = e.message; $('cfSalvar').disabled = false; $('cfSalvar').textContent = 'Salvar'; });
+      };
+      if (!f) return enviar();
+      if (f.size > 64 * 1024) { err.textContent = 'Arquivo grande demais para um certificado A1.'; return; }
+      if (!dados.senha && !u.temSenha) { err.textContent = 'Informe a senha do certificado.'; return; }
+      var rd = new FileReader();
+      rd.onload = function () { dados.pfx = String(rd.result).split(',')[1] || ''; dados.arquivo = f.name; enviar(); };
+      rd.onerror = function () { err.textContent = 'Não consegui ler o arquivo.'; };
+      rd.readAsDataURL(f);
+    };
+  }
+  // aviso na Central: certificados vencidos ou vencendo
+  window.avisoCofre = function () {
+    if (!ehCpusis()) return;
+    chamar('portalCofreAvisos', TOKEN).then(function (r) {
+      if (!(r.vencidos || r.vencendo) || !$('cKpis') || $('cfCentral')) return;
+      var t = [r.vencidos ? r.vencidos + (r.vencidos === 1 ? ' certificado vencido' : ' certificados vencidos') : '', r.vencendo ? r.vencendo + (r.vencendo === 1 ? ' vence' : ' vencem') + ' nos próximos 30 dias' : ''].filter(Boolean).join(' e ');
+      $('cKpis').insertAdjacentHTML('beforebegin', '<div class="card" id="cfCentral" style="border-left:4px solid var(--' + (r.vencidos ? 'bad' : 'warn') + ');display:flex;gap:12px;align-items:center;justify-content:space-between"><span><b>Certificados digitais:</b> ' + esc(t) + '.</span><button class="btn sec" type="button" id="cfIr">Abrir o cofre</button></div>');
+      $('cfIr').onclick = function () { CF_FILTRO = 'venc'; telaCofre(); };
+    }).catch(function () {});
+  };
 })();
 </script>
 <script>if (typeof USA_BANCO !== 'undefined' && !USA_BANCO) document.body.insertAdjacentHTML('beforeend', '<div style="position:fixed;left:12px;bottom:12px;z-index:50;background:#8a5a00;color:#fff;font:600 12px/1 system-ui,sans-serif;padding:7px 10px;border-radius:8px;opacity:.9">Caminho antigo (reserva)</div>');</script>
