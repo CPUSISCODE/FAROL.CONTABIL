@@ -1,5 +1,5 @@
 {
-"base": "V0073",
+"base": "V0074",
 "classes": {
 "000001": {
 "d": "Situações tributadas integralmente pelo IBS e CBS.",
@@ -94,8 +94,8 @@
 "r": 0.0
 }
 },
-"commit": "def9705",
-"fonte": "Receita Federal · calculadora-rtc-regime-regular def9705 (base V0073)",
+"commit": "0d4b073",
+"fonte": "Receita Federal · calculadora-rtc-regime-regular 0d4b073 (base V0074)",
 "regras": [
 [
 "0102",
