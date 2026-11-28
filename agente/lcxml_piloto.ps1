@@ -30,7 +30,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$VERSAO = '2.5'
+$VERSAO = '2.6'
 $BASE = $PSScriptRoot
 if (-not $Config) { $Config = Join-Path $BASE 'config.json' }
 $PASTA_LOG = Join-Path $BASE 'logs'
@@ -843,8 +843,8 @@ function Processar-Manuais {
   $inicio = Get-Date
   Log 'Buscando no Drive os meses com XML enviados à mão...'
   $lista = Chamar-Receptor @{ acao = 'manuais' }
-  # só a partir deste mês (config.json "manuaisDesde": "AAAA-MM"; padrão 2026-01)
-  $desde = '2026-01'; if ($CFG.manuaisDesde) { $desde = [string]$CFG.manuaisDesde }
+  # só a partir deste mês (config.json "manuaisDesde": "AAAA-MM"; padrão 2025-01 desde a 2.6, para trazer o histórico de 2025)
+  $desde = '2025-01'; if ($CFG.manuaisDesde) { $desde = [string]$CFG.manuaisDesde }
   $todos = @($lista.itens)
   $itens = @($todos | Where-Object { [string]$_.mes -ge $desde })
   if ($todos.Count -ne $itens.Count) { Log ("{0} meses anteriores a {1} ignorados." -f ($todos.Count - $itens.Count), $desde) }
